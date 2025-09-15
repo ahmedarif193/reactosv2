@@ -339,7 +339,7 @@ elseif(ARCH STREQUAL "amd64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/usercall_asm.S
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/zeropage.S)
     list(APPEND SOURCE
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/config/i386/cmhardwr.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/config/amd64/cmhardwr.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/amd64/kdx64.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/amd64/kdx64_full.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/context.c
