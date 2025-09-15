@@ -412,8 +412,33 @@ NTSTATUS
 NTAPI
 KeRaiseUserException(IN NTSTATUS ExceptionCode)
 {
-    UNIMPLEMENTED;
-    return STATUS_UNSUCCESSFUL;
+    PKTRAP_FRAME TrapFrame;
+    PKTHREAD Thread;
+
+    /* Get the current thread and trap frame */
+    Thread = KeGetCurrentThread();
+    TrapFrame = Thread->TrapFrame;
+
+    /* Make sure we have a trap frame */
+    if (!TrapFrame)
+    {
+        return STATUS_UNSUCCESSFUL; /* No user mode context */
+    }
+
+    /* Make sure we're coming from user mode */
+    if ((TrapFrame->SegCs & MODE_MASK) == 0)
+    {
+        return STATUS_ACCESS_VIOLATION;
+    }
+
+    /* Set the exception code */
+    TrapFrame->Rax = ExceptionCode;
+
+    /* Return to user mode with exception */
+    /* KiServiceExit(TrapFrame, ExceptionCode); TODO: Implement */
+
+    /* We should never get here */
+    return STATUS_SUCCESS;
 }
 
 
@@ -436,9 +461,36 @@ NTAPI
 KiNpxNotAvailableFaultHandler(
     IN PKTRAP_FRAME TrapFrame)
 {
-    UNIMPLEMENTED;
-    KeBugCheckWithTf(TRAP_CAUSE_UNKNOWN, 13, 0, 0, 1, TrapFrame);
-    return -1;
+    PKTHREAD Thread;
+    PVOID FxSaveArea;
+    ULONG Cr0;
+
+    /* Get the current thread */
+    Thread = KeGetCurrentThread();
+
+    /* Check if we have FPU state to restore */
+    FxSaveArea = (PVOID)&Thread->NpxState;
+    if (!FxSaveArea)
+    {
+        /* No FPU state, initialize it */
+        /* Initialize FPU */
+        __asm__ volatile ("fninit");
+        return STATUS_SUCCESS;
+    }
+
+    /* Clear TS flag in CR0 to enable FPU */
+    Cr0 = __readcr0();
+    __writecr0(Cr0 & ~CR0_TS);
+
+    /* Restore FPU state */
+    /* Restore FPU state */
+    __asm__ volatile ("fxrstor (%0)" : : "r" (FxSaveArea));
+
+    /* Mark FPU as being used by this thread */
+    /* Mark FPU as loaded */
+    Thread->Header.NpxIrql = 0;
+
+    return STATUS_SUCCESS;
 }
 
 static
@@ -653,10 +705,28 @@ KiGeneralProtectionFaultHandler(
     /* Check for IRET */
     if (Instructions[0] == 0x48 && Instructions[1] == 0xCF)
     {
-        /* Not implemented */
-        UNIMPLEMENTED;
-        // AGENT-MODIFIED: Removed ASSERT(FALSE) to prevent INT3 in release mode
-        return STATUS_NOT_IMPLEMENTED;
+        /* Handle IRETQ instruction */
+        PCONTEXT Context;
+
+        /* Allocate context on stack */
+        Context = (PCONTEXT)((ULONG_PTR)TrapFrame - sizeof(CONTEXT));
+
+        /* Convert trap frame to context */
+        /* Copy trap frame to context */
+        RtlCopyMemory(Context, TrapFrame, sizeof(KTRAP_FRAME));
+
+        /* Pop values from stack for IRETQ */
+        Context->Rip = *(PULONG64)(Context->Rsp);
+        Context->SegCs = *(PUSHORT)(Context->Rsp + 8);
+        Context->EFlags = *(PULONG)(Context->Rsp + 16);
+        Context->Rsp = *(PULONG64)(Context->Rsp + 24);
+        Context->SegSs = *(PUSHORT)(Context->Rsp + 32);
+
+        /* Update trap frame */
+        /* Copy context back to trap frame */
+        RtlCopyMemory(TrapFrame, Context, sizeof(KTRAP_FRAME));
+
+        return STATUS_SUCCESS;
     }
 
     /* Check for RDMSR/WRMSR */

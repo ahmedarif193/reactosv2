@@ -64,15 +64,19 @@ KiInitMachineDependent(VOID)
     /* Check if we have MTRR */
     if (KeFeatureBits & KF_MTRR)
     {
-        /* FIXME: Support this */
-        DPRINT("MTRR support detected but not yet taken advantage of!\n");
+        /* Initialize MTRR support - defined in mm/amd64/mtrr.c */
+        extern VOID NTAPI KiInitializeMTRR(_In_ BOOLEAN FinalCpu);
+        KiInitializeMTRR(FALSE);
+        DPRINT("MTRR support initialized\n");
     }
 
-    /* Check for PAT and/or MTRR support */
+    /* Check for PAT support */
     if (KeFeatureBits & KF_PAT)
     {
-        /* FIXME: Support this */
-        DPRINT("PAT support detected but not yet taken advantage of!\n");
+        /* Initialize PAT (Page Attribute Table) */
+        ULONGLONG PatMsr = 0x0007040600070406ULL;  /* Default PAT values */
+        __writemsr(0x277, PatMsr);  /* IA32_PAT MSR */
+        DPRINT("PAT support initialized with default values\n");
     }
 
 //        /* Allocate the IOPM save area */

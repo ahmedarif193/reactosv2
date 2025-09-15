@@ -2,6 +2,31 @@
 #define NDEBUG
 #include <debug.h>
 
+/* Font configuration */
+#define BOOTCHAR_HEIGHT 13
+#define BOOTCHAR_WIDTH  8
+
+/* Basic 8x13 font data - subset for boot messages */
+static const UCHAR GopFontData[256 * BOOTCHAR_HEIGHT] = {
+    /* Character 0x00-0x1F: Control characters (empty) */
+    [0 ... 32*BOOTCHAR_HEIGHT-1] = 0x00,
+
+    /* Character 0x20 (Space) */
+    [32*BOOTCHAR_HEIGHT ... 33*BOOTCHAR_HEIGHT-1] = 0x00,
+
+    /* Character 0x21 (!) */
+    [33*BOOTCHAR_HEIGHT] = 0x18, [33*BOOTCHAR_HEIGHT+1] = 0x18, [33*BOOTCHAR_HEIGHT+2] = 0x18,
+    [33*BOOTCHAR_HEIGHT+3] = 0x18, [33*BOOTCHAR_HEIGHT+4] = 0x18, [33*BOOTCHAR_HEIGHT+5] = 0x18,
+    [33*BOOTCHAR_HEIGHT+6] = 0x00, [33*BOOTCHAR_HEIGHT+7] = 0x18, [33*BOOTCHAR_HEIGHT+8] = 0x00,
+
+    /* ASCII printable characters - basic set */
+    /* We'll use a simple pattern for now - can be enhanced later */
+    [34*BOOTCHAR_HEIGHT ... 127*BOOTCHAR_HEIGHT-1] = 0x7E, /* Default pattern */
+
+    /* Extended ASCII */
+    [128*BOOTCHAR_HEIGHT ... 256*BOOTCHAR_HEIGHT-1] = 0x00
+};
+
 typedef struct tagBITMAPINFOHEADER
 {
     ULONG  biSize;
@@ -37,6 +62,11 @@ static BOOLEAN   BgrtValid = FALSE;
 static ULONG     BgrtX = 0, BgrtY = 0, BgrtW = 0, BgrtH = 0;
 static ULONGLONG BgrtAddr = 0;
 static ULONG     BgrtSize = 0;
+
+/* Text display state */
+static ULONG GopTextX = 0;
+static ULONG GopTextY = 0;
+static ULONG GopTextColor = 0xFFFFFF; /* White text by default */
 
 static __inline VOID ComputeMaskInfo(ULONG Mask, PULONG Shift, PULONG Width)
 {
@@ -237,6 +267,10 @@ VOID NTAPI GopVidResetDisplay(BOOLEAN HalReset)
     UNREFERENCED_PARAMETER(HalReset);
     if (!GopFbBase) return;
 
+    /* Reset text position */
+    GopTextX = 0;
+    GopTextY = 0;
+
     if (!BgrtValid)
     {
         SIZE_T total = (SIZE_T)GopPitch * (SIZE_T)GopHeight;
@@ -405,16 +439,93 @@ VOID NTAPI GopVidScreenToBufferBlt(PUCHAR Buffer, ULONG Left, ULONG Top, ULONG W
 
 VOID NTAPI GopVidDisplayString(PUCHAR String)
 {
-    while (*String)
+    UCHAR Ch;
+    PUCHAR FontChar;
+    ULONG i, j;
+    ULONG Color;
+
+    if (!GopFbBase) return;
+
+    while ((Ch = *String++))
     {
-        if (*String == '\r' || *String == '\n')
+        if (Ch == '\r')
         {
-            DbgPrint("\n");
-            if (*String == '\r' && *(String + 1) == '\n') String++;
+            GopTextX = 0;
+            continue;
         }
-        else DbgPrint("%c", *String);
-        String++;
+        else if (Ch == '\n')
+        {
+            GopTextX = 0;
+            GopTextY += BOOTCHAR_HEIGHT;
+            if (GopTextY + BOOTCHAR_HEIGHT > GopHeight)
+            {
+                /* Scroll up by copying framebuffer content up */
+                SIZE_T scrollSize = (SIZE_T)GopPitch * (GopHeight - BOOTCHAR_HEIGHT);
+                RtlMoveMemory(GopFbBase,
+                             GopFbBase + (SIZE_T)GopPitch * BOOTCHAR_HEIGHT,
+                             scrollSize);
+                /* Clear the bottom line */
+                RtlZeroMemory(GopFbBase + scrollSize,
+                             (SIZE_T)GopPitch * BOOTCHAR_HEIGHT);
+                GopTextY = GopHeight - BOOTCHAR_HEIGHT;
+            }
+            continue;
+        }
+
+        /* Get font data for this character */
+        FontChar = (PUCHAR)&GopFontData[Ch * BOOTCHAR_HEIGHT];
+
+        /* Draw the character */
+        for (j = 0; j < BOOTCHAR_HEIGHT; j++)
+        {
+            for (i = 0; i < BOOTCHAR_WIDTH; i++)
+            {
+                if (FontChar[j] & (0x80 >> i))
+                {
+                    /* Text color pixel */
+                    Color = GopTextColor;
+                }
+                else
+                {
+                    /* Background (black) pixel */
+                    Color = 0x000000;
+                }
+
+                /* Write pixel to framebuffer */
+                if ((GopTextX + i) < GopWidth && (GopTextY + j) < GopHeight)
+                {
+                    WritePixel(GopTextX + i, GopTextY + j, Color);
+                }
+            }
+        }
+
+        /* Move to next character position */
+        GopTextX += BOOTCHAR_WIDTH;
+        if (GopTextX + BOOTCHAR_WIDTH > GopWidth)
+        {
+            GopTextX = 0;
+            GopTextY += BOOTCHAR_HEIGHT;
+            if (GopTextY + BOOTCHAR_HEIGHT > GopHeight)
+            {
+                /* Scroll up */
+                SIZE_T scrollSize = (SIZE_T)GopPitch * (GopHeight - BOOTCHAR_HEIGHT);
+                RtlMoveMemory(GopFbBase,
+                             GopFbBase + (SIZE_T)GopPitch * BOOTCHAR_HEIGHT,
+                             scrollSize);
+                /* Clear the bottom line */
+                RtlZeroMemory(GopFbBase + scrollSize,
+                             (SIZE_T)GopPitch * BOOTCHAR_HEIGHT);
+                GopTextY = GopHeight - BOOTCHAR_HEIGHT;
+            }
+        }
     }
+}
+
+ULONG NTAPI GopVidSetTextColor(ULONG Color)
+{
+    ULONG OldColor = GopTextColor;
+    GopTextColor = Color;
+    return OldColor;
 }
 
 VOID NTAPI GopVidBitBlt(PUCHAR Buffer, ULONG Left, ULONG Top)

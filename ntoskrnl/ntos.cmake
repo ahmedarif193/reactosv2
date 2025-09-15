@@ -340,20 +340,28 @@ elseif(ARCH STREQUAL "amd64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/zeropage.S)
     list(APPEND SOURCE
         ${REACTOS_SOURCE_DIR}/ntoskrnl/config/i386/cmhardwr.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/i386/page.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/amd64/kdx64.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/amd64/kdx64_full.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/context.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/cpu.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/except.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/fpuexcept.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/freeze.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/interrupt.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/ipi.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/irql.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/irqobj.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/patpge.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/security.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/kiinit.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/krnlinit.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/spinlock.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/thrdini.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/amd64/init.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/amd64/page.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/amd64/tlb.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/amd64/mtrr.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/amd64/paging.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/amd64/procsup.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/amd64/psctx.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/amd64/stubs.c

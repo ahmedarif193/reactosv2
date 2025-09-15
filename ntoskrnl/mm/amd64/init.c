@@ -188,8 +188,11 @@ MiMapPTEs(
             TmplPte.u.Hard.PageFrameNumber = MxGetNextPage(1);
             MI_WRITE_VALID_PTE(PointerPte, TmplPte);
 
-            /* Zero out the page (FIXME: not always neccessary) */
-            RtlZeroMemory(MiPteToAddress(PointerPte), PAGE_SIZE);
+            /* Zero out the page only if it's for user space or first time init */
+            if ((StartAddress < MmSystemRangeStart) || (KeGetCurrentIrql() == PASSIVE_LEVEL))
+            {
+                RtlZeroMemory(MiPteToAddress(PointerPte), PAGE_SIZE);
+            }
         }
     }
 }
@@ -233,8 +236,8 @@ MiInitializePageTable(VOID)
     TmplPte.u.Flush.Write = 1;
     HyperTemplatePte = TmplPte;
 
-    /* Create PDPTs (72 KB) for shared system address space,
-     * skip page tables TODO: use global pages. */
+    /* Create PDPTs (72 KB) for shared system address space with global pages */
+    TmplPte.u.Hard.Global = 1;  /* Enable global bit for kernel mappings */
 
     /* Loop the PXEs */
     for (PointerPxe = MiAddressToPxe((PVOID)HYPER_SPACE);
@@ -322,8 +325,11 @@ MiBuildNonPagedPool(VOID)
     /* Check if a percentage cap was set through the registry */
     if (MmMaximumNonPagedPoolPercent)
     {
-        /* Don't feel like supporting this right now */
-        UNIMPLEMENTED;
+        /* Calculate percentage-based cap */
+        ULONG PercentCap = (MmNumberOfPhysicalPages * MmMaximumNonPagedPoolPercent) / 100;
+        MmSizeOfNonPagedPoolInBytes = min(MmSizeOfNonPagedPoolInBytes, PercentCap << PAGE_SHIFT);
+        DPRINT1("Nonpaged pool capped at %lu%% = %lu bytes\n",
+                MmMaximumNonPagedPoolPercent, MmSizeOfNonPagedPoolInBytes);
     }
 
     /* Page-align the nonpaged pool size */
@@ -563,7 +569,8 @@ MiAddDescriptorToDatabase(
         while (PageCount--)
         {
             /* Add it to the free list */
-            Pfn->u3.e1.CacheAttribute = MiNonCached; // FIXME: Windows ASSERTs MiChached, but why not MiNotMapped?
+            /* Set cache attribute based on memory type */
+            Pfn->u3.e1.CacheAttribute = (MemoryType == LoaderFirmwarePermanent) ? MiNonCached : MiCached;
             MiInsertPageInFreeList(BasePage + PageCount);
 
             /* Go to the previous page */
@@ -593,8 +600,16 @@ MiAddDescriptorToDatabase(
     }
     else if (MemoryType == LoaderBad)
     {
-        // FIXME: later
-        ASSERT(FALSE);
+        /* Mark bad pages as unusable */
+        Pfn = &MmPfnDatabase[BasePage];
+        while (PageCount--)
+        {
+            Pfn->u3.e1.PageLocation = 7; /* BadPageInUse value */
+            Pfn->u3.e1.CacheAttribute = MiNotMapped;
+            Pfn->u3.e1.Rom = 0;
+            Pfn->u3.e2.ReferenceCount = 0;
+            Pfn++;
+        }
     }
     else
     {

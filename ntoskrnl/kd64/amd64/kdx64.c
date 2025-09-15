@@ -15,6 +15,14 @@
 #undef UNIMPLEMENTED
 #define UNIMPLEMENTED KdpDprintf("%s is unimplemented\n", __FUNCTION__)
 
+/* AMD64-specific debug definitions */
+#define AMD64_DEBUG_CONTROL_SPACE_KPCR   0
+#define AMD64_DEBUG_CONTROL_SPACE_KPRCB  1
+#define AMD64_DEBUG_CONTROL_SPACE_KSPECIAL 2
+#define AMD64_DEBUG_CONTROL_SPACE_KTHREAD 3
+#define AMD64_DEBUG_CONTROL_SPACE_TEB    4
+#define AMD64_DEBUG_CONTROL_SPACE_PEB    5
+
 /* FUNCTIONS *****************************************************************/
 
 VOID
