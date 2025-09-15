@@ -2710,7 +2710,6 @@ ExFreePoolWithTag(IN PVOID P,
 
         RealPageCount = MiFreePoolPages(P);
 
-        DPRINT1("PdoCreateLunDevice: %lu %lu\n", RealPageCount, PageCount);
         ASSERT(RealPageCount == PageCount);
         InterlockedExchangeAdd((PLONG)&PoolDesc->TotalBigPages,
                                -(LONG)RealPageCount);
