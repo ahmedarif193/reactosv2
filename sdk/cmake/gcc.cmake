@@ -49,8 +49,11 @@ endif()
 # note: -fno-common is default since GCC 10
 add_compile_options(-pipe -fms-extensions -fno-strict-aliasing -fno-common)
 
-# A long double is 64 bits
-add_compile_options(-mlong-double-64)
+# A long double is 64 bits on x86/x64 MinGW. This option
+# is not supported on ARM/ARM64 toolchains, so gate it.
+if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "i386")
+    add_compile_options(-mlong-double-64)
+endif()
 
 # Prevent GCC from searching any of the default directories.
 # The case for C++ is handled through the reactos_c++ INTERFACE library
@@ -195,6 +198,8 @@ if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "i386")
     add_compile_options(-Wno-format)
 elseif(ARCH STREQUAL "arm")
     add_compile_options(-Wno-attributes)
+elseif(ARCH STREQUAL "arm64")
+    add_compile_options(-Wno-attributes)
 endif()
 
 # Optimizations
@@ -252,6 +257,12 @@ if(ARCH STREQUAL "amd64")
 elseif(ARCH STREQUAL "arm")
     add_definitions(-U_UNICODE -UUNICODE)
     add_definitions(-D__MSVCRT__) # DUBIOUS
+elseif(ARCH STREQUAL "arm64")
+    add_definitions(-U_UNICODE -UUNICODE)
+    add_definitions(-D__MSVCRT__) # DUBIOUS
+    add_definitions(-D_M_ARM64)
+    # ARM64 specific optimizations
+    add_compile_options(-mstrict-align) # Enforce strict alignment
 endif()
 
 # Fix build with GLIBCXX + our c++ headers
@@ -263,6 +274,8 @@ add_definitions(-D_CRT_SUPPRESS_RESTRICT)
 # Alternative arch name
 if(ARCH STREQUAL "amd64")
     set(ARCH2 x86_64)
+elseif(ARCH STREQUAL "arm64")
+    set(ARCH2 aarch64)
 else()
     set(ARCH2 ${ARCH})
 endif()

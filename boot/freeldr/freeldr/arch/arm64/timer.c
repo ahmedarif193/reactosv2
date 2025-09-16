@@ -2,12 +2,15 @@
  * PROJECT:     FreeLoader
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 Generic Timer support - Based on U-Boot patterns
- * COPYRIGHT:   Copyright 2024 ReactOS Team
+ * COPYRIGHT:   Copyright 2024 Ahmed ARIF (contact@eotics.com)
  */
 
 #include <freeldr.h>
 #include <arch/arm64/arm64.h>
 #include <debug.h>
+#include <limits.h>
+
+DBG_DEFAULT_CHANNEL(WARNING);
 
 /* Generic Timer register definitions */
 #define CNTKCTL_EL1_EL0PCTEN    (1ULL << 0)  /* EL0 physical counter access */
@@ -99,15 +102,21 @@ VOID Arm64InitializeTimer(VOID)
     
     /* Check for known timer erratas based on CPU ID */
     midr = ARM64_READ_SYSREG(midr_el1);
-    
-    /* Check for FSL erratum A-008585 (some ARM Cortex-A57/A53) */
-    ULONG implementer = (ULONG)((midr >> 24) & 0xFF);
-    ULONG part_num = (ULONG)((midr >> 4) & 0xFFF);
-    
-    if (implementer == 0x41) {  /* ARM Limited */
-        if (part_num == 0xD07 || part_num == 0xD03) {  /* Cortex-A57/A53 */
-            /* Could enable workaround based on specific revisions */
-            TRACE("ARM64: Detected Cortex-A57/A53, checking for timer erratas\n");
+
+    /* Simple detection for common errata-prone cores */
+    {
+        ULONG implementer = (ULONG)((midr >> 24) & 0xFF);
+        ULONG part_num = (ULONG)((midr >> 4) & 0xFFF);
+        ULONG rev = (ULONG)(midr & 0xF);
+        if (implementer == 0x41) /* ARM */
+        {
+            if (part_num == 0xD07 || part_num == 0xD03)
+            {
+                /* Cortex-A57/A53 family: enable safe counter read
+                   (FSL erratum A-008585 family of issues). */
+                fsl_erratum_a008585 = TRUE;
+                TRACE("ARM64: Workaround enabled for timer counter safety (A57/A53, rev=%lu)\n", rev);
+            }
         }
     }
     
@@ -157,7 +166,7 @@ ULONGLONG Arm64TimerTicksToMicroseconds(ULONGLONG ticks)
     }
     
     /* Avoid overflow in calculation */
-    if (ticks > (ULONGLONG_MAX / 1000000ULL)) {
+    if (ticks > (ULLONG_MAX / 1000000ULL)) {
         return (ticks / timer_frequency) * 1000000ULL;
     } else {
         return (ticks * 1000000ULL) / timer_frequency;
@@ -172,7 +181,7 @@ ULONGLONG Arm64MicrosecondsToTimerTicks(ULONGLONG microseconds)
     }
     
     /* Avoid overflow in calculation */
-    if (microseconds > (ULONGLONG_MAX / timer_frequency)) {
+    if (microseconds > (ULLONG_MAX / timer_frequency)) {
         return (microseconds / 1000000ULL) * timer_frequency;
     } else {
         return (microseconds * timer_frequency) / 1000000ULL;

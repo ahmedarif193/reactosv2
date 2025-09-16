@@ -2,12 +2,14 @@
  * PROJECT:     FreeLoader
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 MMU and memory management for ReactOS
- * COPYRIGHT:   Copyright 2024 ReactOS Team
+ * COPYRIGHT:   Copyright 2024 Ahmed ARIF (contact@eotics.com)
  */
 
 #include <freeldr.h>
 #include <arch/arm64/arm64.h>
 #include <debug.h>
+
+DBG_DEFAULT_CHANNEL(WARNING);
 
 /* ARM64 page table attributes */
 #define PTE_TYPE_MASK           (3 << 0)
@@ -230,18 +232,30 @@ static VOID setup_pgtables(VOID)
             }
             
             /* Map in 1GB chunks using L1 blocks */
-            while (size > 0) {
+            while (size > 0)
+            {
                 UINT64 chunk_size = (size > 0x40000000ULL) ? 0x40000000ULL : size;
-                
-                l1_table_idx = (phys_start >> 30) & 0x1FF;
-                l1_table = arm64_l1_page_tables[l1_table_idx >> 9];
-                
-                /* Create 1GB identity mapping block entry */
-                if (l1_table[l1_table_idx & 0x1FF] == 0) {
-                    l1_table[l1_table_idx & 0x1FF] = phys_start | PTE_TYPE_VALID | 
-                                                    PTE_TYPE_BLOCK | attrs;
+
+                /* Compute L0 and L1 indices for this physical address */
+                UINT64 l0_index = (phys_start >> 39) & 0x1FF;     /* 512GB granularity */
+                l1_table_idx = (phys_start >> 30) & 0x1FF;        /* 1GB granularity */
+                if (l0_index >= 4)
+                {
+                    /* Outside of our static L0 coverage; skip */
+                    phys_start += chunk_size;
+                    size -= chunk_size;
+                    continue;
                 }
-                
+
+                l1_table = arm64_l1_page_tables[l0_index];
+
+                /* Create 1GB identity mapping block entry */
+                if (l1_table[l1_table_idx] == 0)
+                {
+                    l1_table[l1_table_idx] = (phys_start & ~0x3FFFFFFFULL) |
+                                             PTE_TYPE_VALID | PTE_TYPE_BLOCK | attrs;
+                }
+
                 phys_start += chunk_size;
                 size -= chunk_size;
             }
@@ -276,14 +290,25 @@ VOID Arm64InitializeMMU(VOID)
     /* Configure MMU registers */
     set_ttbr_tcr_mair(el, (UINT64)arm64_l0_page_table, tcr, MEMORY_ATTRIBUTES);
     
-    /* Enable MMU and caches */
-    sctlr = ARM64_READ_SYSREG(sctlr_el1);
-    sctlr |= SCTLR_EL1_M |   /* Enable MMU */
-             SCTLR_EL1_C |   /* Enable data cache */
-             SCTLR_EL1_I |   /* Enable instruction cache */
-             SCTLR_EL1_SA;   /* Enable stack alignment check */
-    
-    ARM64_WRITE_SYSREG(sctlr_el1, sctlr);
+    /* Enable MMU and caches based on current EL */
+    if (el == 1)
+    {
+        __asm__ volatile("mrs %0, sctlr_el1" : "=r" (sctlr));
+        sctlr |= SCTLR_EL1_M | SCTLR_EL1_C | SCTLR_EL1_I | SCTLR_EL1_SA;
+        __asm__ volatile("msr sctlr_el1, %0" :: "r" (sctlr) : "memory");
+    }
+    else if (el == 2)
+    {
+        __asm__ volatile("mrs %0, sctlr_el2" : "=r" (sctlr));
+        sctlr |= (1ULL << 0) /* M */ | (1ULL << 2) /* C */ | (1ULL << 12) /* I */;
+        __asm__ volatile("msr sctlr_el2, %0" :: "r" (sctlr) : "memory");
+    }
+    else if (el == 3)
+    {
+        __asm__ volatile("mrs %0, sctlr_el3" : "=r" (sctlr));
+        sctlr |= (1ULL << 0) /* M */ | (1ULL << 2) /* C */ | (1ULL << 12) /* I */;
+        __asm__ volatile("msr sctlr_el3, %0" :: "r" (sctlr) : "memory");
+    }
     ARM64_ISB();
     
     mmu_enabled = TRUE;
@@ -294,33 +319,107 @@ VOID Arm64InitializeMMU(VOID)
 
 /* Map a virtual address range to physical address */
 BOOLEAN Arm64MapVirtualMemory(ULONGLONG VirtualAddress,
-                             ULONGLONG PhysicalAddress, 
-                             ULONGLONG Size,
-                             ULONG Attributes)
+                              ULONGLONG PhysicalAddress,
+                              ULONGLONG Size,
+                              ULONG Attributes)
 {
+    UINT64 va = VirtualAddress;
+    UINT64 pa = PhysicalAddress;
+    UINT64 end = VirtualAddress + Size;
+    UINT64 attrs;
+
     TRACE("ARM64: Map VA=0x%016llx -> PA=0x%016llx, Size=0x%016llx, Attr=0x%lx\n",
           VirtualAddress, PhysicalAddress, Size, Attributes);
-    
-    /* For the boot loader, we use static memory regions */
+
+    /* Only support 1GB block mappings with alignment for now */
+    if (((va | pa | Size) & 0x3FFFFFFFULL) != 0)
+    {
+        TRACE("ARM64: Map only supports 1GB-aligned blocks\n");
+        return FALSE;
+    }
+
+    /* Translate Attributes (memory type index) into block attributes */
+    attrs = PTE_BLOCK_MEMTYPE(Attributes) | PTE_BLOCK_INNER_SHARE | PTE_BLOCK_AF |
+            PTE_BLOCK_PXN | PTE_BLOCK_UXN;
+
+    while (va < end)
+    {
+        UINT64 l0 = (va >> 39) & 0x1FF;
+        UINT64 l1 = (va >> 30) & 0x1FF;
+        UINT64 *l1_table;
+
+        if (l0 >= 4)
+        {
+            TRACE("ARM64: L0 index out of range for VA 0x%llx\n", va);
+            return FALSE;
+        }
+
+        l1_table = arm64_l1_page_tables[l0];
+        l1_table[l1] = (pa & ~0x3FFFFFFFULL) | PTE_TYPE_VALID | PTE_TYPE_BLOCK | attrs;
+
+        va += 0x40000000ULL;
+        pa += 0x40000000ULL;
+    }
+
+    Arm64FlushTlbRange(VirtualAddress, Size);
     return TRUE;
 }
 
 /* Unmap a virtual address range */
 BOOLEAN Arm64UnmapVirtualMemory(ULONGLONG VirtualAddress, ULONGLONG Size)
 {
+    UINT64 va = VirtualAddress;
+    UINT64 end = VirtualAddress + Size;
+
     TRACE("ARM64: Unmap VA=0x%016llx, Size=0x%016llx\n", VirtualAddress, Size);
+
+    if (((va | Size) & 0x3FFFFFFFULL) != 0)
+    {
+        TRACE("ARM64: Unmap only supports 1GB-aligned blocks\n");
+        return FALSE;
+    }
+
+    while (va < end)
+    {
+        UINT64 l0 = (va >> 39) & 0x1FF;
+        UINT64 l1 = (va >> 30) & 0x1FF;
+        if (l0 < 4)
+        {
+            UINT64 *l1_table = arm64_l1_page_tables[l0];
+            l1_table[l1] = 0;
+        }
+        va += 0x40000000ULL;
+    }
+
+    Arm64FlushTlbRange(VirtualAddress, Size);
     return TRUE;
 }
 
 /* Get physical address from virtual address */
 ULONGLONG Arm64GetPhysicalAddress(ULONGLONG VirtualAddress)
 {
-    /* For ReactOS FreeLoader, we use identity mapping */
-    if (!mmu_enabled || identity_mapping_enabled) {
+    UINT64 va = VirtualAddress;
+
+    /* Identity mapping common in FreeLoader */
+    if (!mmu_enabled || identity_mapping_enabled)
         return VirtualAddress;
+
+    /* Walk our L0/L1 tables for block mapping */
+    {
+        UINT64 l0 = (va >> 39) & 0x1FF;
+        UINT64 l1 = (va >> 30) & 0x1FF;
+        UINT64 off = va & 0x3FFFFFFFULL; /* 1GB block offset */
+        if (l0 < 4)
+        {
+            UINT64 pte = arm64_l1_page_tables[l0][l1];
+            if ((pte & PTE_TYPE_VALID) && (pte & PTE_TYPE_BLOCK))
+            {
+                return (pte & ~0x3FFFFFFFULL) | off;
+            }
+        }
     }
-    
-    /* If non-identity mapping is implemented later, add lookup here */
+
+    /* As a fallback, assume identity */
     return VirtualAddress;
 }
 
@@ -341,18 +440,33 @@ VOID Arm64DisableMMU(VOID)
     TRACE("ARM64: Disabling MMU\n");
     
     /* Clean and invalidate all caches */
-    ARM64_DC_CIVAC(0);
-    ARM64_IC_IALLU();
+    Arm64FlushDataCacheAll();
+    Arm64InvalidateInstructionCacheAll();
     ARM64_DSB_SY();
     ARM64_ISB();
     
-    /* Disable MMU and caches */
-    sctlr = ARM64_READ_SYSREG(sctlr_el1);
-    sctlr &= ~(SCTLR_EL1_M |  /* Disable MMU */
-               SCTLR_EL1_C |  /* Disable data cache */
-               SCTLR_EL1_I);  /* Disable instruction cache */
-    
-    ARM64_WRITE_SYSREG(sctlr_el1, sctlr);
+    /* Disable MMU and caches (current EL) */
+    {
+        int el = get_effective_el();
+        if (el == 1)
+        {
+            __asm__ volatile("mrs %0, sctlr_el1" : "=r" (sctlr));
+            sctlr &= ~(SCTLR_EL1_M | SCTLR_EL1_C | SCTLR_EL1_I);
+            __asm__ volatile("msr sctlr_el1, %0" :: "r" (sctlr) : "memory");
+        }
+        else if (el == 2)
+        {
+            __asm__ volatile("mrs %0, sctlr_el2" : "=r" (sctlr));
+            sctlr &= ~((1ULL << 0) | (1ULL << 2) | (1ULL << 12));
+            __asm__ volatile("msr sctlr_el2, %0" :: "r" (sctlr) : "memory");
+        }
+        else if (el == 3)
+        {
+            __asm__ volatile("mrs %0, sctlr_el3" : "=r" (sctlr));
+            sctlr &= ~((1ULL << 0) | (1ULL << 2) | (1ULL << 12));
+            __asm__ volatile("msr sctlr_el3, %0" :: "r" (sctlr) : "memory");
+        }
+    }
     ARM64_ISB();
     
     mmu_enabled = FALSE;

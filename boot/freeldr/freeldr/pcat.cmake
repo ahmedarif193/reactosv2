@@ -161,8 +161,9 @@ if(MSVC AND CMAKE_C_COMPILER_ID STREQUAL "Clang")
     # We need to reduce the binary size
     target_compile_options(freeldr_common PRIVATE "/Os")
 endif()
-if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
-    # Prevent using SSE (no support in freeldr)
+if((CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
+   AND (ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64"))
+    # Prevent using SSE (no support in freeldr on x86/x64)
     target_compile_options(freeldr_common PUBLIC -mno-sse)
 endif()
 

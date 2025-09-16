@@ -39,7 +39,21 @@ elseif(ARCH STREQUAL "arm")
         arch/arm/debug.c)
     #TBD
 elseif(ARCH STREQUAL "arm64")
-    #TBD
+    list(APPEND UEFILDR_ARC_SOURCE
+        arch/arm64/macharm64.c
+        arch/arm64/stubs.c
+        arch/arm64/timer.c
+        arch/arm64/trap.c
+        arch/arm64/mmu_v2.c
+        arch/arm64/gic.c
+        arch/uefi/efiapp.c
+        arch/uefi/uefidebug.c
+        ntldr/conversion.c)
+    list(APPEND UEFILDR_COMMON_ASM_SOURCE
+        arch/uefi/arm64/uefiasm.S
+        arch/arm64/entry.S
+        arch/arm64/except.S
+        arch/arm64/cache_v2.S)
 else()
     #TBD
 endif()
@@ -62,8 +76,9 @@ add_library(uefifreeldr_common
 
 target_compile_definitions(uefifreeldr_common PRIVATE UEFIBOOT)
 
-if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
-    # Prevent using SSE (no support in freeldr)
+if((CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
+   AND (ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64"))
+    # Prevent using SSE (no support in freeldr on x86/x64)
     target_compile_options(uefifreeldr_common PUBLIC -mno-sse)
 endif()
 
@@ -84,15 +99,23 @@ endif()
 
 spec2def(uefildr.exe freeldr.spec)
 
-list(APPEND UEFILDR_BASE_SOURCE
-    include/arch/uefi/uefildr.h
-    arch/uefi/uefildr.c
-    bootmgr.c
-    ntldr/setupldr.c
-    ntldr/inffile.c
-    ${FREELDR_BASE_SOURCE})
+if(ARCH STREQUAL "arm64")
+    list(APPEND UEFILDR_BASE_SOURCE
+        include/arch/uefi/uefildr.h
+        arch/uefi/uefildr.c
+        bootmgr.c
+        ${FREELDR_BASE_SOURCE})
+else()
+    list(APPEND UEFILDR_BASE_SOURCE
+        include/arch/uefi/uefildr.h
+        arch/uefi/uefildr.c
+        bootmgr.c
+        ntldr/setupldr.c
+        ntldr/inffile.c
+        ${FREELDR_BASE_SOURCE})
+endif()
 
-if(ARCH STREQUAL "i386")
+if(ARCH STREQUAL "i386" OR ARCH STREQUAL "arm64")
     # Must be included together with disk/scsiport.c
     list(APPEND UEFILDR_BASE_SOURCE
         ${CMAKE_CURRENT_BINARY_DIR}/uefildr.def)
@@ -105,6 +128,9 @@ target_compile_definitions(uefildr PRIVATE UEFIBOOT)
 
 # On AMD64 we only map 1GB with freeloader, tell UEFI to keep us low!
 if(ARCH STREQUAL "amd64")
+    set_image_base(uefildr 0x10000)
+elseif(ARCH STREQUAL "arm64")
+    # ARM64 also needs specific image base
     set_image_base(uefildr 0x10000)
 endif()
 
@@ -136,7 +162,11 @@ if(ARCH STREQUAL "i386")
     target_link_libraries(uefildr mini_hal)
 endif()
 
-target_link_libraries(uefildr uefifreeldr_common cportlib blcmlib blrtl libcntpr)
+if(ARCH STREQUAL "arm64")
+    target_link_libraries(uefildr uefifreeldr_common libcntpr blrtl)
+else()
+    target_link_libraries(uefildr uefifreeldr_common cportlib blcmlib blrtl libcntpr)
+endif()
 
 # dynamic analysis switches
 if(STACK_PROTECTOR)

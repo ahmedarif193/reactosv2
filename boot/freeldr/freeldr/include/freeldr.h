@@ -37,7 +37,9 @@
 #ifdef __REACTOS__
 #include <ntddk.h>
 #include <ntifs.h>
+#if defined(_M_IX86) || defined(_M_AMD64)
 #include <ioaccess.h>
+#endif
 #include <arc/arc.h>
 #include <ketypes.h>
 #include <mmtypes.h>
@@ -82,7 +84,9 @@
 
 /* NTOS loader */
 #include <include/ntldr/winldr.h>
+#if defined(_M_IX86) || defined(_M_AMD64)
 #include <conversion.h> // More-or-less related to MM also...
+#endif
 #include <peloader.h>
 
 /* File system headers */
@@ -97,6 +101,9 @@
 #define printf TuiPrintf
 #include <ui.h>
 #include <ui/video.h>
+
+/* Global reboot routine (arch-provided) */
+VOID __cdecl Reboot(VOID);
 
 /* Arch specific includes */
 #include <arch/archwsup.h>
@@ -124,8 +131,16 @@
 #include <arch/powerpc/hardware.h>
 #elif defined(_M_ARM)
 #include <arch/arm/hardware.h>
+#elif defined(_M_ARM64)
+#include <arch/arm64/arm64.h>
 #elif defined(_M_MIPS)
 #include <arch/mips/arcbios.h>
+#endif
+
+#ifdef UEFIBOOT
+/* Boot device identifiers provided by UEFI disk layer */
+extern UCHAR FrldrBootDrive;
+extern ULONG FrldrBootPartition;
 #endif
 
 VOID __cdecl BootMain(IN PCCH CmdLine);

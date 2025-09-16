@@ -2,7 +2,7 @@
  * PROJECT:     FreeLoader
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 architecture definitions
- * COPYRIGHT:   Copyright 2024 ReactOS Team
+ * COPYRIGHT:   Copyright 2024 Ahmed ARIF (contact@eotics.com)
  */
 
 #pragma once
@@ -10,6 +10,9 @@
 /* ARM64 specific definitions */
 #define ARM64_PAGE_SIZE     4096
 #define ARM64_PAGE_SHIFT    12
+
+/* Function and type declarations not needed by assembler */
+#ifndef __ASM__
 
 /* Function prototypes */
 VOID Arm64MachInit(const char *CmdLine);
@@ -24,6 +27,7 @@ ULONG Arm64GetMemoryAttributes(ULONGLONG Address);
 VOID Arm64FlushTlbRange(ULONGLONG VirtualAddress, ULONGLONG Size);
 
 /* Exception and trap handlers */
+typedef struct _ARM64_CONTEXT ARM64_CONTEXT, *PARM64_CONTEXT;
 VOID Arm64HandleSynchronousException(PARM64_CONTEXT Context, ULONGLONG Esr, ULONGLONG FaultAddr, ULONGLONG PC);
 VOID Arm64HandleIrq(PARM64_CONTEXT Context);
 VOID Arm64HandleFiq(PARM64_CONTEXT Context);
@@ -60,6 +64,7 @@ VOID Arm64DataMemoryBarrier(VOID);
 VOID Arm64InstructionBarrier(VOID);
 VOID Arm64Breakpoint(VOID);
 VOID Arm64HaltProcessor(VOID);
+#endif /* __ASM__ */
 
 /* Enhanced cache operations from U-Boot */
 VOID __asm_dcache_level(ULONGLONG level, ULONGLONG invalidate_only);
@@ -77,6 +82,7 @@ VOID Arm64CompleteCacheMaintenance(VOID);
 VOID Arm64CacheMaintenanceForCode(ULONGLONG Start, ULONGLONG End);
 
 /* Generic Timer functions */
+#ifndef __ASM__
 VOID Arm64InitializeTimer(VOID);
 ULONGLONG Arm64GetTimerFrequency(VOID);
 ULONGLONG Arm64GetTimerCount(VOID);
@@ -92,11 +98,29 @@ VOID Arm64HandleTimerInterrupt(VOID);
 ULONG Arm64GetSystemTime(VOID);
 ULONGLONG Arm64ReadPerformanceCounter(VOID);
 ULONGLONG Arm64GetPerformanceFrequency(VOID);
+#endif /* __ASM__ */
+
+/* GIC (Generic Interrupt Controller) */
+#ifndef __ASM__
+VOID Arm64GicInitialize(VOID);
+ULONG Arm64GicGetVersion(VOID);
+ULONG Arm64GicAcknowledgeInterrupt(VOID);
+VOID Arm64GicEndOfInterrupt(ULONG IntId);
+VOID Arm64GicEnableInterrupt(ULONG IntId);
+VOID Arm64GicDisableInterrupt(ULONG IntId);
+VOID Arm64GicSetPriorityMask(UCHAR Priority);
+VOID Arm64GicSendSGI(UCHAR SgiId, UCHAR TargetList, BOOLEAN ToAll);
+
+/* IRQ dispatch table */
+typedef VOID (*ARM64_IRQ_HANDLER)(ULONG IntId, PARM64_CONTEXT Context);
+VOID Arm64RegisterIrqHandler(ULONG IntId, ARM64_IRQ_HANDLER Handler);
+#endif /* __ASM__ */
 
 /* ARM64 doesn't have real mode or BIOS calls */
 #define FNID_Reboot                 0x00
 
 /* ARM64 register context structure (simplified) */
+#ifndef __ASM__
 typedef struct _ARM64_CONTEXT
 {
     ULONGLONG X[31];  /* General purpose registers X0-X30 */
@@ -104,6 +128,7 @@ typedef struct _ARM64_CONTEXT
     ULONGLONG PC;     /* Program counter */
     ULONGLONG PSTATE; /* Processor state */
 } ARM64_CONTEXT, *PARM64_CONTEXT;
+#endif /* __ASM__ */
 
 /* ARM64 doesn't use segment selectors */
 #define ARM64_USER_CS       0

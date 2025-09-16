@@ -2,12 +2,14 @@
  * PROJECT:     FreeLoader
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 exception and trap handlers
- * COPYRIGHT:   Copyright 2024 ReactOS Team
+ * COPYRIGHT:   Copyright 2024 Ahmed ARIF (contact@eotics.com)
  */
 
 #include <freeldr.h>
 #include <arch/arm64/arm64.h>
 #include <debug.h>
+
+DBG_DEFAULT_CHANNEL(WARNING);
 
 /* Exception syndrome register bits */
 #define ESR_ELx_EC_SHIFT    26
@@ -188,6 +190,16 @@ VOID Arm64HandleSynchronousException(PARM64_CONTEXT Context, ULONGLONG Esr, ULON
     }
 }
 
+/* Simple IRQ dispatch table (GIC supports up to 1020 valid IDs) */
+#define ARM64_MAX_IRQS 1024
+static ARM64_IRQ_HANDLER Arm64IrqTable[ARM64_MAX_IRQS] = { 0 };
+
+VOID Arm64RegisterIrqHandler(ULONG IntId, ARM64_IRQ_HANDLER Handler)
+{
+    if (IntId < ARM64_MAX_IRQS)
+        Arm64IrqTable[IntId] = Handler;
+}
+
 VOID Arm64HandleIrq(PARM64_CONTEXT Context)
 {
     /* IRQ handling - for now just acknowledge and return */
@@ -196,18 +208,24 @@ VOID Arm64HandleIrq(PARM64_CONTEXT Context)
     /* 2. Identify interrupt source */
     /* 3. Call appropriate handler */
     /* 4. EOI (End of Interrupt) */
-    
-    TRACE("ARM64: IRQ received (not implemented)\n");
-    
-    /* For UEFI boot loader, we typically don't handle IRQs */
-    /* Just return and let UEFI handle it */
+
+    ULONG IntId = Arm64GicAcknowledgeInterrupt();
+    if (IntId != (ULONG)~0U)
+    {
+        if (IntId < ARM64_MAX_IRQS && Arm64IrqTable[IntId])
+        {
+            Arm64IrqTable[IntId](IntId, Context);
+        }
+        Arm64GicEndOfInterrupt(IntId);
+    }
+    TRACE("ARM64: IRQ received\n");
 }
 
 VOID Arm64HandleFiq(PARM64_CONTEXT Context)
 {
     /* FIQ handling - fast interrupt request */
     /* Usually used for critical/high-priority interrupts */
-    
+    /* FIQ dispatch logic can be added here if needed */
     TRACE("ARM64: FIQ received (not implemented)\n");
     
     /* FIQs are typically disabled in boot loader */
@@ -251,5 +269,7 @@ VOID Arm64InitializeExceptions(VOID)
     pmcr |= (1ULL << 2);   /* Clock divider */
     ARM64_WRITE_SYSREG(pmcr_el0, pmcr);
     
+    /* Initialize interrupt controller (stub) */
+    Arm64GicInitialize();
     TRACE("ARM64: Exception handling initialized\n");
 }

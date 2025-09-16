@@ -46,8 +46,9 @@ static const ULONG BaseArray[] = {0, 0x3F8, 0x2F8, 0x3E8, 0x2E8};
 static const ULONG BaseArray[] = {0, 0x800003F8};
 #elif defined(_M_MIPS)
 static const ULONG BaseArray[] = {0, 0x80006000, 0x80007000};
-#elif defined(_M_ARM)
-static const ULONG BaseArray[] = {0, 0xF1012000};
+#elif defined(_M_ARM) || defined(_M_ARM64)
+/* ARM/ARM64 UEFI: We don’t enumerate legacy UARTs here; leave empty. */
+static const ULONG BaseArray[] = {0};
 #else
 #error Unknown architecture
 #endif

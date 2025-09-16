@@ -2,21 +2,26 @@
  * PROJECT:     FreeLoader
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 entry point for FreeLoader
- * COPYRIGHT:   Copyright 2024 ReactOS Team
+ * COPYRIGHT:   Copyright 2024 Ahmed ARIF (contact@eotics.com)
  */
 
-#include <asm.inc>
+/* No x86 asm includes on ARM64 */
 
-EXTERN BootMain
-EXTERN FrldrBootDrive
-EXTERN FrldrBootPartition
-EXTERN Arm64InitializeExceptions
-EXTERN Arm64InitializeMMU
+.extern BootMain
+.extern FrldrBootDrive
+.extern FrldrBootPartition
+.extern Arm64InitializeExceptions
+.extern Arm64InitializeMMU
+/* Exception trampolines implemented in except.S */
+.extern Arm64SyncExceptionHandler
+.extern Arm64IrqHandler
+.extern Arm64FiqHandler
+.extern Arm64SerrorHandler
 
 .text
 
 /* ARM64 UEFI entry point */
-PUBLIC RealEntryPoint
+.globl RealEntryPoint
 RealEntryPoint:
     /* x0 = ImageHandle, x1 = SystemTable (UEFI parameters) */
     
@@ -70,7 +75,7 @@ stop:
     b stop
 
 /* ARM64 cache and MMU initialization */
-PUBLIC Arm64InitializeCache
+.globl Arm64InitializeCache
 Arm64InitializeCache:
     /* Ensure all previous instructions complete */
     dsb sy
@@ -132,115 +137,91 @@ cache_done:
     ret
 
 /* Setup ARM64 exception vectors */
-PUBLIC Arm64SetupExceptionVectors
+.globl Arm64SetupExceptionVectors
 Arm64SetupExceptionVectors:
-    /* Install exception vector table */
+    /* Install exception vector table for current EL */
     ldr x0, =arm64_exception_vectors
+    mrs x1, CurrentEL
+    lsr x1, x1, #2
+    cmp x1, #3
+    b.eq 1f
+    cmp x1, #2
+    b.eq 2f
+    /* EL1 */
     msr vbar_el1, x0
     isb
     ret
+1:  /* EL3 */
+    msr vbar_el3, x0
+    isb
+    ret
+2:  /* EL2 */
+    msr vbar_el2, x0
+    isb
+    ret
 
-PUBLIC Reboot
-Reboot:
-    /* Disable interrupts */
-    msr daifset, #0xF
-    
-    /* System reset via PSCI call if available, otherwise loop */
-    ldr x0, =0x84000009  /* PSCI SYSTEM_RESET */
-    hvc #0
-    
-    /* If PSCI fails, infinite loop */
-1:  wfi
-    b 1b
 
 /* ARM64 equivalent functions - not applicable but needed for compatibility */
-PUBLIC Relocator16Boot
+.globl Relocator16Boot
 Relocator16Boot:
     /* Not supported on ARM64 UEFI */
     b stop
 
-PUBLIC PxeCallApi
+.globl PxeCallApi
 PxeCallApi:
     /* PXE not supported on ARM64 for now */
     mov x0, #0
     ret
 
-PUBLIC CallRealMode
+.globl CallRealMode
 CallRealMode:
     /* Real mode not applicable on ARM64 */
     ret
 
 /* Exception vector table for ARM64 */
 .align 11
-PUBLIC arm64_exception_vectors
+.globl arm64_exception_vectors
 arm64_exception_vectors:
     /* Current EL with SP0 */
     .align 7
-    b arm64_sync_exception_sp0      /* Synchronous */
+    b Arm64SyncExceptionHandler     /* Synchronous */
     .align 7
-    b arm64_irq_exception_sp0       /* IRQ */
+    b Arm64IrqHandler               /* IRQ */
     .align 7
-    b arm64_fiq_exception_sp0       /* FIQ */
+    b Arm64FiqHandler               /* FIQ */
     .align 7
-    b arm64_serror_exception_sp0    /* SError */
-    
+    b Arm64SerrorHandler            /* SError */
+
     /* Current EL with SPx */
     .align 7
-    b arm64_sync_exception_spx      /* Synchronous */
+    b Arm64SyncExceptionHandler     /* Synchronous */
     .align 7
-    b arm64_irq_exception_spx       /* IRQ */
+    b Arm64IrqHandler               /* IRQ */
     .align 7
-    b arm64_fiq_exception_spx       /* FIQ */
+    b Arm64FiqHandler               /* FIQ */
     .align 7
-    b arm64_serror_exception_spx    /* SError */
-    
+    b Arm64SerrorHandler            /* SError */
+
     /* Lower EL using AArch64 */
     .align 7
-    b arm64_sync_exception_lower64  /* Synchronous */
+    b Arm64SyncExceptionHandler     /* Synchronous */
     .align 7
-    b arm64_irq_exception_lower64   /* IRQ */
+    b Arm64IrqHandler               /* IRQ */
     .align 7
-    b arm64_fiq_exception_lower64   /* FIQ */
+    b Arm64FiqHandler               /* FIQ */
     .align 7
-    b arm64_serror_exception_lower64 /* SError */
-    
+    b Arm64SerrorHandler            /* SError */
+
     /* Lower EL using AArch32 */
     .align 7
-    b arm64_sync_exception_lower32  /* Synchronous */
+    b Arm64SyncExceptionHandler     /* Synchronous */
     .align 7
-    b arm64_irq_exception_lower32   /* IRQ */
+    b Arm64IrqHandler               /* IRQ */
     .align 7
-    b arm64_fiq_exception_lower32   /* FIQ */
+    b Arm64FiqHandler               /* FIQ */
     .align 7
-    b arm64_serror_exception_lower32 /* SError */
+    b Arm64SerrorHandler            /* SError */
 
-/* Exception handlers - for now just hang */
-arm64_sync_exception_sp0:
-arm64_irq_exception_sp0:
-arm64_fiq_exception_sp0:
-arm64_serror_exception_sp0:
-arm64_sync_exception_spx:
-arm64_irq_exception_spx:
-arm64_fiq_exception_spx:
-arm64_serror_exception_spx:
-arm64_sync_exception_lower64:
-arm64_irq_exception_lower64:
-arm64_fiq_exception_lower64:
-arm64_serror_exception_lower64:
-arm64_sync_exception_lower32:
-arm64_irq_exception_lower32:
-arm64_fiq_exception_lower32:
-arm64_serror_exception_lower32:
-    /* For now, just loop on exceptions */
-1:  wfi
-    b 1b
+/* Boot drive and partition are defined in UEFI disk layer */
 
-PUBLIC FrldrBootDrive
-FrldrBootDrive:
-    .byte 0
-
-PUBLIC FrldrBootPartition
-FrldrBootPartition:
-    .long 0
-
-END
+/* End of file */

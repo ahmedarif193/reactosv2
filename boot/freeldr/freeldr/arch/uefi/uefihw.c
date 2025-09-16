@@ -162,6 +162,18 @@ FindBgrtTable(
 VOID
 DetectAcpiBios(PCONFIGURATION_COMPONENT_DATA SystemKey, ULONG *BusNumber)
 {
+#if defined(_M_ARM64)
+    /* On ARM64 UEFI, we don't expose legacy ACPI BIOS resource lists. */
+    PRSDP_DESCRIPTOR Rsdp = FindAcpiBios();
+    if (Rsdp)
+    {
+        AcpiPresent = TRUE;
+        TRACE("ACPI present (ARM64 UEFI)\n");
+    }
+    (void)SystemKey;
+    (void)BusNumber;
+    return;
+#else
     PCONFIGURATION_COMPONENT_DATA BiosKey;
     PCM_PARTIAL_RESOURCE_LIST PartialResourceList;
     PCM_PARTIAL_RESOURCE_DESCRIPTOR PartialDescriptor;
@@ -234,6 +246,7 @@ DetectAcpiBios(PCONFIGURATION_COMPONENT_DATA SystemKey, ULONG *BusNumber)
         /* Increment bus number */
         (*BusNumber)++;
     }
+#endif
 }
 
 // AGENT-MODIFIED: Function to get the stored BGRT table

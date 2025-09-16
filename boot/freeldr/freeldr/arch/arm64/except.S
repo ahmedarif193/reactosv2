@@ -2,10 +2,10 @@
  * PROJECT:     FreeLoader
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 exception and interrupt handlers
- * COPYRIGHT:   Copyright 2024 ReactOS Team
+ * COPYRIGHT:   Copyright 2024 Ahmed ARIF (contact@eotics.com)
  */
 
-#include <asm.inc>
+/* No x86 asm includes on ARM64 */
 
 /* ARM64 register context structure size */
 #define ARM64_CONTEXT_SIZE  (34 * 8)  /* 31 GPRs + SP + PC + PSTATE + alignment */
@@ -49,10 +49,10 @@
 #define ESR_ELx_EC_BKPT32       0x38
 #define ESR_ELx_EC_BRK64        0x3C
 
-EXTERN Arm64HandleSynchronousException
-EXTERN Arm64HandleIrq
-EXTERN Arm64HandleFiq
-EXTERN Arm64HandleSerror
+.extern Arm64HandleSynchronousException
+.extern Arm64HandleIrq
+.extern Arm64HandleFiq
+.extern Arm64HandleSerror
 
 .text
 
@@ -120,7 +120,7 @@ EXTERN Arm64HandleSerror
 .endm
 
 /* Common synchronous exception handler */
-PUBLIC Arm64SyncExceptionHandler
+.globl Arm64SyncExceptionHandler
 Arm64SyncExceptionHandler:
     SAVE_ARM64_CONTEXT
     
@@ -137,7 +137,7 @@ Arm64SyncExceptionHandler:
     eret
 
 /* Common IRQ handler */
-PUBLIC Arm64IrqHandler
+.globl Arm64IrqHandler
 Arm64IrqHandler:
     SAVE_ARM64_CONTEXT
     
@@ -149,7 +149,7 @@ Arm64IrqHandler:
     eret
 
 /* Common FIQ handler */
-PUBLIC Arm64FiqHandler
+.globl Arm64FiqHandler
 Arm64FiqHandler:
     SAVE_ARM64_CONTEXT
     
@@ -161,7 +161,7 @@ Arm64FiqHandler:
     eret
 
 /* Common SError handler */
-PUBLIC Arm64SerrorHandler
+.globl Arm64SerrorHandler
 Arm64SerrorHandler:
     SAVE_ARM64_CONTEXT
     
@@ -177,7 +177,7 @@ Arm64SerrorHandler:
     eret
 
 /* Install exception handlers into vector table */
-PUBLIC Arm64InstallExceptionHandlers
+.globl Arm64InstallExceptionHandlers
 Arm64InstallExceptionHandlers:
     /* Get vector table base */
     ldr x0, =arm64_exception_vectors
@@ -195,11 +195,11 @@ Arm64InstallExceptionHandlers:
     ret
 
 /* Debug: Print ARM64 register context */
-PUBLIC Arm64PrintContext
+.globl Arm64PrintContext
 Arm64PrintContext:
     /* x0 = pointer to ARM64_CONTEXT structure */
     /* This would print register values for debugging */
     /* Implementation depends on console output availability */
     ret
 
-END
+/* End of file */

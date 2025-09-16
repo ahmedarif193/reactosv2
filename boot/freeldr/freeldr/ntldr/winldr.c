@@ -1416,8 +1416,10 @@ LoadAndBootWindowsCommon(
     TRACE("Hello from paged mode, KiSystemStartup %p, LoaderBlockVA %p!\n",
           KiSystemStartup, LoaderBlockVA);
 
-    /* Zero KI_USER_SHARED_DATA page */
+    /* Zero KI_USER_SHARED_DATA page (x86/x64 only) */
+#if defined(_M_IX86) || defined(_M_AMD64)
     RtlZeroMemory((PVOID)KI_USER_SHARED_DATA, MM_PAGE_SIZE);
+#endif
 
     WinLdrpDumpMemoryDescriptors(LoaderBlockVA);
     WinLdrpDumpBootDriver(LoaderBlockVA);

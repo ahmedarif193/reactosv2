@@ -63,6 +63,15 @@ elseif(ARCH STREQUAL "arm")
     list(APPEND ROSLOAD_ASM_SOURCE
         arch/arm/boot.S)
 
+elseif(ARCH STREQUAL "arm64")
+
+    list(APPEND ROSLOAD_SOURCE
+        ntldr/arch/arm64/winldr.c
+        arch/arm64/macharm64.c)
+
+    list(APPEND ROSLOAD_ASM_SOURCE
+        arch/arm64/entry.S)
+
 else()
     #TBD
 endif()

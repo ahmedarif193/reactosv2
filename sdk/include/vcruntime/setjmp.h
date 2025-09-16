@@ -150,7 +150,7 @@ extern "C" {
     unsigned long long D[8]; // D8-D15 VFP/NEON regs
   } _JUMP_BUFFER;
 
-#elif defined(_M_ARM64)
+#elif defined(_M_ARM64) || defined(__aarch64__) || defined(__arm64__) || defined(_ARM64_)
 
 #define _JBLEN 24
 #define _JBTYPE unsigned __int64

@@ -109,7 +109,22 @@ fi
 [ -z "$BUILD_TYPE" ] && BUILD_TYPE="RelWithDebInfo"
 [ -z "$CMAKE_GENERATOR" ] && CMAKE_GENERATOR="Ninja"
 [ -z "$ENABLE_CCACHE" ] && ENABLE_CCACHE="OFF"
-[ -z "$TOOLCHAIN_PATH" ] && TOOLCHAIN_PATH="/home/ahmed/x-tools/x86_64-w64-mingw32/bin"
+if [ -z "$TOOLCHAIN_PATH" ]; then
+    case "$ARCH" in
+        amd64|x86_64)
+            TOOLCHAIN_PATH="/home/ahmed/x-tools/x86_64-w64-mingw32/bin"
+            ;;
+        arm64|aarch64)
+            TOOLCHAIN_PATH="/home/ahmed/x-tools/aarch64-w64-mingw32/bin"
+            ;;
+        i386|x86)
+            TOOLCHAIN_PATH="/home/ahmed/x-tools/i686-w64-mingw32/bin"
+            ;;
+        *)
+            TOOLCHAIN_PATH="/home/ahmed/x-tools/i686-w64-mingw32/bin"
+            ;;
+    esac
+fi
 
 # Auto-detect toolchain prefix based on architecture if not specified
 if [ -z "$TOOLCHAIN_PREFIX" ]; then

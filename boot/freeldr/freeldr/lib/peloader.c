@@ -910,13 +910,17 @@ PeLdrLoadImageEx(
     SectionHeader = IMAGE_FIRST_SECTION(NtHeaders);
 
     /* Try to allocate this memory; if it fails, allocate somewhere else */
+#if defined(_M_IX86) || defined(_M_AMD64)
     PhysicalBase = MmAllocateMemoryAtAddress(NtHeaders->OptionalHeader.SizeOfImage,
                        (PVOID)((ULONG_PTR)NtHeaders->OptionalHeader.ImageBase & (KSEG0_BASE - 1)),
                        MemoryType);
+#else
+    PhysicalBase = NULL;
+#endif
 
     if (PhysicalBase == NULL)
     {
-        /* Don't fail, allocate again at any other "low" place */
+        /* Don't fail, allocate again at any other place */
         PhysicalBase = MmAllocateMemoryWithType(NtHeaders->OptionalHeader.SizeOfImage, MemoryType);
 
         if (PhysicalBase == NULL)

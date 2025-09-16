@@ -33,6 +33,7 @@ static BOOLEAN TimestampInitialized = FALSE;
 static ULONGLONG
 GetMicrosecondsSinceBoot(VOID)
 {
+/* Use a high-resolution monotonically increasing counter per-arch */
 #if defined(_M_IX86) || defined(_M_AMD64)
     ULONGLONG CurrentTimestamp;
     ULONGLONG ElapsedCycles;
@@ -54,6 +55,27 @@ GetMicrosecondsSinceBoot(VOID)
     Microseconds = ElapsedCycles / 2000;
     
     return Microseconds;
+#elif defined(_M_ARM64)
+    ULONGLONG Current;
+    ULONGLONG Freq;
+
+    /* Initialize on first call */
+    if (!TimestampInitialized)
+    {
+        /* Prime the timer and establish 0 as start */
+        (void)Arm64GetTimerCount();
+        TimestampInitialized = TRUE;
+        BootStartTimestamp = 0;
+        return 0;
+    }
+
+    Current = Arm64GetTimerCount();
+    Freq = Arm64GetTimerFreq();
+    if (Freq == 0)
+        return 0;
+
+    /* Convert ticks to microseconds: (ticks * 1_000_000) / freq */
+    return (Current * 1000000ULL) / Freq;
 #else
     // Fallback for non-x86 architectures: use relative time in seconds
     ULONG Seconds;
@@ -257,10 +279,12 @@ VOID DebugPrintChar(UCHAR Character)
 
         Rs232PortPutByte(Character);
     }
+    #if defined(_M_IX86) || defined(_M_AMD64)
     if (DebugPort & BOCHS)
     {
         WRITE_PORT_UCHAR((PUCHAR)BOCHS_OUTPUT_PORT, Character);
     }
+    #endif
     if (DebugPort & SCREEN)
     {
         MachConsPutChar(Character);

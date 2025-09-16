@@ -20,7 +20,12 @@
 
 #include <freeldr.h>
 
+#if defined(_M_AMD64) || defined(_M_ARM64)
+/* Use the 64-bit user VA limit; on Windows this is 0x00007FFFFFFEFFFF. */
+PVOID MmHighestUserAddress = (PVOID)0x00007FFFFFFEFFFFULL;
+#else
 PVOID MmHighestUserAddress = (PVOID)MI_HIGHEST_USER_ADDRESS;
+#endif
 
 #if DBG
 VOID FASTCALL
@@ -83,4 +88,3 @@ RtlImageNtHeaderEx(
 {
     return RtlpImageNtHeaderEx(Flags, Base, Size, OutHeaders);
 }
-

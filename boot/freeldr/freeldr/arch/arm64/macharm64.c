@@ -2,12 +2,13 @@
  * PROJECT:     FreeLoader
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 machine initialization for UEFI
- * COPYRIGHT:   Copyright 2024 ReactOS Team
+ * COPYRIGHT:   Copyright 2024 Ahmed ARIF (contact@eotics.com)
  */
 
 #include <freeldr.h>
 #include <disk.h>
 #include <arch/arm64/arm64.h>
+#include <uefildr.h>
 #include <arch/uefi/machuefi.h>
 #include <debug.h>
 DBG_DEFAULT_CHANNEL(HWDETECT);
@@ -219,10 +220,9 @@ static VOID Arm64DetectCpuFeatures(VOID)
 static VOID Arm64DetectCacheInfo(VOID)
 {
     ULONGLONG ctr, ccsidr, clidr;
-    ULONG level;
     
-    /* Read cache type register */
-    ctr = ARM64_READ_SYSREG(ctr_el0);
+    /* Read cache type register (not strictly needed here) */
+    ctr = ARM64_READ_SYSREG(ctr_el0); (void)ctr;
     
     /* Get cache line size using U-Boot method */
     Arm64CacheLineSize = (ULONG)Arm64GetCacheLineSize();
@@ -345,13 +345,15 @@ static PCONFIGURATION_COMPONENT_DATA Arm64HwDetect(const CHAR* Options)
         
         /* Find or create processor node */
         FldrCreateComponentKey(RootNode,
-                              ProcessorClass,
-                              CentralProcessor,
-                              0,
-                              0,
-                              0,
-                              "ARM64 Processor",
-                              &ProcessorKey);
+                               ProcessorClass,
+                               CentralProcessor,
+                               0,
+                               0,
+                               0,
+                               "ARM64 Processor",
+                               NULL,
+                               0,
+                               &ProcessorKey);
         
         /* Add processor identifier */
         RtlStringCbPrintfA(Buffer, sizeof(Buffer),
@@ -360,33 +362,37 @@ static PCONFIGURATION_COMPONENT_DATA Arm64HwDetect(const CHAR* Options)
                            Arm64ProcessorType,
                            Arm64ProcessorRevision);
         
-        FldrSetIdentifier(ProcessorKey, Buffer);
+        /* Identifier is already set by FldrCreateComponentKey; optional extra info is skipped */
         
         /* Add cache information if available */
         if (FirstLevelDcacheSize > 0)
         {
             PCONFIGURATION_COMPONENT_DATA CacheKey;
             FldrCreateComponentKey(ProcessorKey,
-                                  CacheClass,
-                                  PrimaryDcache,
-                                  0,
-                                  0,
-                                  FirstLevelDcacheSize,
-                                  "L1 Data Cache",
-                                  &CacheKey);
+                                   CacheClass,
+                                   PrimaryDcache,
+                                   0,
+                                   0,
+                                   FirstLevelDcacheSize,
+                                   "L1 Data Cache",
+                                   NULL,
+                                   0,
+                                   &CacheKey);
         }
         
         if (FirstLevelIcacheSize > 0)
         {
             PCONFIGURATION_COMPONENT_DATA CacheKey;
             FldrCreateComponentKey(ProcessorKey,
-                                  CacheClass,
-                                  PrimaryIcache,
-                                  0,
-                                  0,
-                                  FirstLevelIcacheSize,
-                                  "L1 Instruction Cache",
-                                  &CacheKey);
+                                   CacheClass,
+                                   PrimaryIcache,
+                                   0,
+                                   0,
+                                   FirstLevelIcacheSize,
+                                   "L1 Instruction Cache",
+                                   NULL,
+                                   0,
+                                   &CacheKey);
         }
     }
     
@@ -405,13 +411,6 @@ static VOID Arm64HwIdle(VOID)
     
     /* ARM64 wait for interrupt instruction as backup */
     __asm__ volatile ("wfi" ::: "memory");
-}
-
-/* ARM64 MMU initialization stub */
-VOID Arm64InitializeMMU(VOID)
-{
-    /* This will be implemented when full MMU support is added */
-    TRACE("ARM64: MMU initialization deferred to kernel\n");
 }
 
 /* Simple disk reading for UEFI */
@@ -494,7 +493,7 @@ static BOOLEAN Arm64InitializeBootDevices(VOID)
     return UefiInitializeBootDevices();
 }
 
-static ULONG Arm64GetTime(VOID)
+static TIMEINFO* Arm64GetTime(VOID)
 {
     /* Use UEFI time services */
     return UefiGetTime();

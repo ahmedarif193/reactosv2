@@ -2,10 +2,10 @@
  * PROJECT:     FreeLoader
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 cache operations - Enhanced with U-Boot optimizations
- * COPYRIGHT:   Copyright 2024 ReactOS Team
+ * COPYRIGHT:   Copyright 2024 Ahmed ARIF (contact@eotics.com)
  */
 
-#include <asm.inc>
+/* No x86 asm includes on ARM64 */
 
 .text
 
@@ -19,7 +19,7 @@
  * x16: FEAT_CCIDX support flag
  * x2~x9: clobbered
  */
-PUBLIC __asm_dcache_level
+.globl __asm_dcache_level
 __asm_dcache_level:
     lsl x12, x0, #1
     msr csselr_el1, x12         /* select cache level */
@@ -70,7 +70,7 @@ loop_way:
  *
  * flush or invalidate all data cache by SET/WAY.
  */
-PUBLIC __asm_dcache_all
+.globl __asm_dcache_all
 __asm_dcache_all:
     mov x1, x0
     dsb sy
@@ -113,7 +113,7 @@ finished:
  *
  * invalidate all instruction caches to PoU
  */
-PUBLIC __asm_invalidate_icache_all
+.globl __asm_invalidate_icache_all
 __asm_invalidate_icache_all:
     ic iallu                    /* invalidate all instruction caches to PoU */
     dsb sy
@@ -125,24 +125,24 @@ __asm_invalidate_icache_all:
  */
 
 /* Flush all data caches */
-PUBLIC Arm64FlushDataCacheAll
+.globl Arm64FlushDataCacheAll
 Arm64FlushDataCacheAll:
     mov x0, #0                  /* clean & invalidate */
     b __asm_dcache_all
 
 /* Invalidate all data caches */
-PUBLIC Arm64InvalidateDataCacheAll
+.globl Arm64InvalidateDataCacheAll
 Arm64InvalidateDataCacheAll:
     mov x0, #1                  /* invalidate only */
     b __asm_dcache_all
 
 /* Invalidate all instruction caches */
-PUBLIC Arm64InvalidateInstructionCacheAll
+.globl Arm64InvalidateInstructionCacheAll
 Arm64InvalidateInstructionCacheAll:
     b __asm_invalidate_icache_all
 
 /* Clean data cache range by address */
-PUBLIC Arm64CleanDataCacheRange
+.globl Arm64CleanDataCacheRange
 Arm64CleanDataCacheRange:
     /* x0 = start address, x1 = end address */
     mrs x3, ctr_el0
@@ -162,7 +162,7 @@ Arm64CleanDataCacheRange:
     ret
 
 /* Invalidate data cache range by address */
-PUBLIC Arm64InvalidateDataCacheRange
+.globl Arm64InvalidateDataCacheRange
 Arm64InvalidateDataCacheRange:
     /* x0 = start address, x1 = end address */
     mrs x3, ctr_el0
@@ -182,7 +182,7 @@ Arm64InvalidateDataCacheRange:
     ret
 
 /* Clean and invalidate data cache range by address */
-PUBLIC Arm64CleanInvalidateDataCacheRange
+.globl Arm64CleanInvalidateDataCacheRange
 Arm64CleanInvalidateDataCacheRange:
     /* x0 = start address, x1 = end address */
     mrs x3, ctr_el0
@@ -202,7 +202,7 @@ Arm64CleanInvalidateDataCacheRange:
     ret
 
 /* Clean data cache to Point of Coherency */
-PUBLIC Arm64CleanDataCacheToPoC
+.globl Arm64CleanDataCacheToPoC
 Arm64CleanDataCacheToPoC:
     /* x0 = address */
     dc cvac, x0
@@ -210,7 +210,7 @@ Arm64CleanDataCacheToPoC:
     ret
 
 /* Clean data cache to Point of Unification */
-PUBLIC Arm64CleanDataCacheToPoU
+.globl Arm64CleanDataCacheToPoU
 Arm64CleanDataCacheToPoU:
     /* x0 = address */
     dc cvau, x0
@@ -218,7 +218,7 @@ Arm64CleanDataCacheToPoU:
     ret
 
 /* Invalidate instruction cache range */
-PUBLIC Arm64InvalidateInstructionCacheRange
+.globl Arm64InvalidateInstructionCacheRange
 Arm64InvalidateInstructionCacheRange:
     /* x0 = start address, x1 = end address */
     mrs x3, ctr_el0
@@ -239,14 +239,14 @@ Arm64InvalidateInstructionCacheRange:
     ret
 
 /* Zero cache line */
-PUBLIC Arm64ZeroCacheLine
+.globl Arm64ZeroCacheLine
 Arm64ZeroCacheLine:
     /* x0 = address */
     dc zva, x0                  /* Zero cache line */
     ret
 
 /* Get cache line size */
-PUBLIC Arm64GetCacheLineSize
+.globl Arm64GetCacheLineSize
 Arm64GetCacheLineSize:
     mrs x0, ctr_el0
     ubfx x1, x0, #16, #4        /* Extract DminLine (data cache) */
@@ -258,7 +258,7 @@ Arm64GetCacheLineSize:
     ret
 
 /* Complete cache maintenance - U-Boot style */
-PUBLIC Arm64CompleteCacheMaintenance
+.globl Arm64CompleteCacheMaintenance
 Arm64CompleteCacheMaintenance:
     stp x29, x30, [sp, #-16]!
     
@@ -276,7 +276,7 @@ Arm64CompleteCacheMaintenance:
     ret
 
 /* Cache maintenance for code regions */
-PUBLIC Arm64CacheMaintenanceForCode
+.globl Arm64CacheMaintenanceForCode
 Arm64CacheMaintenanceForCode:
     /* x0 = start address, x1 = end address */
     stp x29, x30, [sp, #-16]!
@@ -290,4 +290,4 @@ Arm64CacheMaintenanceForCode:
     ldp x29, x30, [sp], #16
     ret
 
-END
+/* End of file */

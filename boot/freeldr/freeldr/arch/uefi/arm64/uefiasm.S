@@ -2,20 +2,20 @@
  * PROJECT:     FreeLoader UEFI Support
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 assembly UEFI escape helper functions
- * COPYRIGHT:   Copyright 2024 ReactOS Team
+ * COPYRIGHT:   Copyright 2024 Ahmed ARIF (contact@eotics.com)
  */
 
-#include <asm.inc>
+/* No x86 asm includes on ARM64 */
 
-EXTERN UefiServiceStack
-EXTERN BasicStack
-EXTERN ExecuteLoaderCleanly
-EXTERN UefiExitBootServices
+.extern UefiServiceStack
+.extern BasicStack
+.extern ExecuteLoaderCleanly
+.extern UefiExitBootServices
 
 .text
 
 // void _exituefi(VOID)
-PUBLIC _exituefi
+.globl _exituefi
 _exituefi:
     /* Save callee-saved registers */
     stp x29, x30, [sp, #-16]!
@@ -61,7 +61,7 @@ _exituefi:
     ret
 
 // void _changestack(VOID)
-PUBLIC _changestack
+.globl _changestack
 _changestack:
     /* Save old stack pointer as first argument */
     mov x0, sp
@@ -71,12 +71,15 @@ _changestack:
     ldr x1, [x1]
     mov sp, x1
     
-    /* Align stack to 16 bytes */
-    and sp, sp, #0xFFFFFFFFFFFFFFF0
+    /* Align stack to 16 bytes: copy sp to x2, mask low bits, then update sp */
+    mov x2, sp
+    bic x2, x2, #15
+    mov sp, x2
+    mov sp, x2
     
     /* Call ExecuteLoaderCleanly with old stack as parameter */
     bl ExecuteLoaderCleanly
     
     ret
 
-END
+/* End of file */

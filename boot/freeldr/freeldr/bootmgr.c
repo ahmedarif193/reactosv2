@@ -30,6 +30,7 @@ typedef VOID
 (*EDIT_OS_ENTRY_PROC)(
     _Inout_ OperatingSystemItem* OperatingSystem);
 
+#if !defined(_M_ARM64)
 static VOID
 EditCustomBootReactOSSetup(
     _Inout_ OperatingSystemItem* OperatingSystem)
@@ -43,6 +44,7 @@ EditCustomBootNTOS(
 {
     EditCustomBootReactOS(OperatingSystem, FALSE);
 }
+#endif
 
 typedef struct _OS_LOADING_METHOD
 {
@@ -51,6 +53,21 @@ typedef struct _OS_LOADING_METHOD
     ARC_ENTRY_POINT OsLoader;
 } OS_LOADING_METHOD, *POS_LOADING_METHOD;
 
+#if defined(_M_ARM64)
+ARC_STATUS LoadAndBootEfiApp(IN ULONG Argc, IN PCHAR Argv[], IN PCHAR Envp[]);
+#if defined(HAS_OPTION_MENU_EDIT_CMDLINE) || 1  /* Always enable for ARM64 */
+VOID EditCustomBootEfiApp(_Inout_ OperatingSystemItem* OperatingSystem);
+#endif
+static const OS_LOADING_METHOD OSLoadingMethods[] = {
+    {"EfiApplication",
+#if defined(HAS_OPTION_MENU_EDIT_CMDLINE) || 1  /* Always enable for ARM64 */
+     EditCustomBootEfiApp,
+#else
+     NULL,
+#endif
+     LoadAndBootEfiApp},
+};
+#else
 static const OS_LOADING_METHOD
 OSLoadingMethods[] =
 {
@@ -65,10 +82,13 @@ OSLoadingMethods[] =
 #ifdef _M_IX86
     {"WindowsNT40" , EditCustomBootNTOS, LoadAndBootWindows},
 #endif
+#if defined(_M_IX86) || defined(_M_AMD64)
     {"Windows"     , EditCustomBootNTOS, LoadAndBootWindows},
     {"Windows2003" , EditCustomBootNTOS, LoadAndBootWindows},
     {"WindowsVista", EditCustomBootNTOS, LoadAndBootWindows},
+#endif
 };
+#endif
 
 /* FUNCTIONS ******************************************************************/
 

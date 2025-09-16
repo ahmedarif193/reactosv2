@@ -31,6 +31,8 @@ else()
             set(MINGW_TOOLCHAIN_PREFIX "x86_64-w64-mingw32-" CACHE STRING "MinGW Toolchain Prefix")
         elseif(ARCH STREQUAL "arm")
             set(MINGW_TOOLCHAIN_PREFIX "arm-mingw32ce-" CACHE STRING "MinGW Toolchain Prefix")
+        elseif(ARCH STREQUAL "arm64")
+            set(MINGW_TOOLCHAIN_PREFIX "aarch64-w64-mingw32-" CACHE STRING "MinGW Toolchain Prefix")
         endif()
     endif()
 
@@ -89,7 +91,7 @@ endif()
 
 # FIXME: On amd64, archives lose their index when re-archived by AR after being created by dlltool
 # Use regular archives instead of thin archives (T flag) and always run ranlib
-if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "i386")
+if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "i386" OR ARCH STREQUAL "arm64")
     # For amd64, we MUST run ranlib after every archive operation
     set(CMAKE_C_CREATE_STATIC_LIBRARY 
         "<CMAKE_AR> cr <TARGET> <LINK_FLAGS> <OBJECTS>"

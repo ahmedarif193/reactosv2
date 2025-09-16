@@ -2,13 +2,16 @@
  * PROJECT:     FreeLoader
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 Windows NT Loader Functions
- * COPYRIGHT:   Copyright 2024 ReactOS Team
+ * COPYRIGHT:   Copyright 2024 Ahmed ARIF (contact@eotics.com)
  */
 
 #include <freeldr.h>
 #include <ntldr/winldr.h>
+#include <peloader.h>
 #include <debug.h>
 DBG_DEFAULT_CHANNEL(WINDOWS);
+
+static BOOLEAN Arm64InitializeMemory(IN PLOADER_PARAMETER_BLOCK LoaderBlock);
 
 BOOLEAN
 MempSetupPaging(
@@ -136,17 +139,20 @@ WinLdrLoadModule(
     ULONG *ModuleSize,
     TYPE_OF_MEMORY MemoryType)
 {
-    /* Load a module for ARM64 */
+    PVOID ImageBase = NULL;
+    PLDR_DATA_TABLE_ENTRY Dte = NULL;
+
     TRACE("ARM64: Loading module %s\n", ModuleName);
-    
-    /* For ARM64 UEFI, module loading is handled by the generic PE loader */
-    /* which should already support ARM64 PE files */
-    /* This function is typically not called directly - the generic */
-    /* PE loader in the main code handles ARM64 PE files */
-    
-    /* If a specific ARM64 module loader is needed, implement it here */
-    WARN("ARM64: Module loading not implemented - using generic PE loader\n");
-    
+
+    if (PeLdrLoadBootImage(ModuleName, ModuleName, &ImageBase, &Dte))
+    {
+        if (ModuleSize && Dte) *ModuleSize = Dte->SizeOfImage;
+        TRACE("ARM64: Loaded module %s at %p size %lu\n", ModuleName, ImageBase,
+              Dte ? Dte->SizeOfImage : 0);
+        return ImageBase;
+    }
+
+    ERR("ARM64: Failed to load module %s\n", ModuleName);
     if (ModuleSize) *ModuleSize = 0;
     return NULL;
 }
@@ -157,26 +163,9 @@ WinLdrCheckForLoadedDll(
     IN PCH DllName,
     OUT PLDR_DATA_TABLE_ENTRY *LoadedEntry)
 {
-    /* Check if a DLL is already loaded */
-    PLIST_ENTRY NextEntry;
-    PLDR_DATA_TABLE_ENTRY DataTableEntry;
-    
-    NextEntry = LoaderBlock->LoadOrderListHead.Flink;
-    while (NextEntry != &LoaderBlock->LoadOrderListHead)
-    {
-        DataTableEntry = CONTAINING_RECORD(NextEntry,
-                                         LDR_DATA_TABLE_ENTRY,
-                                         InLoadOrderLinks);
-        
-        /* Compare the base DLL name */
-        if (_stricmp(DataTableEntry->BaseDllName.Buffer, DllName) == 0)
-        {
-            *LoadedEntry = DataTableEntry;
-            return TRUE;
-        }
-        
-        NextEntry = NextEntry->Flink;
-    }
-    
-    return FALSE;
+    /* Delegate to the generic PE loader helper which performs
+       proper case-insensitive comparison against UNICODE names. */
+    return PeLdrCheckForLoadedDll(&LoaderBlock->LoadOrderListHead,
+                                  DllName,
+                                  LoadedEntry);
 }

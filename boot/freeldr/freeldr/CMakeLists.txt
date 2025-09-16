@@ -41,7 +41,7 @@ list(APPEND FREELDR_BOOTLIB_SOURCE
     lib/peloader.c
     lib/cache/blocklist.c
     lib/cache/cache.c
-    lib/comm/rs232.c
+    $<$<NOT:$<STREQUAL:${ARCH},arm64>>:lib/comm/rs232.c>
     ## add KD support
     lib/fs/btrfs.c
     lib/fs/ext.c
@@ -105,6 +105,21 @@ elseif(ARCH STREQUAL "arm")
     list(APPEND FREELDR_NTLDR_SOURCE
         ntldr/arch/arm/winldr.c)
 
+elseif(ARCH STREQUAL "arm64")
+    # ARM64 always runs under UEFI; keep common ASM minimal here.
+    list(APPEND FREELDR_COMMON_ASM_SOURCE
+        arch/arm64/misc.S)
+        # arch/arm64/linux.S
+
+    # Keep only minimal arch sources here; the UEFI build (uefi.cmake)
+    # will add full ARM64 sources for the UEFI image.
+    list(APPEND FREELDR_ARC_SOURCE
+        arch/arm64/macharm64.c)
+
+    # Minimal NTLDR sources for ARM64 UEFI only
+    set(FREELDR_NTLDR_SOURCE
+        ntldr/arch/arm64/winldr.c)
+
 else()
     #TBD
 endif()
@@ -114,7 +129,7 @@ list(APPEND FREELDR_BASE_SOURCE
     ntldr/ntldropts.c # Should be in rosload, but is currently needed by machpc.c, etc.
     lib/rtl/libsupp.c)
 
-if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
+if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
     # Must be included together with disk/scsiport.c
     list(APPEND FREELDR_BASE_SOURCE
         ${CMAKE_CURRENT_BINARY_DIR}/freeldr.def)

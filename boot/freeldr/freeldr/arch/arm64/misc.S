@@ -2,76 +2,73 @@
  * PROJECT:     FreeLoader
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 miscellaneous assembly functions
- * COPYRIGHT:   Copyright 2024 ReactOS Team
+ * COPYRIGHT:   Copyright 2024 Ahmed ARIF (contact@eotics.com)
  */
 
-#include <asm.inc>
+/* No x86 asm includes on ARM64 */
 
 .text
 
 /* ARM64 specific utility functions */
 
 /* Legacy compatibility functions - not applicable to ARM64 but needed for linking */
-PUBLIC DiskStopFloppyMotor
+.globl DiskStopFloppyMotor
 DiskStopFloppyMotor:
     /* No floppy motor to stop on ARM64 */
     ret
 
-PUBLIC Int386
+.globl Int386
 Int386:
     /* Return failure - no BIOS interrupts on ARM64 */
     mov w0, #1  /* Return non-zero to indicate failure */
     ret
 
-PUBLIC EnableA20
+.globl EnableA20
 EnableA20:
     /* A20 line not relevant on ARM64 */
     ret
 
-PUBLIC ChainLoadBiosBootSectorCode
+.globl ChainLoadBiosBootSectorCode
 ChainLoadBiosBootSectorCode:
     /* Chainloading not supported on ARM64 UEFI */
     ret
 
-PUBLIC Relocator16Boot
-Relocator16Boot:
-    /* 16-bit mode not available on ARM64 */
-    ret
+/* Relocator16Boot stub is defined in entry.S for ARM64 */
 
 /* ARM64 specific memory and system functions */
 
 /* Enable/Disable interrupts */
-PUBLIC Arm64EnableInterrupts
+.globl Arm64EnableInterrupts
 Arm64EnableInterrupts:
     msr daifclr, #0xF  /* Clear DAIF flags (enable all interrupts) */
     ret
 
-PUBLIC Arm64DisableInterrupts
+.globl Arm64DisableInterrupts
 Arm64DisableInterrupts:
     msr daifset, #0xF  /* Set DAIF flags (disable all interrupts) */
     ret
 
 /* Get/Set interrupt state */
-PUBLIC Arm64SaveAndDisableInterrupts
+.globl Arm64SaveAndDisableInterrupts
 Arm64SaveAndDisableInterrupts:
     mrs x0, daif       /* Read current interrupt state */
     msr daifset, #0xF  /* Disable interrupts */
     ret                /* Return previous state in x0 */
 
-PUBLIC Arm64RestoreInterrupts
+.globl Arm64RestoreInterrupts
 Arm64RestoreInterrupts:
     msr daif, x0       /* Restore interrupt state from x0 */
     ret
 
 /* Advanced ARM64 cache operations */
-PUBLIC FlushDataCache
+.globl FlushDataCache
 FlushDataCache:
     /* x0 = address to flush */
     dc civac, x0       /* Clean and invalidate by address */
     dsb sy
     ret
 
-PUBLIC InvalidateInstructionCache
+.globl InvalidateInstructionCache
 InvalidateInstructionCache:
     /* Invalidate entire instruction cache */
     ic iallu
@@ -79,7 +76,7 @@ InvalidateInstructionCache:
     isb
     ret
 
-PUBLIC FlushTlb
+.globl FlushTlb
 FlushTlb:
     /* Flush entire TLB */
     tlbi vmalle1
@@ -88,65 +85,10 @@ FlushTlb:
     ret
 
 /* Comprehensive cache management */
-PUBLIC Arm64CleanDataCacheRange
-Arm64CleanDataCacheRange:
-    /* x0 = start address, x1 = end address */
-    mrs x3, ctr_el0
-    ubfx x3, x3, #16, #4    /* Extract DminLine */
-    mov x2, #4
-    lsl x2, x2, x3          /* Cache line size */
-    
-    sub x3, x2, #1
-    bic x0, x0, x3          /* Align start to cache line */
-    
-1:  dc cvac, x0            /* Clean by address */
-    add x0, x0, x2
-    cmp x0, x1
-    b.lo 1b
-    
-    dsb sy
-    ret
-
-PUBLIC Arm64InvalidateDataCacheRange
-Arm64InvalidateDataCacheRange:
-    /* x0 = start address, x1 = end address */
-    mrs x3, ctr_el0
-    ubfx x3, x3, #16, #4    /* Extract DminLine */
-    mov x2, #4
-    lsl x2, x2, x3          /* Cache line size */
-    
-    sub x3, x2, #1
-    bic x0, x0, x3          /* Align start to cache line */
-    
-1:  dc ivac, x0            /* Invalidate by address */
-    add x0, x0, x2
-    cmp x0, x1
-    b.lo 1b
-    
-    dsb sy
-    ret
-
-PUBLIC Arm64CleanInvalidateDataCacheRange
-Arm64CleanInvalidateDataCacheRange:
-    /* x0 = start address, x1 = end address */
-    mrs x3, ctr_el0
-    ubfx x3, x3, #16, #4    /* Extract DminLine */
-    mov x2, #4
-    lsl x2, x2, x3          /* Cache line size */
-    
-    sub x3, x2, #1
-    bic x0, x0, x3          /* Align start to cache line */
-    
-1:  dc civac, x0           /* Clean and invalidate by address */
-    add x0, x0, x2
-    cmp x0, x1
-    b.lo 1b
-    
-    dsb sy
-    ret
+/* Cache range helpers are provided by cache_v2.S */
 
 /* TLB operations by address */
-PUBLIC Arm64InvalidateTlbByAddress
+.globl Arm64InvalidateTlbByAddress
 Arm64InvalidateTlbByAddress:
     /* x0 = virtual address */
     lsr x0, x0, #12         /* Convert to page number */
@@ -156,104 +98,104 @@ Arm64InvalidateTlbByAddress:
     ret
 
 /* Stack and register operations */
-PUBLIC GetStackPointer
+.globl GetStackPointer
 GetStackPointer:
     mov x0, sp
     ret
 
-PUBLIC SetStackPointer
+.globl SetStackPointer
 SetStackPointer:
     mov sp, x0
     ret
 
-PUBLIC GetFramePointer
+.globl GetFramePointer
 GetFramePointer:
     mov x0, x29
     ret
 
 /* ARM64 system register access */
-PUBLIC GetCpuId
+.globl GetCpuId
 GetCpuId:
     /* Read MIDR_EL1 register */
     mrs x0, midr_el1
     ret
 
-PUBLIC GetCurrentEL
+.globl GetCurrentEL
 GetCurrentEL:
     /* Get current exception level */
     mrs x0, CurrentEL
     lsr x0, x0, #2          /* Extract EL field */
     ret
 
-PUBLIC Arm64GetSctlr
+.globl Arm64GetSctlr
 Arm64GetSctlr:
     mrs x0, sctlr_el1
     ret
 
-PUBLIC Arm64SetSctlr
+.globl Arm64SetSctlr
 Arm64SetSctlr:
     msr sctlr_el1, x0
     isb
     ret
 
-PUBLIC Arm64GetTcr
+.globl Arm64GetTcr
 Arm64GetTcr:
     mrs x0, tcr_el1
     ret
 
-PUBLIC Arm64SetTcr
+.globl Arm64SetTcr
 Arm64SetTcr:
     msr tcr_el1, x0
     isb
     ret
 
-PUBLIC Arm64GetMair
+.globl Arm64GetMair
 Arm64GetMair:
     mrs x0, mair_el1
     ret
 
-PUBLIC Arm64SetMair
+.globl Arm64SetMair
 Arm64SetMair:
     msr mair_el1, x0
     isb
     ret
 
-PUBLIC Arm64GetTtbr0
+.globl Arm64GetTtbr0
 Arm64GetTtbr0:
     mrs x0, ttbr0_el1
     ret
 
-PUBLIC Arm64SetTtbr0
+.globl Arm64SetTtbr0
 Arm64SetTtbr0:
     msr ttbr0_el1, x0
     isb
     ret
 
-PUBLIC Arm64GetTtbr1
+.globl Arm64GetTtbr1
 Arm64GetTtbr1:
     mrs x0, ttbr1_el1
     ret
 
-PUBLIC Arm64SetTtbr1
+.globl Arm64SetTtbr1
 Arm64SetTtbr1:
     msr ttbr1_el1, x0
     isb
     ret
 
 /* Performance monitoring */
-PUBLIC Arm64GetCycleCount
+.globl Arm64GetCycleCount
 Arm64GetCycleCount:
     mrs x0, pmccntr_el0
     ret
 
-PUBLIC Arm64ResetCycleCount
+.globl Arm64ResetCycleCount
 Arm64ResetCycleCount:
     mov x0, #0
     msr pmccntr_el0, x0
     ret
 
 /* Atomic operations */
-PUBLIC Arm64AtomicIncrement
+.globl Arm64AtomicIncrement
 Arm64AtomicIncrement:
     /* x0 = pointer to value */
 1:  ldxr w1, [x0]          /* Load exclusive */
@@ -263,7 +205,7 @@ Arm64AtomicIncrement:
     mov w0, w1             /* Return new value */
     ret
 
-PUBLIC Arm64AtomicDecrement
+.globl Arm64AtomicDecrement
 Arm64AtomicDecrement:
     /* x0 = pointer to value */
 1:  ldxr w1, [x0]          /* Load exclusive */
@@ -273,7 +215,7 @@ Arm64AtomicDecrement:
     mov w0, w1             /* Return new value */
     ret
 
-PUBLIC Arm64AtomicCompareExchange
+.globl Arm64AtomicCompareExchange
 Arm64AtomicCompareExchange:
     /* x0 = pointer, x1 = compare value, x2 = exchange value */
 1:  ldxr w3, [x0]          /* Load exclusive */
@@ -288,30 +230,30 @@ Arm64AtomicCompareExchange:
     ret
 
 /* Memory barriers */
-PUBLIC Arm64MemoryBarrier
+.globl Arm64MemoryBarrier
 Arm64MemoryBarrier:
     dsb sy
     ret
 
-PUBLIC Arm64DataMemoryBarrier
+.globl Arm64DataMemoryBarrier
 Arm64DataMemoryBarrier:
     dmb sy
     ret
 
-PUBLIC Arm64InstructionBarrier
+.globl Arm64InstructionBarrier
 Arm64InstructionBarrier:
     isb
     ret
 
 /* Debugging support */
-PUBLIC Arm64Breakpoint
+.globl Arm64Breakpoint
 Arm64Breakpoint:
     brk #0
     ret
 
-PUBLIC Arm64HaltProcessor
+.globl Arm64HaltProcessor
 Arm64HaltProcessor:
 1:  wfi
     b 1b
 
-END
+/* End of file */

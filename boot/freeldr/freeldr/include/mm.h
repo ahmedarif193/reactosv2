@@ -78,6 +78,21 @@ typedef struct _FREELDR_MEMORY_DESCRIPTOR
 
 #endif
 
+/* ARM64 */
+#if defined(_M_ARM64) || defined(_ARM64_) || defined(__aarch64__)
+
+#define MM_PAGE_SIZE    4096
+#define MM_PAGE_MASK    0xFFF
+#define MM_PAGE_SHIFT    12
+/* Conservative limits for loader environment */
+#define MM_MAX_PAGE        0x1FFFFF
+#define MM_MAX_PAGE_LOADER 0x3FFFF
+
+#define MM_SIZE_TO_PAGES(a)  \
+    ( ((a) >> MM_PAGE_SHIFT) + ((a) & MM_PAGE_MASK ? 1 : 0) )
+
+#endif /* ARM64 */
+
 // HEAP and STACK size
 #define HEAP_PAGES    0x400
 #define STACK_PAGES    0x00

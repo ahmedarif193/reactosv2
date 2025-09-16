@@ -22,7 +22,7 @@
 // Make sure the sizes are correct
 _STATIC_ASSERT(sizeof(float) == 4);
 _STATIC_ASSERT(sizeof(double) == 8);
-_STATIC_ASSERT(sizeof(long double) == 8);
+_STATIC_ASSERT(sizeof(long double) == 8 || sizeof(long double) == 16);
 
 _Check_return_ int __cdecl _isnanf(_In_ float _X);
 #define isnan _isnan
