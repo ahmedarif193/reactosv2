@@ -7,9 +7,10 @@ set -e
 
 # Configuration
 BUILD_DIR="./output-MinGW-arm64"
+WORK_DIR="$BUILD_DIR/qemu_freeldr_test"
 UEFI_LOADER="${BUILD_DIR}/boot/freeldr/freeldr/uefildr.efi"
 FREELDR_INI="./boot/freeldr/FREELDR.INI"
-ESP_IMG="qemu-test/esp.img"
+ESP_IMG="$WORK_DIR/esp.img"
 ESP_SIZE=64  # MB
 
 # Colors
@@ -38,20 +39,20 @@ fi
 
 # Create directory structure
 echo "Setting up ESP structure..."
-rm -rf qemu-test/esp
-mkdir -p qemu-test/esp/EFI/BOOT
+rm -rf $WORK_DIR/esp
+mkdir -p $WORK_DIR/esp/EFI/BOOT
 
 # Copy UEFI loader to standard ARM64 boot location
 echo "Copying UEFI loader..."
-cp "$UEFI_LOADER" qemu-test/esp/EFI/BOOT/BOOTAA64.EFI
+cp "$UEFI_LOADER" $WORK_DIR/esp/EFI/BOOT/BOOTAA64.EFI
 
 # Copy freeldr.ini if it exists
 if [ -f "$FREELDR_INI" ]; then
     echo "Copying freeldr.ini..."
-    cp "$FREELDR_INI" qemu-test/esp/freeldr.ini
+    cp "$FREELDR_INI" $WORK_DIR/esp/freeldr.ini
 else
     echo "Creating default freeldr.ini..."
-    cat > qemu-test/esp/freeldr.ini << 'EOF'
+    cat > $WORK_DIR/esp/freeldr.ini << 'EOF'
 [FREELOADER]
 MessageBox=ReactOS ARM64 UEFI Loader\nPress any key to continue...
 DefaultOS=TestMenu
@@ -96,8 +97,8 @@ if command -v mcopy &> /dev/null; then
     echo "Using mtools to copy files..."
     mmd -i "$ESP_IMG" ::/EFI 2>/dev/null || true
     mmd -i "$ESP_IMG" ::/EFI/BOOT 2>/dev/null || true
-    mcopy -i "$ESP_IMG" qemu-test/esp/EFI/BOOT/BOOTAA64.EFI ::/EFI/BOOT/
-    mcopy -i "$ESP_IMG" qemu-test/esp/freeldr.ini ::/
+    mcopy -i "$ESP_IMG" $WORK_DIR/esp/EFI/BOOT/BOOTAA64.EFI ::/EFI/BOOT/
+    mcopy -i "$ESP_IMG" $WORK_DIR/esp/freeldr.ini ::/
 
     echo -e "\n${GREEN}ESP image created successfully!${NC}"
     echo "Contents:"
@@ -106,7 +107,7 @@ else
     echo "mtools not found. Using mount (requires sudo)..."
     sudo mkdir -p /mnt/esp
     sudo mount -o loop "$ESP_IMG" /mnt/esp
-    sudo cp -r qemu-test/esp/* /mnt/esp/
+    sudo cp -r $WORK_DIR/esp/* /mnt/esp/
     sudo umount /mnt/esp
     echo -e "\n${GREEN}ESP image created successfully!${NC}"
 fi
