@@ -279,20 +279,27 @@ ComputePartitionIndex(IN EFI_HANDLE PartHandle, OUT ULONG* OutIndex, OUT EFI_HAN
     UINTN n = BuildPartitionIndexForDisk(parent, &list);
     if (n == 0 || !list) return FALSE;
 
+    BOOLEAN found = FALSE;
     ULONG idx = 1;
     for (UINTN i = 0; i < n; ++i)
     {
         if (list[i].Handle == PartHandle)
         {
             idx = (ULONG)(i + 1);
+            found = TRUE;
             break;
         }
     }
 
+    FrLdrHeapFree(list, TAG_PARTLIST);
+
+    /* Only return TRUE if we actually found the partition */
+    if (!found)
+        return FALSE;
+
     if (OutIndex) *OutIndex = idx;
     if (OutParentDisk) *OutParentDisk = parent;
 
-    FrLdrHeapFree(list, TAG_PARTLIST);
     return TRUE;
 }
 
@@ -309,13 +316,22 @@ ReadDiskSignature(
     EFI_STATUS Status;
     UINT8*     Buffer;
     ULONG      i, Sum = 0;
+    UINTN      BufferSize;
 
     *Signature = 0;
     *CheckSum  = 0;
 
+    /* Ensure we read at least 512 bytes for MBR */
+    BufferSize = BlockIo->Media->BlockSize;
+    if (BufferSize < 512)
+    {
+        /* Block size too small for MBR reading */
+        return FALSE;
+    }
+
     Status = GlobalSystemTable->BootServices->AllocatePool(
         EfiLoaderData,
-        BlockIo->Media->BlockSize,
+        BufferSize,
         (VOID**)&Buffer);
     if (EFI_ERROR(Status)) return FALSE;
 
@@ -323,7 +339,7 @@ ReadDiskSignature(
         BlockIo,
         BlockIo->Media->MediaId,
         0,
-        BlockIo->Media->BlockSize,
+        BufferSize,
         Buffer);
     if (EFI_ERROR(Status))
     {
@@ -334,6 +350,7 @@ ReadDiskSignature(
     MASTER_BOOT_RECORD* Mbr = (MASTER_BOOT_RECORD*)Buffer;
     if (Mbr->MasterBootRecordMagic == 0xAA55)
     {
+        /* Always compute checksum on exactly 512 bytes */
         for (i = 0; i < (512u / (UINT32)sizeof(ULONG)); i++)
             Sum += ((PULONG)Buffer)[i];
         *CheckSum = ~Sum + 1;
@@ -357,7 +374,8 @@ MapToRdiskIndex(IN EFI_HANDLE DiskHandle)
     for (ULONG i = 0; i < (ULONG)UefiDiskHandleCount; ++i)
         if (UefiDiskHandles[i].Handle == DiskHandle)
             return i;
-    return 0; /* fallback */
+    /* Return sentinel value on failure instead of 0 */
+    return (ULONG)-1;
 }
 
 static ULONG
@@ -366,7 +384,8 @@ MapToCdromIndex(IN EFI_HANDLE CdHandle)
     for (ULONG i = 0; i < UefiCdromCount; ++i)
         if (UefiCdromHandles[i] == CdHandle)
             return i;
-    return 0; /* fallback */
+    /* Return sentinel value on failure instead of 0 */
+    return (ULONG)-1;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -416,25 +435,15 @@ UefiEnumerateArcDisks(VOID)
             continue;
 
         /* Identify if this is the boot handle (keep removable if it's the boot device) */
-        BOOLEAN isBootHandle = FALSE;
-        EFI_LOADED_IMAGE_PROTOCOL* LoadedImage = NULL;
-        if (!EFI_ERROR(GlobalSystemTable->BootServices->HandleProtocol(
-                GlobalImageHandle, &gEfiLoadedImageProtocolGuid, (VOID**)&LoadedImage)) &&
-            LoadedImage && LoadedImage->DeviceHandle == H)
-        {
-            isBootHandle = TRUE;
-        }
-
         BOOLEAN isPartition = BlockIo->Media->LogicalPartition;
-        BOOLEAN isRemovable = BlockIo->Media->RemovableMedia;
         BOOLEAN isCd        = IsCdRomHandle(H);
 
         /* We only index physical handles (non-partitions) */
         if (isPartition) continue;
 
-        /* Skip non-boot removable devices except CD-ROMs (we still index CDs) */
-        if (isRemovable && !isBootHandle && !isCd)
-            continue;
+        /* Include ALL removable media - USB drives are commonly used as installation media.
+         * We used to skip non-boot removable devices, but this breaks USB installation scenarios.
+         * CD-ROMs are handled separately below. */
 
         if (isCd)
         {
@@ -520,8 +529,8 @@ UefiInitializeArcDisks(PLOADER_PARAMETER_BLOCK LoaderBlock)
 
         RtlCopyMemory(ArcDiskSig, ArcDiskInfo, sizeof(ARC_DISK_SIGNATURE_EX));
 
-        /* ReactOS free loader expects VA pointers; ArcName is inline in the copied struct */
-        ArcDiskSig->DiskSignature.ArcName = PaToVa(ArcDiskSig->ArcName);
+        /* ArcName is already a VA pointer (inline in the struct), just point to it */
+        ArcDiskSig->DiskSignature.ArcName = ArcDiskSig->ArcName;
 
         InsertTailList(&LoaderBlock->ArcDiskInformation->DiskSignatureListHead,
                        &ArcDiskSig->DiskSignature.ListEntry);
@@ -572,6 +581,12 @@ UefiGetBootPartitionInfo(
     if (IsCdRomHandle(BootHandle))
     {
         ULONG cdIndex = MapToCdromIndex(BootHandle);
+        if (cdIndex == (ULONG)-1)
+        {
+            /* CD-ROM not found in our index, use 0 as fallback */
+            cdIndex = 0;
+            TRACE("UEFI ARC: Warning: CD-ROM handle not found in index, using cdrom(0)\n");
+        }
         if (RDiskNumber)     *RDiskNumber     = cdIndex;
         if (PartitionNumber) *PartitionNumber = 0;
         if (BootDevice)
@@ -585,6 +600,12 @@ UefiGetBootPartitionInfo(
     {
         /* Booted from whole disk: find rdisk, assume partition 1 */
         ULONG rdisk = MapToRdiskIndex(BootHandle);
+        if (rdisk == (ULONG)-1)
+        {
+            /* Disk not found in our index, use 0 as fallback */
+            rdisk = 0;
+            TRACE("UEFI ARC: Warning: Boot disk handle not found in index, using rdisk(0)\n");
+        }
         if (RDiskNumber)     *RDiskNumber     = rdisk;
         if (PartitionNumber) *PartitionNumber = 1;
         if (BootDevice)
@@ -600,7 +621,22 @@ UefiGetBootPartitionInfo(
         EFI_HANDLE parentDisk = NULL;
 
         if (ComputePartitionIndex(BootHandle, &part, &parentDisk))
+        {
             rdisk = MapToRdiskIndex(parentDisk);
+            if (rdisk == (ULONG)-1)
+            {
+                /* Parent disk not found in our index, use 0 as fallback */
+                rdisk = 0;
+                TRACE("UEFI ARC: Warning: Parent disk not found in index, using rdisk(0)\n");
+            }
+        }
+        else
+        {
+            /* Failed to compute partition index, use defaults */
+            TRACE("UEFI ARC: Warning: Failed to compute partition index, using defaults\n");
+            rdisk = 0;
+            part = 1;
+        }
 
         if (RDiskNumber)     *RDiskNumber     = rdisk;
         if (PartitionNumber) *PartitionNumber = part;

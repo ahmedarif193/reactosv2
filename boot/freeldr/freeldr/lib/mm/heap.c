@@ -94,7 +94,7 @@ FrLdrHeapCreate(
 
     /* Calculate what's left to process */
     Remaining = (MaximumSize - sizeof(HEAP)) / sizeof(HEAP_BLOCK);
-    TRACE("Remaining = %ld\n", Remaining);
+    //TODO uncomment this TRACE("Remaining = %ld\n", Remaining);
 
     /* Substract 2 for the terminating entry (header + free entry) */
     Remaining -= 2;
@@ -119,7 +119,7 @@ FrLdrHeapCreate(
         PreviousSize = Block->Size;
         Block = Block + Block->Size + 1;
 
-        TRACE("Remaining = %ld\n", Remaining);
+        //TODO uncomment this TRACE("Remaining = %ld\n", Remaining);
     }
 
     /* Now finish with a terminating block */
@@ -411,8 +411,7 @@ FrLdrHeapAllocateEx(
 #if DBG && (defined(_M_IX86) || defined(_M_AMD64))
         Heap->AllocationTime += (__rdtsc() - Time);
 #endif
-        TRACE("HeapAllocate(%p, %ld, %.4s) -> return %p\n",
-              HeapHandle, ByteSize, &Tag, Block->Data);
+        //TODO uncomment this TRACE("HeapAllocate(%p, %ld, %.4s) -> return %p\n", HeapHandle, ByteSize, &Tag, Block->Data);
 
         /* HACK: zero out the allocation */
         RtlZeroMemory(Block->Data, Block->Size * sizeof(HEAP_BLOCK));

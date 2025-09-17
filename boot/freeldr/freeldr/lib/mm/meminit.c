@@ -129,11 +129,11 @@ AddMemoryDescriptor(
 {
     ULONG Index, DescriptCount;
     PFN_NUMBER EndPage;
-    TRACE("AddMemoryDescriptor(0x%Ix, 0x%Ix, %u)\n",
-          BasePage, PageCount, MemoryType);
-#ifdef _ARM64_
-    TRACE("ARM64: AddMemoryDescriptor entry - List=%p, MaxCount=%lu\n", List, MaxCount);
-#endif
+    //TODO uncomment TRACE("AddMemoryDescriptor(0x%Ix, 0x%Ix, %u)\n", BasePage, PageCount, MemoryType);
+          //TODO uncomment this
+// #ifdef _ARM64_
+//     TRACE("ARM64: AddMemoryDescriptor entry - List=%p, MaxCount=%lu\n", List, MaxCount);
+// #endif
 
     EndPage = BasePage + PageCount;
 
@@ -344,9 +344,9 @@ MmCheckFreeldrImageFile(VOID)
 
 BOOLEAN MmInitializeMemoryManager(VOID)
 {
-#if DBG
-    const FREELDR_MEMORY_DESCRIPTOR* MemoryDescriptor = NULL;
-#endif
+// #if DBG
+//     const FREELDR_MEMORY_DESCRIPTOR* MemoryDescriptor = NULL;
+// #endif
 
     TRACE("Initializing Memory Manager.\n");
 
@@ -378,14 +378,15 @@ BOOLEAN MmInitializeMemoryManager(VOID)
 
 #if DBG
     // Dump the system memory map
-    TRACE("System Memory Map (Base Address, Length, Type):\n");
-    while ((MemoryDescriptor = ArcGetMemoryDescriptor(MemoryDescriptor)) != NULL)
-    {
-        TRACE("%x\t %x\t %s\n",
-            MemoryDescriptor->BasePage * MM_PAGE_SIZE,
-            MemoryDescriptor->PageCount * MM_PAGE_SIZE,
-            MmGetSystemMemoryMapTypeString(MemoryDescriptor->MemoryType));
-    }
+    //TODO uncomment this
+    // TRACE("System Memory Map (Base Address, Length, Type):\n");
+    // while ((MemoryDescriptor = ArcGetMemoryDescriptor(MemoryDescriptor)) != NULL)
+    // {
+    //     TRACE("%x\t %x\t %s\n",
+    //         MemoryDescriptor->BasePage * MM_PAGE_SIZE,
+    //         MemoryDescriptor->PageCount * MM_PAGE_SIZE,
+    //         MmGetSystemMemoryMapTypeString(MemoryDescriptor->MemoryType));
+    // }
 #endif
 
     // Find address for the page lookup table
@@ -596,10 +597,10 @@ VOID MmInitPageLookupTable(PVOID PageLookupTable, PFN_NUMBER TotalPageCount)
 
         if (MemoryDescriptor->BasePage + MemoryDescriptor->PageCount <= TotalPageCount)
         {
-            TRACE("Marking pages 0x%lx-0x%lx as type %s\n",
-                  MemoryDescriptor->BasePage,
-                  MemoryDescriptor->BasePage + MemoryDescriptor->PageCount,
-                  MmGetSystemMemoryMapTypeString(MemoryDescriptor->MemoryType));
+            //TODO runcomment this TRACE("Marking pages 0x%lx-0x%lx as type %s\n",
+            //       MemoryDescriptor->BasePage,
+            //       MemoryDescriptor->BasePage + MemoryDescriptor->PageCount,
+            //       MmGetSystemMemoryMapTypeString(MemoryDescriptor->MemoryType));
             MmMarkPagesInLookupTable(PageLookupTable,
                                      MemoryDescriptor->BasePage,
                                      MemoryDescriptor->PageCount,
@@ -623,11 +624,11 @@ VOID MmMarkPagesInLookupTable(PVOID PageLookupTable, PFN_NUMBER StartPage, PFN_N
 {
     PPAGE_LOOKUP_TABLE_ITEM RealPageLookupTable = (PPAGE_LOOKUP_TABLE_ITEM)PageLookupTable;
     PFN_NUMBER Index;
-    TRACE("MmMarkPagesInLookupTable()\n");
-#ifdef _ARM64_
-    TRACE("ARM64: PageLookupTable=%p, StartPage=0x%lx, PageCount=0x%lx, PageAllocated=%d\n",
-          PageLookupTable, StartPage, PageCount, PageAllocated);
-#endif
+    //TODO uncomment this TRACE("MmMarkPagesInLookupTable()\n");
+// #ifdef _ARM64_
+//     TRACE("ARM64: PageLookupTable=%p, StartPage=0x%lx, PageCount=0x%lx, PageAllocated=%d\n",
+//           PageLookupTable, StartPage, PageCount, PageAllocated);
+// #endif
 
     /* Validate the range */
     if ((StartPage < MmLowestPhysicalPage) ||
@@ -650,7 +651,7 @@ VOID MmMarkPagesInLookupTable(PVOID PageLookupTable, PFN_NUMBER StartPage, PFN_N
         RealPageLookupTable[Index].PageAllocated = PageAllocated;
         RealPageLookupTable[Index].PageAllocationLength = (PageAllocated != LoaderFree) ? 1 : 0;
     }
-    TRACE("MmMarkPagesInLookupTable() Done\n");
+    //TODO remove this comment TRACE("MmMarkPagesInLookupTable() Done\n");
 }
 
 VOID MmAllocatePagesInLookupTable(PVOID PageLookupTable, PFN_NUMBER StartPage, PFN_NUMBER PageCount, TYPE_OF_MEMORY MemoryType)

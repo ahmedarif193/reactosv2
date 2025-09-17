@@ -202,10 +202,11 @@ UefiSetMemory(
     const PFN_NUMBER BasePage  = (PFN_NUMBER)(BaseAddress >> EFI_PAGE_SHIFT);
     const PFN_NUMBER PageCount = (PFN_NUMBER)SizeInPages;
 
-#ifdef _ARM64_
-    TRACE("ARM64: UefiSetMemory: BaseAddress=0x%lx, BasePage=0x%lx, PageCount=0x%lx, Type=%u\n",
-          BaseAddress, BasePage, PageCount, MemoryType);
-#endif
+//TODO uncomment this
+// #ifdef _ARM64_
+//     TRACE("ARM64: UefiSetMemory: BaseAddress=0x%lx, BasePage=0x%lx, PageCount=0x%lx, Type=%u\n",
+//           BaseAddress, BasePage, PageCount, MemoryType);
+// #endif
 
     FreeldrDescCount = AddMemoryDescriptor(MemoryMap,
                                            UNUSED_MAX_DESCRIPTOR_COUNT,
@@ -213,9 +214,9 @@ UefiSetMemory(
                                            PageCount,
                                            MemoryType);
 
-#ifdef _ARM64_
-    TRACE("ARM64: UefiSetMemory: After AddMemoryDescriptor, FreeldrDescCount=%u\n", FreeldrDescCount);
-#endif
+//TODO uncomment this #ifdef _ARM64_
+//     TRACE("ARM64: UefiSetMemory: After AddMemoryDescriptor, FreeldrDescCount=%u\n", FreeldrDescCount);
+// #endif
 }
 
 static
@@ -321,10 +322,11 @@ UefiMemGetMemoryMap(_Out_ ULONG *MemoryMapSize /* OUT: number of entries */)
     for (UINT32 i = 0; i < EntryCount; ++i)
     {
         TYPE_OF_MEMORY Mt = UefiConvertToFreeldrDesc(MapEntry->Type);
-#ifdef _ARM64_
-        TRACE("ARM64: Entry %u: Type=%u->%u, PhysStart=0x%llx, Pages=0x%llx\n",
-              i, MapEntry->Type, Mt, MapEntry->PhysicalStart, MapEntry->NumberOfPages);
-#endif
+//TODO uncomment this
+// #ifdef _ARM64_
+//         TRACE("ARM64: Entry %u: Type=%u->%u, PhysStart=0x%llx, Pages=0x%llx\n",
+//               i, MapEntry->Type, Mt, MapEntry->PhysicalStart, MapEntry->NumberOfPages);
+// #endif
 
         /* Avoid pinning all Conventional memory on ARM64: some firmwares hang. */
 #ifndef _ARM64_
@@ -356,17 +358,18 @@ UefiMemGetMemoryMap(_Out_ ULONG *MemoryMapSize /* OUT: number of entries */)
         /* We do not expose LoaderReserve to our allocator. */
         if (Mt != LoaderReserve)
         {
-#ifdef _ARM64_
-            TRACE("ARM64: Adding memory descriptor: Base=0x%llx, Pages=0x%llx, Type=%u\n",
-                  MapEntry->PhysicalStart, MapEntry->NumberOfPages, Mt);
-#endif
+//TODO uncomment this
+// #ifdef _ARM64_
+//             TRACE("ARM64: Adding memory descriptor: Base=0x%llx, Pages=0x%llx, Type=%u\n",
+//                   MapEntry->PhysicalStart, MapEntry->NumberOfPages, Mt);
+// #endif
             UefiSetMemory(FreeldrMem,
                           (ULONG_PTR)MapEntry->PhysicalStart,
                           (PFN_COUNT)MapEntry->NumberOfPages,
                           Mt);
-#ifdef _ARM64_
-            TRACE("ARM64: Memory descriptor added, FreeldrDescCount=%u\n", FreeldrDescCount);
-#endif
+//TODO uncomment this #ifdef _ARM64_
+//             TRACE("ARM64: Memory descriptor added, FreeldrDescCount=%u\n", FreeldrDescCount);
+// #endif
         }
 #ifdef _ARM64_
         else

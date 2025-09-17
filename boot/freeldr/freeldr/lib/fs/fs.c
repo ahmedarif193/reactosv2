@@ -279,16 +279,21 @@ ARC_STATUS ArcOpen(CHAR* Path, OPENMODE OpenMode, ULONG* FileId)
         }
     }
 
-    /* Cleanup */
+    /* Check if device was found */
+    if (pEntry == &DeviceListHead)
+    {
+        /* Log error with the original device name before cleanup */
+        ERR("Device '%.*s' not found in device list!\n", (int)Length, DeviceName);
+        /* Cleanup */
+        if (DeviceName != Path)
+            FrLdrTempFree(DeviceName, TAG_DEVICE_NAME);
+        return ENODEV;
+    }
+
+    /* Cleanup normalized name after successful device lookup */
     if (DeviceName != Path)
         FrLdrTempFree(DeviceName, TAG_DEVICE_NAME);
     DeviceName = NULL;
-
-    if (pEntry == &DeviceListHead)
-    {
-        ERR("Device '%.*s' not found in device list!\n", (int)Length, DeviceName);
-        return ENODEV;
-    }
 
     /* OK, device found. Is it already opened? */
     if (pDevice->ReferenceCount == 0)
@@ -311,18 +316,21 @@ ARC_STATUS ArcOpen(CHAR* Path, OPENMODE OpenMode, ULONG* FileId)
             FileData[DeviceId].FuncTable = NULL;
             return Status;
         }
+        /* CRITICAL FIX: Set the DeviceId AFTER successful open */
         pDevice->DeviceId = DeviceId;
+        /* CRITICAL FIX: Increment ReferenceCount for successfully opened device */
+        pDevice->ReferenceCount++;
+        FileData[DeviceId].ReferenceCount++;
     }
     else
     {
         /* Reuse the existing entry */
         DeviceId = pDevice->DeviceId;
         ASSERT(FileData[DeviceId].FuncTable == pDevice->FuncTable);
+        /* Done, increase the device reference count for existing device */
+        pDevice->ReferenceCount++;
+        FileData[DeviceId].ReferenceCount++;
     }
-
-    /* Done, increase the device reference count */
-    pDevice->ReferenceCount++;
-    FileData[DeviceId].ReferenceCount++;
 
     if (!*FileName)
     {
@@ -395,7 +403,10 @@ Done:
     /* If we failed somewhere, dereference the device as well */
     if (Status != ESUCCESS)
     {
-        // ArcClose(DeviceId);
+        /* We need to clean up the device reference counts that were incremented
+         * at lines 322-323 (new device) or 331-332 (existing device).
+         * We only reach here if we're trying to open a file (not raw device),
+         * and the file operation failed. */
         if (--FileData[DeviceId].ReferenceCount == 0)
         {
             (void)FileData[DeviceId].FuncTable->Close(DeviceId);
@@ -449,19 +460,31 @@ ArcClose(
         FileData[FileId].Specific = NULL;
     }
 
-    /* Check whether this file actually references a device */
-    pDevice = FsGetDeviceById(FileId);
-    if (pDevice)
-    {
-        /* It does, dereference it */
-        ASSERT(pDevice->ReferenceCount > 0);
-        if (--pDevice->ReferenceCount == 0)
-            pDevice->DeviceId = INVALID_FILE_ID;
-    }
-
-    /* And dereference the parent device too, if there is one */
+    /*
+     * If this handle references a parent device (i.e. it's a filesystem file),
+     * then just close the parent device handle. That will take care of
+     * decrementing the device reference count and closing the low-level
+     * device slot when appropriate.
+     *
+     * Otherwise, this handle is itself a raw device: find its DEVICE entry
+     * using its own FileId and decrement the device reference count here.
+     */
     if (IS_VALID_FILEID(DeviceId))
+    {
+        /* Propagate the close to the parent device handle */
         ArcClose(DeviceId);
+    }
+    else
+    {
+        /* Raw device: lookup by this FileId and dereference the device */
+        pDevice = FsGetDeviceById(FileId);
+        if (pDevice)
+        {
+            ASSERT(pDevice->ReferenceCount > 0);
+            if (--pDevice->ReferenceCount == 0)
+                pDevice->DeviceId = INVALID_FILE_ID;
+        }
+    }
 
     return ESUCCESS;
 }
@@ -624,19 +647,56 @@ FsRegisterDevice(
     _In_ const DEVVTBL* FuncTable)
 {
     DEVICE* pNewEntry;
+    PLIST_ENTRY pEntry;
     SIZE_T Length;
+    PCHAR NormalizedName;
 
     TRACE("FsRegisterDevice(%s)\n", DeviceName);
 
-    Length = strlen(DeviceName) + 1;
-    pNewEntry = FrLdrTempAlloc(sizeof(DEVICE) + Length, TAG_DEVICE);
-    if (!pNewEntry)
+    /* Normalize the device name first */
+    Length = strlen(DeviceName);
+    NormalizedName = NormalizeArcDeviceName(DeviceName, &Length);
+    if (!NormalizedName)
+    {
+        ERR("Failed to normalize device name: %s\n", DeviceName);
         return;
+    }
+
+    /* Check if device with this normalized name already exists */
+    for (pEntry = DeviceListHead.Flink;
+         pEntry != &DeviceListHead;
+         pEntry = pEntry->Flink)
+    {
+        DEVICE* pDevice = CONTAINING_RECORD(pEntry, DEVICE, ListEntry);
+        if (strcmp(pDevice->DeviceName, NormalizedName) == 0)
+        {
+            TRACE("Device %s already registered, skipping duplicate\n", NormalizedName);
+            /* Cleanup normalized name if it was allocated */
+            if (NormalizedName != DeviceName)
+                FrLdrTempFree(NormalizedName, TAG_DEVICE_NAME);
+            return;
+        }
+    }
+
+    /* Allocate new device entry */
+    pNewEntry = FrLdrTempAlloc(sizeof(DEVICE) + Length + 1, TAG_DEVICE);
+    if (!pNewEntry)
+    {
+        /* Cleanup normalized name if it was allocated */
+        if (NormalizedName != DeviceName)
+            FrLdrTempFree(NormalizedName, TAG_DEVICE_NAME);
+        return;
+    }
+
     pNewEntry->FuncTable = FuncTable;
     pNewEntry->DeviceId = INVALID_FILE_ID;
     pNewEntry->ReferenceCount = 0;
     pNewEntry->DeviceName = (PSTR)(pNewEntry + 1);
-    RtlCopyMemory(pNewEntry->DeviceName, DeviceName, Length);
+    RtlCopyMemory(pNewEntry->DeviceName, NormalizedName, Length + 1);
+
+    /* Cleanup normalized name if it was allocated */
+    if (NormalizedName != DeviceName)
+        FrLdrTempFree(NormalizedName, TAG_DEVICE_NAME);
 
     InsertHeadList(&DeviceListHead, &pNewEntry->ListEntry);
 }
