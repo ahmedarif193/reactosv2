@@ -13,6 +13,7 @@
 /* GLOBALS ********************************************************************/
 
 extern EFI_SYSTEM_TABLE* GlobalSystemTable;
+extern REACTOS_INTERNAL_BGCONTEXT framebufferData;
 static unsigned CurrentCursorX = 0;
 static unsigned CurrentCursorY = 0;
 static unsigned CurrentAttr = 0x0f;
@@ -20,6 +21,8 @@ static EFI_INPUT_KEY Key;
 static BOOLEAN ExtendedKey = FALSE;
 static char ExtendedScanCode = 0;
 static BOOLEAN KeyAvailable = FALSE;
+/* Simple flag to stop using any UEFI services after ExitBootServices */
+BOOLEAN UefiBootServicesActive = TRUE;
 
 /* AGENT-MODIFIED: Add GOP console function declarations */
 extern VOID UefiGopConsolePutChar(CHAR Ch);
@@ -27,17 +30,33 @@ extern VOID UefiGopConsolePutString(PCSTR String);
 extern VOID UefiGopConsoleClear(VOID);
 extern VOID UefiGopConsoleSetCursor(UINT32 X, UINT32 Y);
 extern BOOLEAN UefiGopConsoleIsInitialized(VOID);
-static BOOLEAN BootServicesExited = FALSE;
 
 /* FUNCTIONS ******************************************************************/
 
 VOID
 UefiConsPutChar(int c)
 {
-    /* AGENT-MODIFIED: Use GOP console if boot services have been exited */
-    if (BootServicesExited && UefiGopConsoleIsInitialized())
+    /* Do not print anything after ExitBootServices */
+    if (!UefiBootServicesActive)
+        return;
+
+    /* Early fallback to firmware text console until GOP framebuffer is ready. */
+    if (framebufferData.BaseAddress == 0 && GlobalSystemTable && GlobalSystemTable->ConOut)
     {
-        UefiGopConsolePutChar((CHAR)c);
+        CHAR16 WideChar[2];
+        WideChar[1] = 0;
+        if (c == '\n')
+        {
+            WideChar[0] = L'\r';
+            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, WideChar);
+            WideChar[0] = L'\n';
+            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, WideChar);
+        }
+        else
+        {
+            WideChar[0] = (CHAR16)c;
+            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, WideChar);
+        }
         return;
     }
     
@@ -200,15 +219,9 @@ UefiConsGetCh(VOID)
     return KeyOutput;
 }
 
-/* AGENT-MODIFIED: Function to mark boot services as exited */
+/* Function to mark boot services as exited: silence console */
 VOID
 UefiConsMarkBootServicesExited(VOID)
 {
-    BootServicesExited = TRUE;
-    
-    /* AGENT-MODIFIED: Ensure GOP console is ready for use */
-    if (UefiGopConsoleIsInitialized())
-    {
-        UefiGopConsoleSetCursor(CurrentCursorX, CurrentCursorY);
-    }
+    UefiBootServicesActive = FALSE;
 }

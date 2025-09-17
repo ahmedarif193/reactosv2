@@ -132,6 +132,19 @@ VOID Arm64HandleSynchronousException(PARM64_CONTEXT Context, ULONGLONG Esr, ULON
     
     switch (ExceptionClass)
     {
+        case ESR_ELx_EC_SYS64:
+        {
+            ULONG op0 = (ISS >> 20) & 0x3;
+            ULONG op1 = (ISS >> 14) & 0x7;
+            ULONG crn = (ISS >> 10) & 0xF;
+            ULONG crm = (ISS >> 1) & 0xF;
+            ULONG op2 = (ISS >> 17) & 0x7;
+            BOOLEAN is_read = ((ISS & 1) == 1);
+            ERR("System register access trap: %s, op0=%lu op1=%lu CRn=%lu CRm=%lu op2=%lu\n",
+                is_read ? "MRS" : "MSR", op0, op1, crn, crm, op2);
+            break;
+        }
+
         case ESR_ELx_EC_DABT_CUR:
         case ESR_ELx_EC_DABT_LOW:
         {
@@ -253,23 +266,27 @@ VOID Arm64HandleSerror(PARM64_CONTEXT Context, ULONGLONG Esr)
 VOID Arm64InitializeExceptions(VOID)
 {
     TRACE("ARM64: Initializing exception handling\n");
-    
+
     /* Exception vectors are set up in entry.S */
     /* Additional initialization can be done here */
-    
+
+    /* Skip system register access under UEFI to avoid traps */
+    /* These will be enabled after ExitBootServices */
+#if 0
     /* Enable floating point if present */
     ULONGLONG cpacr = ARM64_READ_SYSREG(cpacr_el1);
     cpacr |= (3ULL << 20); /* FPEN bits - enable FP/SIMD at EL1 and EL0 */
     ARM64_WRITE_SYSREG(cpacr_el1, cpacr);
-    
+
     /* Enable cycle counter if present */
     ULONGLONG pmcr = ARM64_READ_SYSREG(pmcr_el0);
     pmcr |= (1ULL << 0);   /* Enable all counters */
     pmcr |= (1ULL << 1);   /* Reset all counters */
     pmcr |= (1ULL << 2);   /* Clock divider */
     ARM64_WRITE_SYSREG(pmcr_el0, pmcr);
-    
+
     /* Initialize interrupt controller (stub) */
     Arm64GicInitialize();
-    TRACE("ARM64: Exception handling initialized\n");
+#endif
+    TRACE("ARM64: Exception handling initialized (deferred under UEFI)\n");
 }

@@ -28,7 +28,7 @@ EfiEntry(
 {
     PCSTR CmdLine = ""; // FIXME: Determine a command-line from UEFI boot options
 
-    SystemTable->ConOut->OutputString(SystemTable->ConOut, L"UEFI EntryPoint: Starting freeldr from UEFI");
+    SystemTable->ConOut->OutputString(SystemTable->ConOut, L"UEFI EntryPoint: Starting freeldr from UEFI\r\n");
     GlobalImageHandle = ImageHandle;
     GlobalSystemTable = SystemTable;
 
@@ -38,7 +38,21 @@ EfiEntry(
     /* Debugger pre-initialization */
     DebugInit(BootMgrInfo.DebugString);
 
+    /* Progress marker */
+    if (SystemTable && SystemTable->ConOut)
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, L"UEFI: Debug initialized\r\n");
+
     MachInit(CmdLine);
+
+    if (SystemTable && SystemTable->ConOut)
+    {
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, L"UEFI: Mach initialized (GOP setup attempted)\r\n");
+        /* Debug: Check if MachVtbl.GetMemoryMap is set */
+        if (!MachVtbl.GetMemoryMap)
+            SystemTable->ConOut->OutputString(SystemTable->ConOut, L"ERROR: MachVtbl.GetMemoryMap is NULL after MachInit!\r\n");
+        else
+            SystemTable->ConOut->OutputString(SystemTable->ConOut, L"UEFI: MachVtbl.GetMemoryMap is set\r\n");
+    }
 
     /* UI pre-initialization */
     if (!UiInitialize(FALSE))
@@ -47,22 +61,52 @@ EfiEntry(
         goto Quit;
     }
 
+    if (SystemTable && SystemTable->ConOut)
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, L"UEFI: UI initialized\r\n");
+
     /* Initialize memory manager */
-    if (!MmInitializeMemoryManager())
+    if (SystemTable && SystemTable->ConOut)
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, L"UEFI: MM init start\r\n");
+
+    BOOLEAN mmResult = FALSE;
+    if (SystemTable && SystemTable->ConOut)
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, L"UEFI: About to call MmInitializeMemoryManager\r\n");
+
+    mmResult = MmInitializeMemoryManager();
+
+    if (SystemTable && SystemTable->ConOut)
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, L"UEFI: MmInitializeMemoryManager returned\r\n");
+
+    if (!mmResult)
     {
         UiMessageBoxCritical("Unable to initialize memory manager.");
         goto Quit;
     }
 
+    if (SystemTable && SystemTable->ConOut)
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, L"UEFI: MM initialized\r\n");
+
     /* Initialize I/O subsystem */
     FsInit();
 
+    if (SystemTable && SystemTable->ConOut)
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, L"UEFI: FS initialized\r\n");
+
     /* Initialize the module list */
+    if (SystemTable && SystemTable->ConOut)
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, L"UEFI: About to call PeLdrInitializeModuleList\r\n");
+
     if (!PeLdrInitializeModuleList())
     {
         UiMessageBoxCritical("Unable to initialize module list.");
         goto Quit;
     }
+
+    if (SystemTable && SystemTable->ConOut)
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, L"UEFI: PE loader initialized\r\n");
+
+    if (SystemTable && SystemTable->ConOut)
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, L"UEFI: About to call MachInitializeBootDevices\r\n");
 
     if (!MachInitializeBootDevices())
     {
@@ -70,8 +114,32 @@ EfiEntry(
         goto Quit;
     }
 
+    if (SystemTable && SystemTable->ConOut)
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, L"UEFI: Boot devices initialized\r\n");
+
     /* 0x32000 is what UEFI defines, but we can go smaller if we want */
+#ifdef _ARM64_
+    /* ARM64: Use UEFI allocation directly since MM may not be fully initialized */
+    EFI_STATUS Status;
+    EFI_PHYSICAL_ADDRESS StackBase = 0;
+    UINTN StackPages = (0x32000 + EFI_PAGE_SIZE - 1) / EFI_PAGE_SIZE;
+
+    Status = GlobalSystemTable->BootServices->AllocatePages(AllocateAnyPages,
+                                                            EfiLoaderData,
+                                                            StackPages,
+                                                            &StackBase);
+    if (EFI_ERROR(Status)) {
+        if (SystemTable && SystemTable->ConOut)
+            SystemTable->ConOut->OutputString(SystemTable->ConOut, L"UEFI: Failed to allocate stack\r\n");
+        goto Quit;
+    }
+
+    BasicStack = (PVOID)((ULONG_PTR)StackBase + 0x32000);
+#else
     BasicStack = (PVOID)((ULONG_PTR)0x32000 + (ULONG_PTR)MmAllocateMemoryWithType(0x32000, LoaderOsloaderStack));
+#endif
+    if (SystemTable && SystemTable->ConOut)
+        SystemTable->ConOut->OutputString(SystemTable->ConOut, L"UEFI: Switching to loader stack\r\n");
     _changestack();
 
 Quit:

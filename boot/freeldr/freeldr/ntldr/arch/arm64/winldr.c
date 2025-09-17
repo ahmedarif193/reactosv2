@@ -78,6 +78,19 @@ Arm64SetupForNt(
     return TRUE;
 }
 
+/* Provide the machine-dependent setup entry used by the generic NT loader path */
+VOID
+WinLdrSetupMachineDependent(
+    PLOADER_PARAMETER_BLOCK LoaderBlock)
+{
+    PVOID GdtIdt = NULL;
+    ULONG PcrBasePage = 0;
+    ULONG TssBasePage = 0;
+
+    /* Delegate to the ARM64-specific setup; GDT/IDT/TSS are not used on AArch64 */
+    (void)Arm64SetupForNt(LoaderBlock, &GdtIdt, &PcrBasePage, &TssBasePage);
+}
+
 /* ARM64 specific memory setup */
 BOOLEAN
 Arm64InitializeMemory(
@@ -110,52 +123,9 @@ Arm64InitializeMemory(
     return TRUE;
 }
 
-VOID
-WinLdrpDumpMemoryDescriptors(PLOADER_PARAMETER_BLOCK LoaderBlock)
-{
-    /* Dump memory descriptors for debugging */
-    PLIST_ENTRY NextMd;
-    PMEMORY_ALLOCATION_DESCRIPTOR MemoryDescriptor;
-    
-    NextMd = LoaderBlock->MemoryDescriptorListHead.Flink;
-    while (NextMd != &LoaderBlock->MemoryDescriptorListHead)
-    {
-        MemoryDescriptor = CONTAINING_RECORD(NextMd,
-                                           MEMORY_ALLOCATION_DESCRIPTOR,
-                                           ListEntry);
-        
-        TRACE("MD: Base=0x%X, Count=0x%X, Type=%d\n",
-              MemoryDescriptor->BasePage,
-              MemoryDescriptor->PageCount,
-              MemoryDescriptor->MemoryType);
-        
-        NextMd = MemoryDescriptor->ListEntry.Flink;
-    }
-}
+/* WinLdrpDumpMemoryDescriptors and WinLdrLoadModule are defined in the main winldr.c */
 
-PVOID
-WinLdrLoadModule(
-    PCSTR ModuleName,
-    ULONG *ModuleSize,
-    TYPE_OF_MEMORY MemoryType)
-{
-    PVOID ImageBase = NULL;
-    PLDR_DATA_TABLE_ENTRY Dte = NULL;
-
-    TRACE("ARM64: Loading module %s\n", ModuleName);
-
-    if (PeLdrLoadBootImage(ModuleName, ModuleName, &ImageBase, &Dte))
-    {
-        if (ModuleSize && Dte) *ModuleSize = Dte->SizeOfImage;
-        TRACE("ARM64: Loaded module %s at %p size %lu\n", ModuleName, ImageBase,
-              Dte ? Dte->SizeOfImage : 0);
-        return ImageBase;
-    }
-
-    ERR("ARM64: Failed to load module %s\n", ModuleName);
-    if (ModuleSize) *ModuleSize = 0;
-    return NULL;
-}
+/* Other architecture-specific functions can be added here as needed */
 
 BOOLEAN
 WinLdrCheckForLoadedDll(

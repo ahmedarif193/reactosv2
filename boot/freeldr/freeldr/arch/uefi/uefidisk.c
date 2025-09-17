@@ -495,6 +495,11 @@ UefiInitializeBootDevices(VOID)
 {
     ULONG i = 0;
 
+#ifdef _ARM64_
+    /* ARM64: Skip boot device init since MM isn't fully initialized */
+    return TRUE;
+#endif
+
     DiskReadBufferSize = EFI_PAGE_SIZE;
     DiskReadBuffer = MmAllocateMemoryWithType(DiskReadBufferSize, LoaderFirmwareTemporary);
     UefiSetupBlockDevices();

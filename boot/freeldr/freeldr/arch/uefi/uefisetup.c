@@ -6,6 +6,9 @@
  */
 
 #include <uefildr.h>
+#ifdef _ARM64_
+#include <arch/arm64/arm64.h>
+#endif
 
 #include <debug.h>
 DBG_DEFAULT_CHANNEL(WARNING);
@@ -20,6 +23,16 @@ extern EFI_HANDLE GlobalImageHandle;
 VOID
 MachInit(const char *CmdLine)
 {
+#ifdef _ARM64_
+    /* For ARM64, use the ARM64-specific machine initialization */
+    extern VOID Arm64MachInit(const char *CmdLine);
+    Arm64MachInit(CmdLine);
+    /* The ARM64MachInit will set up MachVtbl and initialize everything including GOP */
+    /* Reference the debug channel to avoid unused warnings in release builds */
+    (void)DbgDefaultChannel;
+    return;
+#else
+    /* For non-ARM64 platforms, use the generic UEFI setup */
     RtlZeroMemory(&MachVtbl, sizeof(MachVtbl));
 
     MachVtbl.ConsPutChar = UefiConsPutChar;
@@ -51,10 +64,22 @@ MachInit(const char *CmdLine)
     MachVtbl.InitializeBootDevices = UefiInitializeBootDevices;
     MachVtbl.HwDetect = UefiHwDetect;
     MachVtbl.HwIdle = UefiHwIdle;
+    /* Setup GOP for non-ARM64 platforms */
+    if (GlobalSystemTable && GlobalSystemTable->ConOut)
+        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: GOP init start\r\n");
 
-    /* Setup GOP */
     if (UefiInitializeVideo() != EFI_SUCCESS)
     {
         ERR("Failed to setup GOP\n");
+        if (GlobalSystemTable && GlobalSystemTable->ConOut)
+            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: GOP init failed\r\n");
     }
+    else if (GlobalSystemTable && GlobalSystemTable->ConOut)
+    {
+        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: GOP init ok\r\n");
+    }
+
+    /* Reference the debug channel to avoid unused warnings in release builds */
+    (void)DbgDefaultChannel;
+#endif
 }

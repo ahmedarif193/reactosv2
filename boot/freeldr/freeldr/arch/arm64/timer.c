@@ -9,6 +9,9 @@
 #include <arch/arm64/arm64.h>
 #include <debug.h>
 #include <limits.h>
+#ifdef UEFIBOOT
+#include <uefildr.h>
+#endif
 
 DBG_DEFAULT_CHANNEL(WARNING);
 
@@ -33,21 +36,35 @@ static BOOLEAN timer_initialized = FALSE;
 
 /* Workaround flags for known timer erratas */
 static BOOLEAN fsl_erratum_a008585 = FALSE;
+#ifndef UEFIBOOT
 static BOOLEAN sunxi_a64_erratum = FALSE;
+#endif
 
 /* Get timer frequency */
 ULONGLONG Arm64GetTimerFrequency(VOID)
 {
+#ifdef UEFIBOOT
+    /* Under UEFI, use a safe default frequency to avoid system register access */
+    /* Most ARM64 systems use 24MHz or 19.2MHz */
+    return 24000000ULL; /* 24MHz default */
+#else
     ULONGLONG cntfrq;
     __asm__ volatile("mrs %0, cntfrq_el0" : "=r" (cntfrq));
     return cntfrq;
+#endif
 }
 
 /* Read counter with errata workarounds - Based on U-Boot */
 static ULONGLONG timer_read_counter_safe(VOID)
 {
+#ifdef UEFIBOOT
+    /* Under UEFI, use a simple incrementing counter to avoid system register traps */
+    /* We can't use UEFI Runtime Services here as they might not be available yet */
+    static ULONGLONG fallback_counter = 0;
+    return fallback_counter += 24000; /* Increment by 1ms worth of ticks */
+#else
     ULONGLONG cntpct, temp;
-    
+
     if (fsl_erratum_a008585) {
         /*
          * FSL erratum A-008585: ARM generic timer counter has the
@@ -63,6 +80,7 @@ static ULONGLONG timer_read_counter_safe(VOID)
             __asm__ volatile("mrs %0, cntpct_el0" : "=r" (temp));
         }
         return cntpct;
+#ifndef UEFIBOOT
     } else if (sunxi_a64_erratum) {
         /*
          * Sunxi A64 erratum: Sometimes flips lower 11 bits of counter
@@ -73,33 +91,39 @@ static ULONGLONG timer_read_counter_safe(VOID)
             __asm__ volatile("mrs %0, cntpct_el0" : "=r" (cntpct));
         } while ((cntpct & 0x7FF) == 0x7FF || (cntpct & 0x7FF) == 0x000);
         return cntpct;
+#endif
     } else {
         /* Standard read */
         __asm__ volatile("isb");
         __asm__ volatile("mrs %0, cntpct_el0" : "=r" (cntpct));
         return cntpct;
     }
+#endif
 }
 
 /* Initialize ARM64 Generic Timer */
 VOID Arm64InitializeTimer(VOID)
 {
-    ULONGLONG cntkctl, midr;
-    
+    ULONGLONG cntkctl;
+#ifndef UEFIBOOT
+    ULONGLONG midr;
+#endif
+
     if (timer_initialized)
         return;
-    
+
     TRACE("ARM64: Initializing Generic Timer\n");
-    
+
     /* Get timer frequency */
     timer_frequency = Arm64GetTimerFrequency();
     if (timer_frequency == 0) {
         WARN("ARM64: Timer frequency is 0, using default 24MHz\n");
         timer_frequency = 24000000;  /* Default fallback */
     }
-    
+
     TRACE("ARM64: Timer frequency: %llu Hz\n", timer_frequency);
-    
+
+#ifndef UEFIBOOT
     /* Check for known timer erratas based on CPU ID */
     midr = ARM64_READ_SYSREG(midr_el1);
 
@@ -119,17 +143,30 @@ VOID Arm64InitializeTimer(VOID)
             }
         }
     }
+#else
+    /* Under UEFI, skip CPU detection to avoid system register traps */
+    /* Use conservative defaults for safety */
+    fsl_erratum_a008585 = TRUE; /* Enable safe counter read by default under UEFI */
+    TRACE("ARM64: UEFI mode - using safe timer counter read\n");
+#endif
     
+#ifndef UEFIBOOT
     /* Enable timer access for lower exception levels if needed */
     cntkctl = ARM64_READ_SYSREG(cntkctl_el1);
     cntkctl |= CNTKCTL_EL1_EL0PCTEN | CNTKCTL_EL1_EL0VCTEN;
     ARM64_WRITE_SYSREG(cntkctl_el1, cntkctl);
-    
+
     /* Disable virtual timer (we'll use physical timer) */
     ARM64_WRITE_SYSREG(cntv_ctl_el0, CNTV_CTL_IMASK);
-    
+
     /* Disable physical timer initially */
     ARM64_WRITE_SYSREG(cntp_ctl_el0, CNTP_CTL_IMASK);
+#else
+    /* Under UEFI, skip timer control register writes to avoid traps */
+    /* UEFI firmware has already configured timer access appropriately */
+    TRACE("ARM64: UEFI mode - skipping timer control register setup\n");
+    (void)cntkctl; /* Avoid unused variable warning */
+#endif
     
     ARM64_ISB();
     

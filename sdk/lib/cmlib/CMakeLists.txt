@@ -21,7 +21,11 @@ list(APPEND SOURCE
 
 if(CMAKE_CROSSCOMPILING)
     # CMLIB for NT bootloader
-    add_library(blcmlib ${SOURCE})
+    set(BLCMLIB_SOURCE ${SOURCE})
+    if(ARCH STREQUAL "arm64")
+        list(APPEND BLCMLIB_SOURCE blkestub.c)
+    endif()
+    add_library(blcmlib ${BLCMLIB_SOURCE})
     target_compile_definitions(blcmlib PRIVATE _BLDR_)
     add_dependencies(blcmlib bugcodes xdk)
     add_pch(blcmlib cmlib.h SOURCE)

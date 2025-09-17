@@ -61,6 +61,12 @@ elseif(ARCH STREQUAL "amd64")
          lib/arch/stub/arch.c
          lib/mm/stub/mm.c
          )
+elseif(ARCH STREQUAL "arm64")
+    list(APPEND BOOTLIB_SOURCE
+         lib/arch/stub/arch.c
+         lib/arch/stub/kestubs.c
+         lib/mm/stub/mm.c
+         )
 else()
     list(APPEND BOOTLIB_SOURCE
          lib/arch/stub/arch.c
@@ -122,6 +128,10 @@ list(APPEND ROSLOAD_BASE_SOURCE
 if(ARCH STREQUAL "i386")
     list(APPEND ROSLOAD_ASM_SOURCE
          app/rosload/i386/osxfera.s
+         )
+elseif(ARCH STREQUAL "arm64")
+    list(APPEND ROSLOAD_ASM_SOURCE
+         app/rosload/arm64/osxfera.S
          )
 endif()
 

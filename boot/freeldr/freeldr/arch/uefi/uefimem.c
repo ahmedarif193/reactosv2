@@ -201,11 +201,20 @@ UefiSetMemory(
     const PFN_NUMBER BasePage  = (PFN_NUMBER)(BaseAddress >> EFI_PAGE_SHIFT);
     const PFN_NUMBER PageCount = (PFN_NUMBER)SizeInPages;
 
+#ifdef _ARM64_
+    TRACE("ARM64: UefiSetMemory: BaseAddress=0x%lx, BasePage=0x%lx, PageCount=0x%lx, Type=%u\n",
+          BaseAddress, BasePage, PageCount, MemoryType);
+#endif
+
     FreeldrDescCount = AddMemoryDescriptor(MemoryMap,
                                            UNUSED_MAX_DESCRIPTOR_COUNT,
                                            BasePage,
                                            PageCount,
                                            MemoryType);
+
+#ifdef _ARM64_
+    TRACE("ARM64: UefiSetMemory: After AddMemoryDescriptor, FreeldrDescCount=%u\n", FreeldrDescCount);
+#endif
 }
 
 static
@@ -247,6 +256,8 @@ UefiMemGetMemoryMap(_Out_ ULONG *MemoryMapSize /* OUT: number of entries */)
     EfiMemoryMap = NULL;
 
     /* Identify our image for base/size and the boot device. */
+    if (GlobalSystemTable && GlobalSystemTable->ConOut)
+        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: UefiMemGetMemoryMap start\r\n");
     Status = GlobalSystemTable->BootServices->HandleProtocol(GlobalImageHandle,
                                                              &EfiLoadedImageProtocol,
                                                              (VOID **)&LoadedImage);
@@ -262,7 +273,11 @@ UefiMemGetMemoryMap(_Out_ ULONG *MemoryMapSize /* OUT: number of entries */)
     PublicBootHandle = LoadedImage->DeviceHandle;
 
     TRACE("UefiMemGetMemoryMap: Gather memory map\n");
+    if (GlobalSystemTable && GlobalSystemTable->ConOut)
+        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: Getting firmware memory map\r\n");
     PUEFI_LoadMemoryMap(&MapKey, &MapBytes, &DescSize, &DescVersion);
+    if (GlobalSystemTable && GlobalSystemTable->ConOut)
+        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: Memory map ready\r\n");
 
     /* Convert the firmware map into FreeLdr's compact descriptor list. */
     const UINT32 EntryCount = (DescSize ? (UINT32)(MapBytes / DescSize) : 0);
@@ -296,20 +311,32 @@ UefiMemGetMemoryMap(_Out_ ULONG *MemoryMapSize /* OUT: number of entries */)
 
     // AGENT-MODIFIED: Better debug trace before memset
     TRACE("About to memset: FreeldrMem=%p, FreeldrBytes=%lu\n", FreeldrMem, (UINTN)FreeldrBytes);
+    if (GlobalSystemTable && GlobalSystemTable->ConOut)
+        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: Preparing internal memory map\r\n");
 
     /* Zero exactly what we allocated. */
     memset(FreeldrMem, 0, FreeldrBytes);
     
     // AGENT-MODIFIED: Confirm memset succeeded
     TRACE("memset completed successfully\n");
+    if (GlobalSystemTable && GlobalSystemTable->ConOut)
+        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: Translating EFI map\r\n");
 
     /* Walk the EFI map and translate. */
     EFI_MEMORY_DESCRIPTOR *MapEntry = (EFI_MEMORY_DESCRIPTOR *)EfiMemoryMap;
+#ifdef _ARM64_
+    TRACE("ARM64: Starting memory map translation, EntryCount=%u\n", EntryCount);
+#endif
     for (UINT32 i = 0; i < EntryCount; ++i)
     {
         TYPE_OF_MEMORY Mt = UefiConvertToFreeldrDesc(MapEntry->Type);
+#ifdef _ARM64_
+        TRACE("ARM64: Entry %u: Type=%u->%u, PhysStart=0x%llx, Pages=0x%llx\n",
+              i, MapEntry->Type, Mt, MapEntry->PhysicalStart, MapEntry->NumberOfPages);
+#endif
 
-        /* Try to reserve ConventionalMemory so firmware doesn’t reuse it later. */
+        /* Avoid pinning all Conventional memory on ARM64: some firmwares hang. */
+#ifndef _ARM64_
         if (Mt == LoaderFree)
         {
             EFI_STATUS Res =
@@ -323,6 +350,7 @@ UefiMemGetMemoryMap(_Out_ ULONG *MemoryMapSize /* OUT: number of entries */)
                 Mt = LoaderFirmwareTemporary;
             }
         }
+#endif
 
         /* Track the maximum span of our own image (LoaderLoadedProgram). */
         if (Mt == LoaderLoadedProgram)
@@ -337,19 +365,40 @@ UefiMemGetMemoryMap(_Out_ ULONG *MemoryMapSize /* OUT: number of entries */)
         /* We do not expose LoaderReserve to our allocator. */
         if (Mt != LoaderReserve)
         {
+#ifdef _ARM64_
+            TRACE("ARM64: Adding memory descriptor: Base=0x%llx, Pages=0x%llx, Type=%u\n",
+                  MapEntry->PhysicalStart, MapEntry->NumberOfPages, Mt);
+#endif
             UefiSetMemory(FreeldrMem,
                           (ULONG_PTR)MapEntry->PhysicalStart,
                           (PFN_COUNT)MapEntry->NumberOfPages,
                           Mt);
+#ifdef _ARM64_
+            TRACE("ARM64: Memory descriptor added, FreeldrDescCount=%u\n", FreeldrDescCount);
+#endif
         }
+#ifdef _ARM64_
+        else
+        {
+            TRACE("ARM64: Skipping LoaderReserve entry at 0x%llx\n", MapEntry->PhysicalStart);
+        }
+#endif
 
         MapEntry = NEXT_MEMORY_DESCRIPTOR(MapEntry, DescSize);
     }
 
     /* Windows/NT expects page 0 reserved; some UEFI maps leave it free. */
+#ifdef _ARM64_
+    TRACE("ARM64: Reserving page 0 for Windows/NT compatibility\n");
+#endif
     UefiSetMemory(FreeldrMem, 0, 1, LoaderFirmwarePermanent);
 
+#ifdef _ARM64_
+    TRACE("ARM64: Memory map translation complete, FreeldrDescCount=%u\n", FreeldrDescCount);
+#endif
     *MemoryMapSize = FreeldrDescCount;
+    if (GlobalSystemTable && GlobalSystemTable->ConOut)
+        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: Internal memory map ready\r\n");
     return FreeldrMem;
 }
 

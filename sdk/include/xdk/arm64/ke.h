@@ -35,6 +35,13 @@ PKTHREAD
 NTAPI
 KeGetCurrentThread(VOID);
 
+_IRQL_requires_max_(HIGH_LEVEL)
+_IRQL_saves_
+NTHALAPI
+KIRQL
+NTAPI
+KeGetCurrentIrql(VOID);
+
 #define DbgRaiseAssertionFailure() __break(0xf001)
 
 $endif (_WDMDDK_)

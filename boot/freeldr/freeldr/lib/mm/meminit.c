@@ -131,6 +131,9 @@ AddMemoryDescriptor(
     PFN_NUMBER EndPage;
     TRACE("AddMemoryDescriptor(0x%Ix, 0x%Ix, %u)\n",
           BasePage, PageCount, MemoryType);
+#ifdef _ARM64_
+    TRACE("ARM64: AddMemoryDescriptor entry - List=%p, MaxCount=%lu\n", List, MaxCount);
+#endif
 
     EndPage = BasePage + PageCount;
 
@@ -259,6 +262,12 @@ static
 VOID
 MmCheckFreeldrImageFile(VOID)
 {
+#ifdef _ARM64_
+    /* ARM64: Skip image file check for UEFI boot */
+    TRACE("ARM64: Skipping image file check for UEFI\n");
+    FrLdrImageSize = 0x100000; /* Default 1MB size */
+    return;
+#endif
 #ifndef UEFIBOOT
     PIMAGE_NT_HEADERS NtHeaders;
     PIMAGE_FILE_HEADER FileHeader;
@@ -341,10 +350,31 @@ BOOLEAN MmInitializeMemoryManager(VOID)
 
     TRACE("Initializing Memory Manager.\n");
 
-    /* Check the freeldr binary */
-    MmCheckFreeldrImageFile();
+#ifdef _ARM64_
+    /* ARM64: Add early debug traces to pinpoint crash location */
+    TRACE("ARM64: MmInitializeMemoryManager entry\n");
+    TRACE("ARM64: Stack pointer: %p\n", __builtin_frame_address(0));
+    TRACE("ARM64: Image base: %p\n", &__ImageBase);
+#endif
 
+    /* Check the freeldr binary */
+#ifdef _ARM64_
+    TRACE("ARM64: About to call MmCheckFreeldrImageFile\n");
+#endif
+    MmCheckFreeldrImageFile();
+#ifdef _ARM64_
+    TRACE("ARM64: MmCheckFreeldrImageFile completed\n");
+#endif
+
+#ifdef _ARM64_
+    TRACE("ARM64: About to call MachVtbl.GetMemoryMap\n");
+    TRACE("ARM64: MachVtbl.GetMemoryMap = %p\n", MachVtbl.GetMemoryMap);
+#endif
     BiosMemoryMap = MachVtbl.GetMemoryMap(&BiosMemoryMapEntryCount);
+#ifdef _ARM64_
+    TRACE("ARM64: GetMemoryMap returned, BiosMemoryMap=%p, EntryCount=%lu\n",
+          BiosMemoryMap, BiosMemoryMapEntryCount);
+#endif
 
 #if DBG
     // Dump the system memory map
@@ -359,11 +389,31 @@ BOOLEAN MmInitializeMemoryManager(VOID)
 #endif
 
     // Find address for the page lookup table
+#ifdef _ARM64_
+    TRACE("ARM64: About to call MmGetAddressablePageCountIncludingHoles\n");
+#endif
     TotalPagesInLookupTable = MmGetAddressablePageCountIncludingHoles();
+#ifdef _ARM64_
+    TRACE("ARM64: TotalPagesInLookupTable = 0x%lx\n", TotalPagesInLookupTable);
+#endif
+#ifdef _ARM64_
+    TRACE("ARM64: About to call MmFindLocationForPageLookupTable\n");
+#endif
     PageLookupTableAddress = MmFindLocationForPageLookupTable(TotalPagesInLookupTable);
+#ifdef _ARM64_
+    TRACE("ARM64: PageLookupTableAddress = %p\n", PageLookupTableAddress);
+    /* Ensure 16-byte alignment for ARM64 */
+    if ((ULONG_PTR)PageLookupTableAddress & 0xF)
+    {
+        TRACE("ARM64: WARNING - PageLookupTableAddress not 16-byte aligned!\n");
+        /* Align to next 16-byte boundary */
+        PageLookupTableAddress = (PVOID)(((ULONG_PTR)PageLookupTableAddress + 0xF) & ~0xF);
+        TRACE("ARM64: Aligned PageLookupTableAddress to %p\n", PageLookupTableAddress);
+    }
+#endif
     LastFreePageHint = MmHighestPhysicalPage;
 
-    if (PageLookupTableAddress == 0)
+    if (PageLookupTableAddress == 0 || PageLookupTableAddress == (PVOID)-1)
     {
         // If we get here then we probably couldn't
         // find a contiguous chunk of memory big
@@ -373,7 +423,13 @@ BOOLEAN MmInitializeMemoryManager(VOID)
     }
 
     // Initialize the page lookup table
+#ifdef _ARM64_
+    TRACE("ARM64: About to call MmInitPageLookupTable\n");
+#endif
     MmInitPageLookupTable(PageLookupTableAddress, TotalPagesInLookupTable);
+#ifdef _ARM64_
+    TRACE("ARM64: MmInitPageLookupTable completed\n");
+#endif
 
     MmUpdateLastFreePageHint(PageLookupTableAddress, TotalPagesInLookupTable);
 
@@ -398,6 +454,10 @@ PFN_NUMBER MmGetAddressablePageCountIncludingHoles(VOID)
 {
     const FREELDR_MEMORY_DESCRIPTOR* MemoryDescriptor = NULL;
     PFN_NUMBER PageCount;
+
+#ifdef _ARM64_
+    TRACE("ARM64: MmGetAddressablePageCountIncludingHoles entry\n");
+#endif
 
     //
     // Go through the whole memory map to get max address
@@ -444,9 +504,17 @@ PVOID MmFindLocationForPageLookupTable(PFN_NUMBER TotalPageCount)
     PFN_NUMBER PageLookupTableEndPage;
     PVOID PageLookupTableMemAddress;
 
+#ifdef _ARM64_
+    TRACE("ARM64: MmFindLocationForPageLookupTable entry, TotalPageCount=0x%lx\n", TotalPageCount);
+#endif
+
     // Calculate how much pages we need to keep the page lookup table
     PageLookupTableSize = TotalPageCount * sizeof(PAGE_LOOKUP_TABLE_ITEM);
     RequiredPages = PageLookupTableSize / MM_PAGE_SIZE;
+#ifdef _ARM64_
+    TRACE("ARM64: PageLookupTableSize=0x%lx, RequiredPages=0x%lx\n",
+          PageLookupTableSize, RequiredPages);
+#endif
 
     // Search the highest memory block big enough to contain lookup table
     while ((MemoryDescriptor = ArcGetMemoryDescriptor(MemoryDescriptor)) != NULL)
@@ -460,8 +528,15 @@ PVOID MmFindLocationForPageLookupTable(PFN_NUMBER TotalPageCount)
         // Continue, if it is not at a higher address than previous address
         if (MemoryDescriptor->BasePage < CandidateBasePage) continue;
 
+#ifdef _ARM64_
+        /* ARM64: Under UEFI, we can use higher memory addresses safely */
+        /* Skip the MM_MAX_PAGE_LOADER check for ARM64 UEFI */
+        TRACE("ARM64: Found candidate at BasePage=0x%lx, PageCount=0x%lx\n",
+              MemoryDescriptor->BasePage, MemoryDescriptor->PageCount);
+#else
         // Continue, if the address is too high
         if (MemoryDescriptor->BasePage + RequiredPages >= MM_MAX_PAGE_LOADER) continue;
+#endif
 
         // Memory block is more suitable than the previous one
         CandidateBasePage = MemoryDescriptor->BasePage;
@@ -469,14 +544,30 @@ PVOID MmFindLocationForPageLookupTable(PFN_NUMBER TotalPageCount)
     }
 
     // Calculate the end address for the lookup table
+#ifdef _ARM64_
+    /* ARM64: Don't limit to MM_MAX_PAGE_LOADER under UEFI */
+    PageLookupTableEndPage = CandidateBasePage + CandidatePageCount;
+    TRACE("ARM64: Using CandidateBasePage=0x%lx, CandidatePageCount=0x%lx, EndPage=0x%lx\n",
+          CandidateBasePage, CandidatePageCount, PageLookupTableEndPage);
+#else
     PageLookupTableEndPage = min(CandidateBasePage + CandidatePageCount,
                                  MM_MAX_PAGE_LOADER);
+#endif
 
     // Calculate the virtual address
+#ifdef _ARM64_
+    /* ARM64: Ensure proper 64-bit calculation without overflow */
+    ULONGLONG EndAddress = (ULONGLONG)PageLookupTableEndPage * (ULONGLONG)PAGE_SIZE;
+    ULONGLONG TableAddress = EndAddress - (ULONGLONG)PageLookupTableSize;
+    PageLookupTableMemAddress = (PVOID)(ULONG_PTR)TableAddress;
+    TRACE("ARM64: EndPage=0x%lx, EndAddr=0x%llx, TableSize=0x%lx, TableAddr=0x%llx\n",
+          PageLookupTableEndPage, EndAddress, PageLookupTableSize, TableAddress);
+#else
     PageLookupTableMemAddress = (PVOID)((PageLookupTableEndPage * PAGE_SIZE)
                                         - PageLookupTableSize);
+#endif
 
-    TRACE("MmFindLocationForPageLookupTable() returning 0x%x\n", PageLookupTableMemAddress);
+    TRACE("MmFindLocationForPageLookupTable() returning 0x%p\n", PageLookupTableMemAddress);
 
     return PageLookupTableMemAddress;
 }
@@ -488,6 +579,10 @@ VOID MmInitPageLookupTable(PVOID PageLookupTable, PFN_NUMBER TotalPageCount)
     PFN_NUMBER PageLookupTablePageCount;
 
     TRACE("MmInitPageLookupTable()\n");
+#ifdef _ARM64_
+    TRACE("ARM64: PageLookupTable=%p, TotalPageCount=0x%lx\n",
+          PageLookupTable, TotalPageCount);
+#endif
 
     // Mark every page as allocated initially
     // We will go through and mark pages again according to the memory map
@@ -529,6 +624,10 @@ VOID MmMarkPagesInLookupTable(PVOID PageLookupTable, PFN_NUMBER StartPage, PFN_N
     PPAGE_LOOKUP_TABLE_ITEM RealPageLookupTable = (PPAGE_LOOKUP_TABLE_ITEM)PageLookupTable;
     PFN_NUMBER Index;
     TRACE("MmMarkPagesInLookupTable()\n");
+#ifdef _ARM64_
+    TRACE("ARM64: PageLookupTable=%p, StartPage=0x%lx, PageCount=0x%lx, PageAllocated=%d\n",
+          PageLookupTable, StartPage, PageCount, PageAllocated);
+#endif
 
     /* Validate the range */
     if ((StartPage < MmLowestPhysicalPage) ||

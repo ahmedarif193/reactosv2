@@ -136,7 +136,12 @@ if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
 endif()
 
 include(pcat.cmake)
-include(rosload.cmake)
+
+# ARM64 doesn't need rosload - it uses UEFI direct loading
+if(NOT ARCH STREQUAL "arm64")
+    include(rosload.cmake)
+endif()
+
 if(NOT ARCH STREQUAL "i386" OR NOT (SARCH STREQUAL "pc98" OR SARCH STREQUAL "xbox"))
     include(uefi.cmake)
 endif()

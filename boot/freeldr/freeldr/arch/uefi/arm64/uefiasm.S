@@ -40,13 +40,8 @@ _exituefi:
     mov sp, x19
 
 .stack_ready:
-    /* Call UefiExitBootServices if available */
-    ldr x0, =UefiExitBootServices
-    ldr x0, [x0]
-    cbz x0, .skip_call
-    blr x0
-
-.skip_call:
+    /* Call UefiExitBootServices directly (function symbol, not a pointer) */
+    bl UefiExitBootServices
     /* Restore the old stack */
     mov sp, x19
 

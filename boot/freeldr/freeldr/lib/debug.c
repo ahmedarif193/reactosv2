@@ -26,7 +26,9 @@
 ULONG ArcGetRelativeTime(VOID);
 
 // AGENT-MODIFIED: Global boot timestamp for Linux-style logging
+#if !defined(_M_ARM64) || !defined(UEFIBOOT)
 static ULONGLONG BootStartTimestamp = 0;
+#endif
 static BOOLEAN TimestampInitialized = FALSE;
 
 // AGENT-MODIFIED: Get microseconds since boot using TSC or fallback
@@ -56,6 +58,17 @@ GetMicrosecondsSinceBoot(VOID)
     
     return Microseconds;
 #elif defined(_M_ARM64)
+#ifdef UEFIBOOT
+    /* Under UEFI, use a simple counter for now to avoid system register access */
+    static ULONGLONG simple_counter = 0;
+    if (!TimestampInitialized)
+    {
+        TimestampInitialized = TRUE;
+        return 0;
+    }
+    /* Increment by approximately 1ms worth of microseconds each call */
+    return simple_counter += 1000;
+#else
     ULONGLONG Current;
     ULONGLONG Freq;
 
@@ -76,6 +89,7 @@ GetMicrosecondsSinceBoot(VOID)
 
     /* Convert ticks to microseconds: (ticks * 1_000_000) / freq */
     return (Current * 1000000ULL) / Freq;
+#endif
 #else
     // Fallback for non-x86 architectures: use relative time in seconds
     ULONG Seconds;
