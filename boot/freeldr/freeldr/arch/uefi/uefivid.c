@@ -53,6 +53,7 @@ static UINT32 MaxConsoleX = 0;
 static UINT32 MaxConsoleY = 0;
 static BOOLEAN GopConsoleInitialized = FALSE;
 static BOOLEAN GopBltOnly = FALSE;
+static EFI_GRAPHICS_OUTPUT_PROTOCOL* gGop = NULL;
 
 /* Pretty-print pixel format */
 static const char*
@@ -238,6 +239,7 @@ UefiInitializeVideo(VOID)
     ConsoleX = 0;
     ConsoleY = 0;
     GopConsoleInitialized = TRUE;
+    gGop = gop;
     TRACE("[GOP] UefiInitializeVideo complete\n");
     return Status;
 }
@@ -273,6 +275,16 @@ UefiVideoAttrToColors(UCHAR Attr, ULONG *FgColor, ULONG *BgColor)
 }
 
 
+/* Convert packed ARGB to EFI BLT pixel (BGRA with 8-bit channels) */
+static VOID
+UefiColorToBltPixel(ULONG Color, EFI_GRAPHICS_OUTPUT_BLT_PIXEL* P)
+{
+    P->Blue     = (UINT8)(Color & 0xFF);
+    P->Green    = (UINT8)((Color >> 8) & 0xFF);
+    P->Red      = (UINT8)((Color >> 16) & 0xFF);
+    P->Reserved = 0x00;
+}
+
 static VOID
 UefiVideoClearScreenColor(ULONG Color, BOOLEAN FullScreen)
 {
@@ -281,11 +293,20 @@ UefiVideoClearScreenColor(ULONG Color, BOOLEAN FullScreen)
     PULONG p;
 
 #ifdef _ARM64_
-    /* Safety check - make sure framebuffer is initialized */
-    if (!GopConsoleInitialized || !framebufferData.BaseAddress ||
-        framebufferData.ScreenWidth == 0 || framebufferData.ScreenHeight == 0)
+    /* Safety: ensure we have something to draw to */
+    if (!GopConsoleInitialized || framebufferData.ScreenWidth == 0 || framebufferData.ScreenHeight == 0)
+        return;
+
+    /* BLT-only fallback: use GOP Blt to fill the screen area */
+    if ((GopBltOnly || framebufferData.BaseAddress == 0) && gGop && GlobalSystemTable && GlobalSystemTable->BootServices)
     {
-        TRACE("[GOP] UefiVideoClearScreenColor skipped (FB uninitialized or BLT-only).\n");
+        EFI_GRAPHICS_OUTPUT_BLT_PIXEL px;
+        UINTN startY = (FullScreen ? 0 : TOP_BOTTOM_LINES);
+        UINTN height = framebufferData.ScreenHeight - (FullScreen ? 0 : 2 * TOP_BOTTOM_LINES);
+        UefiColorToBltPixel(Color, &px);
+        gGop->Blt(gGop, &px, EfiBltVideoFill, 0, 0,
+                  0, startY,
+                  framebufferData.ScreenWidth, height, 0);
         return;
     }
 #endif
@@ -325,9 +346,45 @@ UefiVideoOutputChar(UCHAR Char, unsigned X, unsigned Y, ULONG FgColor, ULONG BgC
     ULONG Delta;
 
 #ifdef _ARM64_
-    /* Safety check - make sure framebuffer is initialized */
-    if (!GopConsoleInitialized || !framebufferData.BaseAddress)
+    /* Safety check - make sure video mode is initialized */
+    if (!GopConsoleInitialized)
         return;
+
+    /* BLT-only fallback: build a glyph buffer and blit to video */
+    if ((GopBltOnly || framebufferData.BaseAddress == 0) && gGop && GlobalSystemTable && GlobalSystemTable->BootServices)
+    {
+        EFI_GRAPHICS_OUTPUT_BLT_PIXEL fg, bg;
+        EFI_GRAPHICS_OUTPUT_BLT_PIXEL glyph[CHAR_HEIGHT][CHAR_WIDTH];
+        PUCHAR FontPtr;
+        UCHAR Mask;
+        unsigned Line, Col;
+        UINTN destX, destY;
+
+        UefiColorToBltPixel(FgColor, &fg);
+        UefiColorToBltPixel(BgColor, &bg);
+
+        FontPtr = BitmapFont8x16 + Char * 16;
+        for (Line = 0; Line < CHAR_HEIGHT; Line++)
+        {
+            Mask = 0x80;
+            for (Col = 0; Col < CHAR_WIDTH; Col++)
+            {
+                glyph[Line][Col] = (0 != (FontPtr[Line] & Mask)) ? fg : bg;
+                Mask >>= 1;
+            }
+        }
+
+        destX = X * CHAR_WIDTH;
+        destY = Y * CHAR_HEIGHT + TOP_BOTTOM_LINES;
+        gGop->Blt(gGop,
+                  (EFI_GRAPHICS_OUTPUT_BLT_PIXEL*)glyph,
+                  EfiBltBufferToVideo,
+                  0, 0,
+                  destX, destY,
+                  CHAR_WIDTH, CHAR_HEIGHT,
+                  0);
+        return;
+    }
 #endif
 
     /* Extra safety for all platforms */
@@ -448,20 +505,62 @@ VOID
 UefiVideoScrollUp(VOID)
 {
     ULONG BgColor, Dummy;
-    ULONG Delta;
-    Delta = (framebufferData.PixelsPerScanLine * 4 + 3) & ~ 0x3;
-    ULONG PixelCount = framebufferData.ScreenWidth * CHAR_HEIGHT *
-                       (((framebufferData.ScreenHeight - 2 * TOP_BOTTOM_LINES) / CHAR_HEIGHT) - 1);
-    PULONG Src = (PULONG)((PUCHAR)framebufferData.BaseAddress + (CHAR_HEIGHT + TOP_BOTTOM_LINES) * Delta);
-    PULONG Dst = (PULONG)((PUCHAR)framebufferData.BaseAddress + TOP_BOTTOM_LINES * Delta);
 
-    UefiVideoAttrToColors(ATTR(COLOR_WHITE, COLOR_BLACK), &Dummy, &BgColor);
+#ifdef _ARM64_
+    if (!GopConsoleInitialized || framebufferData.ScreenWidth == 0 || framebufferData.ScreenHeight == 0)
+        return;
 
-    while (PixelCount--)
-        *Dst++ = *Src++;
+    /* BLT-only fallback: use VideoToVideo Blt + fill last line */
+    if ((GopBltOnly || framebufferData.BaseAddress == 0) && gGop && GlobalSystemTable && GlobalSystemTable->BootServices)
+    {
+        UINTN startY = TOP_BOTTOM_LINES;
+        UINTN width = framebufferData.ScreenWidth;
+        UINTN totalH = framebufferData.ScreenHeight - 2 * TOP_BOTTOM_LINES;
+        if (totalH == 0)
+            return;
 
-    for (PixelCount = 0; PixelCount < framebufferData.ScreenWidth * CHAR_HEIGHT; PixelCount++)
-        *Dst++ = BgColor;
+        if (totalH > CHAR_HEIGHT)
+        {
+            gGop->Blt(gGop,
+                      NULL,
+                      EfiBltVideoToVideo,
+                      0, startY + CHAR_HEIGHT,
+                      0, startY,
+                      width, totalH - CHAR_HEIGHT,
+                      0);
+        }
+
+        /* Fill the last character row with background color */
+        EFI_GRAPHICS_OUTPUT_BLT_PIXEL px;
+        UefiVideoAttrToColors(ATTR(COLOR_WHITE, COLOR_BLACK), &Dummy, &BgColor);
+        UefiColorToBltPixel(BgColor, &px);
+        gGop->Blt(gGop,
+                  &px,
+                  EfiBltVideoFill,
+                  0, 0,
+                  0, startY + (totalH > CHAR_HEIGHT ? (totalH - CHAR_HEIGHT) : 0),
+                  width, (totalH >= CHAR_HEIGHT ? CHAR_HEIGHT : totalH),
+                  0);
+        return;
+    }
+#endif
+
+    /* Linear FB path */
+    {
+        ULONG Delta = (framebufferData.PixelsPerScanLine * 4 + 3) & ~ 0x3;
+        ULONG PixelCount = framebufferData.ScreenWidth * CHAR_HEIGHT *
+                           (((framebufferData.ScreenHeight - 2 * TOP_BOTTOM_LINES) / CHAR_HEIGHT) - 1);
+        PULONG Src = (PULONG)((PUCHAR)framebufferData.BaseAddress + (CHAR_HEIGHT + TOP_BOTTOM_LINES) * Delta);
+        PULONG Dst = (PULONG)((PUCHAR)framebufferData.BaseAddress + TOP_BOTTOM_LINES * Delta);
+
+        UefiVideoAttrToColors(ATTR(COLOR_WHITE, COLOR_BLACK), &Dummy, &BgColor);
+
+        while (PixelCount--)
+            *Dst++ = *Src++;
+
+        for (PixelCount = 0; PixelCount < framebufferData.ScreenWidth * CHAR_HEIGHT; PixelCount++)
+            *Dst++ = BgColor;
+    }
 }
 
 VOID
