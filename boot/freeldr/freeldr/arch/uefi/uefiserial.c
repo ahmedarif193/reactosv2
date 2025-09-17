@@ -1,6 +1,7 @@
 /*
- * UEFI Serial I/O Protocol Debug Support for ARM64
- * Provides enhanced debug output via UEFI Serial I/O Protocol
+ * UEFI Serial I/O Protocol Support
+ * Provides serial output via UEFI Serial I/O Protocol
+ * With PL011 UART fallback for ARM64 systems
  */
 
 #include <freeldr.h>
@@ -20,6 +21,56 @@ static BOOLEAN SerialInitialized = FALSE;
 
 /* Serial I/O Protocol GUID */
 EFI_GUID gEfiSerialIoProtocolGuid = EFI_SERIAL_IO_PROTOCOL_GUID;
+
+#ifdef _M_ARM64
+/* PL011 UART registers and addresses for ARM64 platforms */
+#define PL011_UART_BASE    0x09000000  /* QEMU ARM64 virt machine UART0 address */
+#define PL011_DR           0x000       /* Data Register */
+#define PL011_FR           0x018       /* Flag Register */
+#define PL011_FR_TXFF      (1 << 5)    /* Transmit FIFO Full */
+#define PL011_FR_RXFE      (1 << 4)    /* Receive FIFO Empty */
+
+/* PL011 UART access macros */
+#define PL011_READ(offset) \
+    (*(volatile UINT32*)((UINTN)PL011_UART_BASE + (offset)))
+#define PL011_WRITE(offset, value) \
+    (*(volatile UINT32*)((UINTN)PL011_UART_BASE + (offset)) = (value))
+
+static BOOLEAN UsePL011Fallback = FALSE;
+
+/* Check if PL011 UART is present and accessible */
+static BOOLEAN PL011IsPresent(VOID)
+{
+    volatile UINT32 *uart_fr = (volatile UINT32*)((UINTN)PL011_UART_BASE + PL011_FR);
+    UINT32 fr_value;
+
+    /* Read and validate the flag register */
+    fr_value = *uart_fr;
+
+    /* Check if value looks like valid PL011 FR (bits 0-7 used, upper bits reserved) */
+    if ((fr_value & 0xFFFFFF00) == 0)
+    {
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+/* Send a byte via PL011 UART */
+static VOID PL011PutByte(UCHAR ByteToSend)
+{
+    volatile UINT32 *uart_dr = (volatile UINT32*)((UINTN)PL011_UART_BASE + PL011_DR);
+    volatile UINT32 *uart_fr = (volatile UINT32*)((UINTN)PL011_UART_BASE + PL011_FR);
+
+    /* Wait until transmit FIFO is not full */
+    while ((*uart_fr & PL011_FR_TXFF) != 0)
+    {
+    }
+
+    /* Write the byte to data register */
+    *uart_dr = (UINT32)ByteToSend;
+}
+#endif /* _M_ARM64 */
 
 
 /* Initialize UEFI Serial I/O */
@@ -121,8 +172,16 @@ BOOLEAN Rs232PortInitialize(IN ULONG ComPort, IN ULONG BaudRate)
         return TRUE;
     }
 
-    /* Mark as initialized even if no serial available */
-    /* This allows graceful degradation on systems without serial */
+#ifdef _M_ARM64
+    /* Try PL011 UART as fallback on ARM64 */
+    if (PL011IsPresent()) {
+        UsePL011Fallback = TRUE;
+        SerialInitialized = TRUE;
+        return TRUE;
+    }
+#endif
+
+    /* Mark as initialized for graceful degradation */
     SerialInitialized = TRUE;
     return TRUE;
 }
@@ -154,16 +213,24 @@ VOID Rs232PortPutByte(UCHAR ByteToSend)
         return;
     }
 
-    /* No output if serial protocol not available */
-    /* This keeps debug output clean and production-ready */
-    /* Serial output requires proper UEFI Serial I/O Protocol support */
+#ifdef _M_ARM64
+    /* Use PL011 UART fallback if available */
+    if (UsePL011Fallback) {
+        PL011PutByte(ByteToSend);
+        return;
+    }
+#endif
 }
 
 BOOLEAN Rs232PortInUse(PUCHAR Base)
 {
     /* Not applicable for UEFI Serial I/O */
     (void)Base;
+#ifdef _M_ARM64
+    return (SerialIoProtocol != NULL || UsePL011Fallback);
+#else
     return (SerialIoProtocol != NULL);
+#endif
 }
 
 

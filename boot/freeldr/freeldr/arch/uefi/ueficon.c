@@ -6,6 +6,7 @@
  */
 
 #include <uefildr.h>
+#include <comm.h>
 
 #define CHAR_WIDTH  8
 #define CHAR_HEIGHT 16
@@ -33,6 +34,55 @@ extern BOOLEAN UefiGopConsoleIsInitialized(VOID);
 
 /* FUNCTIONS ******************************************************************/
 
+#ifdef _M_ARM64
+/* Initialize serial port for dual console output */
+static BOOLEAN SerialInitializedForConsole = FALSE;
+
+static VOID
+EnsureSerialInitialized(VOID)
+{
+    if (!SerialInitializedForConsole)
+    {
+        Rs232PortInitialize(0, 115200);
+        SerialInitializedForConsole = TRUE;
+    }
+}
+
+/* Output wide string to both console and serial */
+VOID
+UefiConsPutString(PCWSTR String)
+{
+    if (!GlobalSystemTable || !GlobalSystemTable->ConOut)
+        return;
+
+    /* Ensure serial is initialized */
+    EnsureSerialInitialized();
+
+    /* Output to console */
+    GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, (PWSTR)String);
+
+    /* Also output to serial */
+    while (*String)
+    {
+        CHAR16 Ch = *String++;
+        if (Ch == L'\r')
+        {
+            Rs232PortPutByte('\r');
+        }
+        else if (Ch == L'\n')
+        {
+            Rs232PortPutByte('\n');
+        }
+        else if (Ch < 0x80)
+        {
+            /* ASCII character */
+            Rs232PortPutByte((UCHAR)Ch);
+        }
+        /* Skip non-ASCII for now */
+    }
+}
+#endif
+
 VOID
 UefiConsPutChar(int c)
 {
@@ -40,7 +90,44 @@ UefiConsPutChar(int c)
     if (!UefiBootServicesActive)
         return;
 
-    /* Early fallback to firmware text console until GOP framebuffer is ready. */
+#ifdef _M_ARM64
+    /* Output to both console and serial */
+    if (GlobalSystemTable && GlobalSystemTable->ConOut)
+    {
+        CHAR16 WideChar[2];
+        WideChar[1] = 0;
+
+        /* Ensure serial is initialized */
+        EnsureSerialInitialized();
+
+        /* Send to serial */
+        if (c == '\n')
+        {
+            Rs232PortPutByte('\r');
+            Rs232PortPutByte('\n');
+        }
+        else
+        {
+            Rs232PortPutByte((UCHAR)c);
+        }
+
+        /* Output to console */
+        if (c == '\n')
+        {
+            WideChar[0] = L'\r';
+            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, WideChar);
+            WideChar[0] = L'\n';
+            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, WideChar);
+        }
+        else
+        {
+            WideChar[0] = (CHAR16)c;
+            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, WideChar);
+        }
+        return;
+    }
+#else
+    /* Early fallback to firmware text console until GOP framebuffer is ready */
     if (framebufferData.BaseAddress == 0 && GlobalSystemTable && GlobalSystemTable->ConOut)
     {
         CHAR16 WideChar[2];
@@ -59,6 +146,7 @@ UefiConsPutChar(int c)
         }
         return;
     }
+#endif
     
     ULONG Width, Height, Unused;
     BOOLEAN NeedScroll;

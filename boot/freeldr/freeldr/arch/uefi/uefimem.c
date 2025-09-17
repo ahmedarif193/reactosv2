@@ -14,6 +14,7 @@
 
 DBG_DEFAULT_CHANNEL(WARNING);
 
+
 /* HELPERS *******************************************************************/
 
 #define NEXT_MEMORY_DESCRIPTOR(Descriptor, DescriptorSize) \
@@ -256,8 +257,6 @@ UefiMemGetMemoryMap(_Out_ ULONG *MemoryMapSize /* OUT: number of entries */)
     EfiMemoryMap = NULL;
 
     /* Identify our image for base/size and the boot device. */
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: UefiMemGetMemoryMap start\r\n");
     Status = GlobalSystemTable->BootServices->HandleProtocol(GlobalImageHandle,
                                                              &EfiLoadedImageProtocol,
                                                              (VOID **)&LoadedImage);
@@ -273,11 +272,7 @@ UefiMemGetMemoryMap(_Out_ ULONG *MemoryMapSize /* OUT: number of entries */)
     PublicBootHandle = LoadedImage->DeviceHandle;
 
     TRACE("UefiMemGetMemoryMap: Gather memory map\n");
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: Getting firmware memory map\r\n");
     PUEFI_LoadMemoryMap(&MapKey, &MapBytes, &DescSize, &DescVersion);
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: Memory map ready\r\n");
 
     /* Convert the firmware map into FreeLdr's compact descriptor list. */
     const UINT32 EntryCount = (DescSize ? (UINT32)(MapBytes / DescSize) : 0);
@@ -311,16 +306,12 @@ UefiMemGetMemoryMap(_Out_ ULONG *MemoryMapSize /* OUT: number of entries */)
 
     // AGENT-MODIFIED: Better debug trace before memset
     TRACE("About to memset: FreeldrMem=%p, FreeldrBytes=%lu\n", FreeldrMem, (UINTN)FreeldrBytes);
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: Preparing internal memory map\r\n");
 
     /* Zero exactly what we allocated. */
     memset(FreeldrMem, 0, FreeldrBytes);
-    
+
     // AGENT-MODIFIED: Confirm memset succeeded
     TRACE("memset completed successfully\n");
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: Translating EFI map\r\n");
 
     /* Walk the EFI map and translate. */
     EFI_MEMORY_DESCRIPTOR *MapEntry = (EFI_MEMORY_DESCRIPTOR *)EfiMemoryMap;
@@ -397,8 +388,6 @@ UefiMemGetMemoryMap(_Out_ ULONG *MemoryMapSize /* OUT: number of entries */)
     TRACE("ARM64: Memory map translation complete, FreeldrDescCount=%u\n", FreeldrDescCount);
 #endif
     *MemoryMapSize = FreeldrDescCount;
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: Internal memory map ready\r\n");
     return FreeldrMem;
 }
 

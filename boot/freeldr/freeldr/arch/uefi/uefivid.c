@@ -8,6 +8,9 @@
 #include <uefildr.h>
 
 #include <debug.h>
+#ifdef _M_ARM64
+#include <comm.h>
+#endif
 DBG_DEFAULT_CHANNEL(WARNING);
 
 #define CHAR_WIDTH  8
@@ -25,6 +28,18 @@ DBG_DEFAULT_CHANNEL(WARNING);
 
 extern EFI_SYSTEM_TABLE* GlobalSystemTable;
 extern EFI_HANDLE GlobalImageHandle;
+
+/* Macro for dual console output on ARM64 */
+#ifdef _M_ARM64
+extern VOID UefiConsPutString(PCWSTR String);
+#define UEFI_CONSOLE_OUTPUT(str) UefiConsPutString(str)
+#else
+#define UEFI_CONSOLE_OUTPUT(str) \
+    do { \
+        if (GlobalSystemTable && GlobalSystemTable->ConOut) \
+            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, str); \
+    } while (0)
+#endif
 extern UCHAR BitmapFont8x16[256 * 16];
 
 UCHAR MachDefaultTextColor = COLOR_GRAY;
@@ -112,149 +127,56 @@ UefiInitializeVideo(VOID)
     UINT32 OptimalMode;
 
     RtlZeroMemory(&framebufferData, sizeof(framebufferData));
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: GOP locating protocol\r\n");
     if (!GlobalSystemTable)
         return EFI_ABORTED;
     if (!GlobalSystemTable->BootServices)
-    {
-        if (GlobalSystemTable->ConOut)
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: BootServices=NULL\r\n");
         return EFI_ABORTED;
-    }
-    if (GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: GOP before LocateProtocol\r\n");
-
-#ifdef _ARM64_
-    /* ARM64: Debug the LocateProtocol call */
-    gop = NULL;
-    if (GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: Calling LocateProtocol...\r\n");
-#endif
 
     Status = GlobalSystemTable->BootServices->LocateProtocol(&EfiGraphicsOutputProtocol, 0, (void**)&gop);
-
-#ifdef _ARM64_
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-    {
-        if (Status == EFI_SUCCESS)
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: LocateProtocol SUCCESS\r\n");
-        else
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: LocateProtocol FAILED\r\n");
-
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: About to check Status\r\n");
-    }
-#endif
-
     if (Status != EFI_SUCCESS)
     {
         TRACE("Failed to find GOP with status %d\n", Status);
-        if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        {
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: GOP protocol not found, skipping video init\r\n");
-        }
         /* Don't fail completely, just skip GOP setup */
         return EFI_SUCCESS;
     }
 
     /* GOP located, continue with setup */
-
-    /* GOP located successfully */
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: GOP protocol found\r\n");
-
 #ifdef _ARM64_
-    /* ARM64: Check if gop pointer is valid before dereferencing */
+    /* Check if gop pointer is valid */
     if (!gop)
-    {
-        if (GlobalSystemTable && GlobalSystemTable->ConOut)
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: ERROR - gop is NULL!\r\n");
         return EFI_DEVICE_ERROR;
-    }
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: gop pointer is valid\r\n");
 #endif
 
     if (!gop->Mode)
-    {
-        if (GlobalSystemTable && GlobalSystemTable->ConOut)
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: GOP Mode NULL\r\n");
         return EFI_DEVICE_ERROR;
-    }
     /* Do not TRACE mode details here to avoid early debug path */
     
     /* AGENT-MODIFIED: Find and set optimal resolution instead of hardcoded low res */
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: GOP selecting mode\r\n");
     OptimalMode = UefiFindOptimalGopMode(gop);
     if (OptimalMode != gop->Mode->Mode)
     {
-        if (GlobalSystemTable && GlobalSystemTable->ConOut)
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: GOP setting mode\r\n");
         Status = gop->SetMode(gop, OptimalMode);
-        if (Status != EFI_SUCCESS)
-        {
-            if (GlobalSystemTable && GlobalSystemTable->ConOut)
-                GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: GOP set mode failed, using current\r\n");
-        }
-        else
-        {
-            if (GlobalSystemTable && GlobalSystemTable->ConOut)
-                GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: GOP set mode ok\r\n");
-        }
+        /* Continue with current mode if SetMode fails */
     }
 
-    /* ARM64: Add safety checks for gop->Mode access */
-    if (!gop->Mode) {
-        if (GlobalSystemTable && GlobalSystemTable->ConOut)
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ERROR: gop->Mode is NULL after SetMode!\r\n");
+    /* Safety checks for gop->Mode access */
+    if (!gop->Mode)
         return EFI_DEVICE_ERROR;
-    }
 
-    if (!gop->Mode->Info) {
-        if (GlobalSystemTable && GlobalSystemTable->ConOut)
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ERROR: gop->Mode->Info is NULL!\r\n");
+    if (!gop->Mode->Info)
         return EFI_DEVICE_ERROR;
-    }
 
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: Accessing framebuffer data\r\n");
-
-    /* ARM64: Access each field one by one with safety */
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: Reading FrameBufferBase\r\n");
+    /* Access framebuffer data */
     framebufferData.BaseAddress        = (ULONG_PTR)gop->Mode->FrameBufferBase;
-
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: Reading FrameBufferSize\r\n");
     framebufferData.BufferSize         = gop->Mode->FrameBufferSize;
-
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: Reading HorizontalResolution\r\n");
     framebufferData.ScreenWidth        = gop->Mode->Info->HorizontalResolution;
-
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: Reading VerticalResolution\r\n");
     framebufferData.ScreenHeight       = gop->Mode->Info->VerticalResolution;
-
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: Reading PixelsPerScanLine\r\n");
     framebufferData.PixelsPerScanLine  = gop->Mode->Info->PixelsPerScanLine;
-
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: Reading PixelFormat\r\n");
     framebufferData.PixelFormat        = gop->Mode->Info->PixelFormat;
 
-    /* Avoid TRACE here; we rely on ConOut breadcrumbs instead */
-
     /* AGENT-MODIFIED: Initialize console dimensions for software text rendering */
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: Calculating console dims\r\n");
-
-    /* ARM64: Check for division by zero */
+    /* Check for division by zero */
     if (CHAR_WIDTH == 0 || CHAR_HEIGHT == 0) {
-        if (GlobalSystemTable && GlobalSystemTable->ConOut)
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ERROR: CHAR_WIDTH or CHAR_HEIGHT is zero!\r\n");
         MaxConsoleX = 80;  /* Default fallback */
         MaxConsoleY = 25;  /* Default fallback */
     } else {
@@ -265,15 +187,6 @@ UefiInitializeVideo(VOID)
     ConsoleX = 0;
     ConsoleY = 0;
     GopConsoleInitialized = TRUE;
-
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: Console dims calculated\r\n");
-
-    /* ARM64: Skip TRACE to avoid crash */
-    /* TRACE("AGENT-MODIFIED: Console dimensions: %dx%d chars\n", MaxConsoleX, MaxConsoleY); */
-
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: GOP framebuffer ready\r\n");
 
     return Status;
 }
@@ -317,16 +230,10 @@ UefiVideoClearScreenColor(ULONG Color, BOOLEAN FullScreen)
     PULONG p;
 
 #ifdef _ARM64_
-    /* ARM64: Safety check - make sure framebuffer is initialized */
+    /* Safety check - make sure framebuffer is initialized */
     if (!GopConsoleInitialized || !framebufferData.BaseAddress ||
         framebufferData.ScreenWidth == 0 || framebufferData.ScreenHeight == 0)
-    {
-        if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        {
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: Skipping clear - GOP not initialized\r\n");
-        }
         return;
-    }
 #endif
 
     /* Extra safety for all platforms */
@@ -364,12 +271,9 @@ UefiVideoOutputChar(UCHAR Char, unsigned X, unsigned Y, ULONG FgColor, ULONG BgC
     ULONG Delta;
 
 #ifdef _ARM64_
-    /* ARM64: Safety check - make sure framebuffer is initialized */
+    /* Safety check - make sure framebuffer is initialized */
     if (!GopConsoleInitialized || !framebufferData.BaseAddress)
-    {
-        /* Can't output without framebuffer */
         return;
-    }
 #endif
 
     /* Extra safety for all platforms */
@@ -409,25 +313,15 @@ VOID
 UefiVideoGetDisplaySize(PULONG Width, PULONG Height, PULONG Depth)
 {
 #ifdef _ARM64_
-    /* ARM64: Add safety checks and debug output */
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: UefiVideoGetDisplaySize entry\r\n");
-
     /* Check if GOP is initialized */
     if (!GopConsoleInitialized || framebufferData.ScreenWidth == 0 || framebufferData.ScreenHeight == 0)
     {
-        if (GlobalSystemTable && GlobalSystemTable->ConOut)
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: GOP not initialized, using defaults\r\n");
-
         /* Return safe defaults if not initialized */
         *Width = 80;   /* Standard text console width */
         *Height = 25;  /* Standard text console height */
         *Depth = 0;
         return;
     }
-
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: Calculating display size\r\n");
 #endif
 
     /* ARM64: Extra safety - avoid division by zero */
@@ -443,54 +337,18 @@ UefiVideoGetDisplaySize(PULONG Width, PULONG Height, PULONG Depth)
     *Height = (framebufferData.ScreenHeight - 2 * TOP_BOTTOM_LINES) / CHAR_HEIGHT;
     *Depth =  0;
 
-#ifdef _ARM64_
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: UefiVideoGetDisplaySize exit\r\n");
-#endif
 }
 
 VIDEODISPLAYMODE
 UefiVideoSetDisplayMode(char *DisplayMode, BOOLEAN Init)
 {
 #ifdef _ARM64_
-    /* ARM64: Add early debug output to trace crash */
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-    {
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: UefiVideoSetDisplayMode entry\r\n");
-        if (DisplayMode)
-        {
-            CHAR16 ModeStr[128] = {0};
-            UINTN i;
-            for (i = 0; i < 127 && DisplayMode[i]; i++)
-                ModeStr[i] = (CHAR16)DisplayMode[i];
-            ModeStr[i] = 0;
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: DisplayMode = ");
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, ModeStr);
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"\r\n");
-        }
-        else
-        {
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: DisplayMode = NULL\r\n");
-        }
-    }
-
-    /* ARM64: Check if we need to initialize GOP first */
+    /* Check if we need to initialize GOP first */
     if (Init && !GopConsoleInitialized)
     {
-        if (GlobalSystemTable && GlobalSystemTable->ConOut)
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: Initializing GOP from SetDisplayMode\r\n");
-
         /* Try to initialize video if not already done */
-        EFI_STATUS Status = UefiInitializeVideo();
-        if (Status != EFI_SUCCESS)
-        {
-            if (GlobalSystemTable && GlobalSystemTable->ConOut)
-                GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: GOP init failed in SetDisplayMode\r\n");
-        }
+        UefiInitializeVideo();
     }
-
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: UefiVideoSetDisplayMode returning VideoTextMode\r\n");
 #endif
 
     /* We only have one mode, semi-text */
@@ -501,12 +359,9 @@ ULONG
 UefiVideoGetBufferSize(VOID)
 {
 #ifdef _ARM64_
-    /* ARM64: Add safety checks */
+    /* Safety checks */
     if (!GopConsoleInitialized || framebufferData.ScreenWidth == 0 || framebufferData.ScreenHeight == 0)
-    {
-        /* Return default buffer size for 80x25 text mode */
-        return (80 * 25 * 2);
-    }
+        return (80 * 25 * 2);  /* Default buffer size for 80x25 text mode */
 #endif
 
     /* Extra safety - avoid division by zero */
@@ -522,7 +377,6 @@ VOID
 UefiVideoCopyOffScreenBufferToVRAM(PVOID Buffer)
 {
     PUCHAR OffScreenBuffer = (PUCHAR)Buffer;
-
     ULONG Col, Line;
     for (Line = 0; Line < (framebufferData.ScreenHeight - 2 * TOP_BOTTOM_LINES) / CHAR_HEIGHT; Line++)
     {

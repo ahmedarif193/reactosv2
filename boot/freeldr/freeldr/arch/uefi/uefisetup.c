@@ -13,6 +13,7 @@
 #include <debug.h>
 DBG_DEFAULT_CHANNEL(WARNING);
 
+
 /* GLOBALS ********************************************************************/
 
 extern EFI_SYSTEM_TABLE* GlobalSystemTable;
@@ -65,18 +66,9 @@ MachInit(const char *CmdLine)
     MachVtbl.HwDetect = UefiHwDetect;
     MachVtbl.HwIdle = UefiHwIdle;
     /* Setup GOP for non-ARM64 platforms */
-    if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: GOP init start\r\n");
-
     if (UefiInitializeVideo() != EFI_SUCCESS)
     {
         ERR("Failed to setup GOP\n");
-        if (GlobalSystemTable && GlobalSystemTable->ConOut)
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: GOP init failed\r\n");
-    }
-    else if (GlobalSystemTable && GlobalSystemTable->ConOut)
-    {
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"UEFI: GOP init ok\r\n");
     }
 
     /* Reference the debug channel to avoid unused warnings in release builds */
