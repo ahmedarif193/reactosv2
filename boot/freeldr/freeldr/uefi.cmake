@@ -47,7 +47,7 @@ elseif(ARCH STREQUAL "arm64")
         arch/arm64/mmu_v2.c
         arch/arm64/gic.c
         arch/uefi/efiapp.c
-        arch/uefi/uefidebug.c
+        arch/uefi/uefiserial.c
         ntldr/conversion.c)
     list(APPEND UEFILDR_COMMON_ASM_SOURCE
         arch/uefi/arm64/uefiasm.S

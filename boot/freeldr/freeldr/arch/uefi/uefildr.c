@@ -38,6 +38,11 @@ EfiEntry(
     /* Debugger pre-initialization */
     DebugInit(BootMgrInfo.DebugString);
 
+    /* ARM64 UEFI: Ensure debug output only goes to serial, not to screen */
+    #if defined(_M_ARM64) && defined(UEFIBOOT)
+    DebugDisableScreenPort();
+    #endif
+
     /* Progress marker */
     if (SystemTable && SystemTable->ConOut)
         SystemTable->ConOut->OutputString(SystemTable->ConOut, L"UEFI: Debug initialized\r\n");

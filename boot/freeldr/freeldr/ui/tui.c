@@ -202,6 +202,7 @@ extern UCHAR MachDefaultTextColor;
 
 BOOLEAN TuiInitialize(VOID)
 {
+    /* ARM64: Skip debug tracing in TUI to avoid issues */
     MachVideoHideShowTextCursor(FALSE);
     MachVideoSetTextCursorPosition(0, 0);
     MachVideoClearScreen(ATTR(COLOR_GRAY, COLOR_BLACK));

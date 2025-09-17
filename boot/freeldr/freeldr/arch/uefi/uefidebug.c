@@ -1,10 +1,14 @@
 /*
  * UEFI Debug Output for ARM64
  * Provides RS232-compatible interface using UEFI Console Services
+ *
+ * NOTE: This file is disabled in favor of uefiserial.c which provides
+ * proper serial-only output for debug messages
  */
 
 #include <freeldr.h>
 
+#if 0 /* Disabled - using uefiserial.c instead */
 #if defined(_M_ARM64) && defined(UEFIBOOT)
 
 #include <uefildr.h>
@@ -69,3 +73,4 @@ BOOLEAN Rs232PortInUse(PUCHAR Base)
 }
 
 #endif /* _M_ARM64 && UEFIBOOT */
+#endif /* Disabled */

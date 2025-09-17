@@ -316,6 +316,23 @@ UefiVideoClearScreenColor(ULONG Color, BOOLEAN FullScreen)
     ULONG Line, Col;
     PULONG p;
 
+#ifdef _ARM64_
+    /* ARM64: Safety check - make sure framebuffer is initialized */
+    if (!GopConsoleInitialized || !framebufferData.BaseAddress ||
+        framebufferData.ScreenWidth == 0 || framebufferData.ScreenHeight == 0)
+    {
+        if (GlobalSystemTable && GlobalSystemTable->ConOut)
+        {
+            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: Skipping clear - GOP not initialized\r\n");
+        }
+        return;
+    }
+#endif
+
+    /* Extra safety for all platforms */
+    if (!framebufferData.BaseAddress)
+        return;
+
     Delta = (framebufferData.PixelsPerScanLine * 4 + 3) & ~ 0x3;
     for (Line = 0; Line < framebufferData.ScreenHeight - (FullScreen ? 0 : 2 * TOP_BOTTOM_LINES); Line++)
     {
@@ -345,6 +362,20 @@ UefiVideoOutputChar(UCHAR Char, unsigned X, unsigned Y, ULONG FgColor, ULONG BgC
     unsigned Line;
     unsigned Col;
     ULONG Delta;
+
+#ifdef _ARM64_
+    /* ARM64: Safety check - make sure framebuffer is initialized */
+    if (!GopConsoleInitialized || !framebufferData.BaseAddress)
+    {
+        /* Can't output without framebuffer */
+        return;
+    }
+#endif
+
+    /* Extra safety for all platforms */
+    if (!framebufferData.BaseAddress)
+        return;
+
     Delta = (framebufferData.PixelsPerScanLine * 4 + 3) & ~ 0x3;
     FontPtr = BitmapFont8x16 + Char * 16;
     Pixel = (PULONG) ((char *) framebufferData.BaseAddress +
@@ -377,14 +408,91 @@ UefiVideoPutChar(int Ch, UCHAR Attr, unsigned X, unsigned Y)
 VOID
 UefiVideoGetDisplaySize(PULONG Width, PULONG Height, PULONG Depth)
 {
+#ifdef _ARM64_
+    /* ARM64: Add safety checks and debug output */
+    if (GlobalSystemTable && GlobalSystemTable->ConOut)
+        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: UefiVideoGetDisplaySize entry\r\n");
+
+    /* Check if GOP is initialized */
+    if (!GopConsoleInitialized || framebufferData.ScreenWidth == 0 || framebufferData.ScreenHeight == 0)
+    {
+        if (GlobalSystemTable && GlobalSystemTable->ConOut)
+            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: GOP not initialized, using defaults\r\n");
+
+        /* Return safe defaults if not initialized */
+        *Width = 80;   /* Standard text console width */
+        *Height = 25;  /* Standard text console height */
+        *Depth = 0;
+        return;
+    }
+
+    if (GlobalSystemTable && GlobalSystemTable->ConOut)
+        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: Calculating display size\r\n");
+#endif
+
+    /* ARM64: Extra safety - avoid division by zero */
+    if (CHAR_WIDTH == 0 || CHAR_HEIGHT == 0)
+    {
+        *Width = 80;
+        *Height = 25;
+        *Depth = 0;
+        return;
+    }
+
     *Width =  framebufferData.ScreenWidth / CHAR_WIDTH;
     *Height = (framebufferData.ScreenHeight - 2 * TOP_BOTTOM_LINES) / CHAR_HEIGHT;
     *Depth =  0;
+
+#ifdef _ARM64_
+    if (GlobalSystemTable && GlobalSystemTable->ConOut)
+        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: UefiVideoGetDisplaySize exit\r\n");
+#endif
 }
 
 VIDEODISPLAYMODE
 UefiVideoSetDisplayMode(char *DisplayMode, BOOLEAN Init)
 {
+#ifdef _ARM64_
+    /* ARM64: Add early debug output to trace crash */
+    if (GlobalSystemTable && GlobalSystemTable->ConOut)
+    {
+        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: UefiVideoSetDisplayMode entry\r\n");
+        if (DisplayMode)
+        {
+            CHAR16 ModeStr[128] = {0};
+            UINTN i;
+            for (i = 0; i < 127 && DisplayMode[i]; i++)
+                ModeStr[i] = (CHAR16)DisplayMode[i];
+            ModeStr[i] = 0;
+            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: DisplayMode = ");
+            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, ModeStr);
+            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"\r\n");
+        }
+        else
+        {
+            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: DisplayMode = NULL\r\n");
+        }
+    }
+
+    /* ARM64: Check if we need to initialize GOP first */
+    if (Init && !GopConsoleInitialized)
+    {
+        if (GlobalSystemTable && GlobalSystemTable->ConOut)
+            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: Initializing GOP from SetDisplayMode\r\n");
+
+        /* Try to initialize video if not already done */
+        EFI_STATUS Status = UefiInitializeVideo();
+        if (Status != EFI_SUCCESS)
+        {
+            if (GlobalSystemTable && GlobalSystemTable->ConOut)
+                GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: GOP init failed in SetDisplayMode\r\n");
+        }
+    }
+
+    if (GlobalSystemTable && GlobalSystemTable->ConOut)
+        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: UefiVideoSetDisplayMode returning VideoTextMode\r\n");
+#endif
+
     /* We only have one mode, semi-text */
     return VideoTextMode;
 }
@@ -392,6 +500,21 @@ UefiVideoSetDisplayMode(char *DisplayMode, BOOLEAN Init)
 ULONG
 UefiVideoGetBufferSize(VOID)
 {
+#ifdef _ARM64_
+    /* ARM64: Add safety checks */
+    if (!GopConsoleInitialized || framebufferData.ScreenWidth == 0 || framebufferData.ScreenHeight == 0)
+    {
+        /* Return default buffer size for 80x25 text mode */
+        return (80 * 25 * 2);
+    }
+#endif
+
+    /* Extra safety - avoid division by zero */
+    if (CHAR_WIDTH == 0 || CHAR_HEIGHT == 0)
+    {
+        return (80 * 25 * 2);
+    }
+
     return ((framebufferData.ScreenHeight - 2 * TOP_BOTTOM_LINES) / CHAR_HEIGHT * (framebufferData.ScreenWidth / CHAR_WIDTH) * 2);
 }
 

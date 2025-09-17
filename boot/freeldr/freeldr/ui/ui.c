@@ -120,8 +120,19 @@ BOOLEAN UiInitialize(BOOLEAN ShowUi)
     {
         SettingText[0] = '\0';
     }
+
+#ifdef _ARM64_
+    TRACE("ARM64: About to call MachVideoSetDisplayMode with '%s'\n", SettingText);
+#endif
     UiDisplayMode = MachVideoSetDisplayMode(SettingText, TRUE);
+#ifdef _ARM64_
+    TRACE("ARM64: MachVideoSetDisplayMode returned %d\n", UiDisplayMode);
+    TRACE("ARM64: About to call MachVideoGetDisplaySize\n");
+#endif
     MachVideoGetDisplaySize(&UiScreenWidth, &UiScreenHeight, &Depth);
+#ifdef _ARM64_
+    TRACE("ARM64: MachVideoGetDisplaySize returned %lux%lu depth=%lu\n", UiScreenWidth, UiScreenHeight, Depth);
+#endif
 
     /* Select the UI */
     if ((SectionId != 0) && IniReadSettingByName(SectionId, "MinimalUI", SettingText, sizeof(SettingText)))

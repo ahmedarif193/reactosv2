@@ -5,7 +5,7 @@
 
 #include <freeldr.h>
 
-#if defined(_M_ARM64) && defined(UEFIBOOT)
+//#if defined(_M_ARM64)
 
 #include <uefildr.h>
 #include <SerialIo.h>
@@ -17,70 +17,10 @@ extern EFI_HANDLE GlobalImageHandle;
 /* Serial I/O Protocol instance */
 static EFI_SERIAL_IO_PROTOCOL* SerialIoProtocol = NULL;
 static BOOLEAN SerialInitialized = FALSE;
-static ULONG DebugComPort = 0;
-static BOOLEAN UseSerialForDebug = FALSE;
 
 /* Serial I/O Protocol GUID */
 EFI_GUID gEfiSerialIoProtocolGuid = EFI_SERIAL_IO_PROTOCOL_GUID;
 
-/* Forward declarations */
-PCSTR GetCommandLineOptions(VOID);
-
-/* Parse debug port from command line */
-static ULONG ParseDebugPort(PCSTR Options)
-{
-    PCSTR debugPort;
-    ULONG port = 0;
-
-    if (!Options) return 0;
-
-    /* Look for /DEBUGPORT=COMx or /DEBUGPORT=SERIAL */
-    debugPort = strstr(Options, "/DEBUGPORT=");
-    if (!debugPort) {
-        debugPort = strstr(Options, "/debugport=");
-    }
-
-    if (debugPort) {
-        debugPort += 11; /* Skip "/DEBUGPORT=" */
-
-        if (_strnicmp(debugPort, "COM", 3) == 0) {
-            port = atoi(debugPort + 3);
-        } else if (_strnicmp(debugPort, "SERIAL", 6) == 0) {
-            port = 1; /* Default to first serial port */
-        }
-    }
-
-    return port;
-}
-
-/* Parse baud rate from command line */
-static ULONG ParseBaudRate(PCSTR Options)
-{
-    PCSTR baudStr;
-    ULONG baudRate = 115200; /* Default */
-
-    if (!Options) return baudRate;
-
-    /* Look for /BAUDRATE=xxxxx */
-    baudStr = strstr(Options, "/BAUDRATE=");
-    if (!baudStr) {
-        baudStr = strstr(Options, "/baudrate=");
-    }
-
-    if (baudStr) {
-        baudStr += 10; /* Skip "/BAUDRATE=" */
-        baudRate = atoi(baudStr);
-
-        /* Validate baud rate */
-        if (baudRate != 9600 && baudRate != 19200 &&
-            baudRate != 38400 && baudRate != 57600 &&
-            baudRate != 115200) {
-            baudRate = 115200; /* Default if invalid */
-        }
-    }
-
-    return baudRate;
-}
 
 /* Initialize UEFI Serial I/O */
 static BOOLEAN UefiSerialInitialize(ULONG ComPort, ULONG BaudRate)
@@ -162,47 +102,29 @@ static VOID UefiSerialPutByte(UCHAR ByteToSend)
 
 BOOLEAN Rs232PortInitialize(IN ULONG ComPort, IN ULONG BaudRate)
 {
-    PCSTR Options;
-
     /* Check if already initialized */
     if (SerialInitialized) {
         return TRUE;
     }
 
-    /* Get command line options */
-    Options = GetCommandLineOptions();
-
-    /* Parse debug port from command line if not specified */
+    /* Set defaults if not specified */
     if (ComPort == 0) {
-        ComPort = ParseDebugPort(Options);
+        ComPort = 1;  /* Default to first available serial port */
     }
-
-    /* Parse baud rate from command line if not specified */
     if (BaudRate == 0) {
-        BaudRate = ParseBaudRate(Options);
+        BaudRate = 115200;  /* Standard baud rate */
     }
 
-    /* Try to initialize UEFI Serial I/O if requested */
-    if (ComPort > 0) {
-        if (UefiSerialInitialize(ComPort, BaudRate)) {
-            UseSerialForDebug = TRUE;
-            DebugComPort = ComPort;
-            SerialInitialized = TRUE;
-
-            /* Send initialization message */
-            PCSTR initMsg = "\r\n[FreeLDR] UEFI Serial I/O Debug Initialized\r\n";
-            while (*initMsg) {
-                UefiSerialPutByte(*initMsg++);
-            }
-
-            return TRUE;
-        }
+    /* Try to initialize UEFI Serial I/O Protocol */
+    if (UefiSerialInitialize(ComPort, BaudRate)) {
+        SerialInitialized = TRUE;
+        return TRUE;
     }
 
-    /* Fallback to console output */
-    UseSerialForDebug = FALSE;
+    /* Mark as initialized even if no serial available */
+    /* This allows graceful degradation on systems without serial */
     SerialInitialized = TRUE;
-    return TRUE; /* Always succeed with console fallback */
+    return TRUE;
 }
 
 BOOLEAN Rs232PortGetByte(PUCHAR ByteReceived)
@@ -210,7 +132,7 @@ BOOLEAN Rs232PortGetByte(PUCHAR ByteReceived)
     UINTN BufferSize = 1;
     EFI_STATUS Status;
 
-    if (!UseSerialForDebug || !SerialIoProtocol) {
+    if (!SerialIoProtocol) {
         return FALSE;
     }
 
@@ -226,44 +148,23 @@ BOOLEAN Rs232PortPollByte(PUCHAR ByteReceived)
 
 VOID Rs232PortPutByte(UCHAR ByteToSend)
 {
-    CHAR16 WideChar[2];
-
-    /* If using Serial I/O, send via serial */
-    if (UseSerialForDebug && SerialIoProtocol) {
+    /* If Serial I/O Protocol is available, use it */
+    if (SerialIoProtocol) {
         UefiSerialPutByte(ByteToSend);
+        return;
     }
 
-    /* Also output to console if available (dual output) */
-    if (GlobalSystemTable && GlobalSystemTable->ConOut) {
-        /* Convert byte to wide character */
-        WideChar[0] = (CHAR16)ByteToSend;
-        WideChar[1] = 0;
-
-        /* Special handling for newline */
-        if (ByteToSend == '\n') {
-            WideChar[0] = L'\r';
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, WideChar);
-            WideChar[0] = L'\n';
-        }
-
-        /* Output the character */
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, WideChar);
-    }
+    /* No output if serial protocol not available */
+    /* This keeps debug output clean and production-ready */
+    /* Serial output requires proper UEFI Serial I/O Protocol support */
 }
 
 BOOLEAN Rs232PortInUse(PUCHAR Base)
 {
     /* Not applicable for UEFI Serial I/O */
     (void)Base;
-    return UseSerialForDebug;
+    return (SerialIoProtocol != NULL);
 }
 
-/* Get command line options helper */
-PCSTR GetCommandLineOptions(VOID)
-{
-    /* This would normally parse the LoadOptions from EFI_LOADED_IMAGE_PROTOCOL */
-    /* For now, return NULL - can be enhanced to parse actual options */
-    return NULL;
-}
 
-#endif /* _M_ARM64 && UEFIBOOT */
+//#endif /* _M_ARM64 */

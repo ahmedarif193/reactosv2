@@ -575,6 +575,9 @@ VOID Arm64MachInit(const char *CmdLine)
     if (GlobalSystemTable && GlobalSystemTable->ConOut)
         GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: MachInit entry\r\n");
 
+    /* ARM64 UEFI: Disable screen debug output to keep console clean */
+    DebugDisableScreenPort();
+
     /* Timer initialization deferred - will be done on first use */
     /* Arm64InitializeTimer() is called lazily from timer functions */
     if (GlobalSystemTable && GlobalSystemTable->ConOut)
@@ -666,22 +669,10 @@ VOID Arm64MachInit(const char *CmdLine)
     /* TRACE("ARM64: Machine vtable configured\n"); - Skip TRACE for now */
 
     /* Initialize GOP (Graphics Output Protocol) for ARM64 */
+    /* REMOVED: GOP initialization is deferred until first use in UefiVideoSetDisplayMode */
+    /* This avoids issues with double initialization and ensures proper sequencing */
     if (GlobalSystemTable && GlobalSystemTable->ConOut)
-        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: Starting GOP initialization\r\n");
-
-    /* Call UefiInitializeVideo to set up GOP */
-    EFI_STATUS GopStatus = UefiInitializeVideo();
-    if (GopStatus != EFI_SUCCESS)
-    {
-        if (GlobalSystemTable && GlobalSystemTable->ConOut)
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: GOP init failed\r\n");
-        /* Don't fail completely, continue without GOP */
-    }
-    else
-    {
-        if (GlobalSystemTable && GlobalSystemTable->ConOut)
-            GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: GOP init successful\r\n");
-    }
+        GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: Deferring GOP initialization to first use\r\n");
 
     if (GlobalSystemTable && GlobalSystemTable->ConOut)
         GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: MachInit complete, returning\r\n");
