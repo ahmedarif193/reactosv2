@@ -1,0 +1,128 @@
+# Boot Configuration (YAML)
+#
+# Purpose
+# - Modern, structured replacement for legacy FREELDR.INI with
+#   explicit UEFI-aware fields and strongly-typed values.
+# - Not consumed by FreeLDR yet; intended as a single source of truth
+#   for tooling to generate FREELDR.INI (and, later, for native parsing).
+#
+# Notes
+# - Paths use ARC where applicable (e.g. multi(0)disk(0)...), or EFI paths
+#   for UEFI apps (e.g. \EFI\BOOT\Shell.efi).
+# - Colors are ARGB 0xAARRGGBB unless noted otherwise.
+#
+version: 1
+
+freeloader:
+  default_os: LiveCD_Debug     # Entry id from boot_entries[].id
+  timeout_seconds: 3
+  message: ""                  # Optional banner message; supports \n
+  debug:
+    enabled: false
+    port: SERIAL               # SERIAL | SCREEN | FILE
+    serial:
+      com: COM1                # COM1..COM4 (if used by BIOS/legacy), ignored on UEFI
+      baudrate: 115200
+    file:
+      path: "\\Device\\HarddiskX\\PartitionY\\debug.log"
+
+display:
+  minimal_ui: true             # NTLDR-like minimal text menu
+  mode: NORMAL_VGA             # NORMAL_VGA | EXTENDED_VGA | 80x25/50, or numeric VESA code
+
+  # Optional modern theme (used by richer UI paths)
+  theme:
+    title_text: "ReactOS LiveCD"
+    colors:
+      background: 0xFF1E1E1E
+      background_alt: 0xFF2A2A2A
+      accent: 0xFF0078D4
+      title_fg: 0xFFFFFFFF
+      text: 0xFFE5E5E5
+      menu_fg: 0xFFFFFFFF
+      menu_bg: 0xFF0A2A5A
+      selected_fg: 0xFF000000
+      selected_bg: 0xFFC0C0C0
+    special_effects: false
+
+uefi:
+  # Console & framebuffer behavior
+  use_gop: true                 # Prefer GOP over firmware text when available
+  gop:
+    prefer_linear_fb: true      # Prefer modes with linear framebuffer
+    preferred_modes: [1024x768, 1280x800, 800x600]
+    blt_fallback: true          # Allow BLT-only drawing if no linear FB
+    force_mode_index: null      # Optional integer to force a specific mode
+
+  # Chainload another EFI application from the boot menu
+  chainload:
+    enabled: true
+    app_path: "\\EFI\\BOOT\\Shell.efi"
+    options: ""                 # Optional args
+
+  serial_debug:
+    enabled: false
+    baudrate: 115200
+
+  memory_map:
+    reserve_page_zero: true
+
+input:
+  uefi_simple_text_input: true
+  uefi_pointer: false
+
+devices:
+  boot_device_arc: "multi(0)disk(0)cdrom(0)"
+  drive_map: []                 # e.g. ["hd1->hd0", "fd1->fd0"] for BIOS
+
+boot_entries:
+  - id: LiveCD
+    title: "LiveCD"
+    type: Windows2003           # Windows2003 | BootSector | Linux | EfiApplication
+    system_path: "\\reactos"    # ARC or relative to boot device
+    options: "/FASTDETECT /MININT"
+
+  - id: LiveCD_Debug
+    title: "LiveCD (Debug)"
+    type: Windows2003
+    system_path: "\\reactos"
+    options: "/DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200 /SOS /FASTDETECT /MININT"
+
+  - id: LiveCD_Macpi
+    title: "LiveCD ACPI SMP (Debug)"
+    type: Windows2003
+    system_path: "\\reactos"
+    options: "/HAL=halmacpi.dll /KERNEL=ntkrnlmp.exe /DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200 /SOS /FASTDETECT /MININT"
+
+  - id: LiveCD_Aacpi
+    title: "LiveCD ACPI APIC (Debug)"
+    type: Windows2003
+    system_path: "\\reactos"
+    options: "/HAL=halaacpi.dll /DEBUG /DEBUGPORT=COM1 /BAUDRATE=115200 /SOS /FASTDETECT /MININT"
+
+  - id: LiveCD_VBoxDebug
+    title: "LiveCD (VBox Debug)"
+    type: Windows2003
+    system_path: "\\reactos"
+    options: "/DEBUG /DEBUGPORT=VBOX /SOS /FASTDETECT /MININT"
+
+  - id: LiveCD_Screen
+    title: "LiveCD (Screen)"
+    type: Windows2003
+    system_path: "\\reactos"
+    options: "/DEBUG /DEBUGPORT=SCREEN /SOS /FASTDETECT /MININT"
+
+  - id: EfiShell
+    title: "UEFI Shell"
+    type: EfiApplication
+    efi:
+      app_path: "\\EFI\\BOOT\\Shell.efi"
+      options: ""
+
+# Advanced / vendor-specific knobs can go here
+advanced:
+  # Example: override kernel/hal at entry level instead of Options switch
+  windows_defaults:
+    kernel: null                # e.g. "ntoskrnl.exe"
+    hal: null                   # e.g. "hal.dll"
+

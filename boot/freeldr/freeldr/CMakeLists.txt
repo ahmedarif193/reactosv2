@@ -66,7 +66,10 @@ list(APPEND FREELDR_BOOTMGR_SOURCE
     ui/tui.c
     ui/tuimenu.c
     ui/ui.c
-    ui/video.c)
+    ui/video.c
+    ui/uix/uix.c
+    ui/uix/uix_surface.c
+    ui/uix/uix_draw.c)
 
 list(APPEND FREELDR_NTLDR_SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/config/cmboot.c
