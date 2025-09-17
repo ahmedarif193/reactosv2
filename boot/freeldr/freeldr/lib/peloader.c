@@ -528,6 +528,14 @@ PeLdrInitializeModuleList(VOID)
 
     InitializeListHead(&FrLdrModuleList);
 
+#ifdef _ARM64_
+#ifdef UEFIBOOT
+    /* ARM64 UEFI: Skip adding freeldr.efi to module list as it doesn't have DOS header */
+    TRACE("ARM64 UEFI: Skipping freeldr.efi module list entry\n");
+    return TRUE;
+#endif
+#endif
+
     /* Allocate a data table entry for freeldr.sys */
     if (!PeLdrAllocateDataTableEntry(&FrLdrModuleList,
                                      "freeldr.sys",

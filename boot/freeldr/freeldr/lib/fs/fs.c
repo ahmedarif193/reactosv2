@@ -77,7 +77,7 @@ PFS_MOUNT FileSystems[] =
 
 /* DEBUGGING HELPERS **********************************************************/
 
-#if DBG && 0
+#if DBG && defined(_ARM64_)
 static VOID
 DumpDeviceList(VOID)
 {
@@ -115,7 +115,9 @@ DumpDeviceList(VOID)
 
     DbgPrint("\n== END Dumping ARC devices ==\n\n");
 }
+#endif // DBG && defined(_ARM64_)
 
+#if DBG && 0
 static VOID
 DumpFileTable(VOID)
 {
@@ -150,7 +152,7 @@ DumpFileTable(VOID)
 
     DbgPrint("\n== END Dumping ARC files table ==\n\n");
 }
-#endif // DBG
+#endif // DBG && 0
 
 
 /* ARC FUNCTIONS **************************************************************/
@@ -231,6 +233,16 @@ ARC_STATUS ArcOpen(CHAR* Path, OPENMODE OpenMode, ULONG* FileId)
     /* Print status message */
     TRACE("Opening file '%s'...\n", Path);
 
+#ifdef _ARM64_
+    /* ARM64: Dump device list for debugging */
+    static int DumpOnce = 0;
+    if (DumpOnce == 0)
+    {
+        DumpOnce = 1;
+        DumpDeviceList();
+    }
+#endif
+
     *FileId = INVALID_FILE_ID;
 
     /* Search last ')', which delimits device and path */
@@ -252,13 +264,19 @@ ARC_STATUS ArcOpen(CHAR* Path, OPENMODE OpenMode, ULONG* FileId)
 
     /* Search for the registered device */
     pDevice = NULL;
+    TRACE("Searching for device matching '%.*s' (length=%lu)...\n", (int)Length, DeviceName, Length);
+
     for (pEntry = DeviceListHead.Flink;
          pEntry != &DeviceListHead;
          pEntry = pEntry->Flink)
     {
         pDevice = CONTAINING_RECORD(pEntry, DEVICE, ListEntry);
+        TRACE("  Checking device: '%s'\n", pDevice->DeviceName);
         if (strncmp(pDevice->DeviceName, DeviceName, Length) == 0)
+        {
+            TRACE("  Found matching device!\n");
             break;
+        }
     }
 
     /* Cleanup */
@@ -267,7 +285,10 @@ ARC_STATUS ArcOpen(CHAR* Path, OPENMODE OpenMode, ULONG* FileId)
     DeviceName = NULL;
 
     if (pEntry == &DeviceListHead)
+    {
+        ERR("Device '%.*s' not found in device list!\n", (int)Length, DeviceName);
         return ENODEV;
+    }
 
     /* OK, device found. Is it already opened? */
     if (pDevice->ReferenceCount == 0)
@@ -485,6 +506,10 @@ FsOpenFile(
     SIZE_T cchPathLen;
     CHAR FullPath[MAX_PATH] = "";
 
+    TRACE("FsOpenFile: FileName='%s', DefaultPath='%s'\n",
+          FileName ? FileName : "(null)",
+          DefaultPath ? DefaultPath : "(null)");
+
     /*
      * Check whether FileName is a full path and if not, create a full
      * file name using the user-provided default path (if present).
@@ -529,6 +554,7 @@ FsOpenFile(
         return ENAMETOOLONG;
 
     /* Open the file */
+    TRACE("FsOpenFile: Opening full path: '%s'\n", FullPath);
     return ArcOpen(FullPath, OpenMode, FileId);
 }
 

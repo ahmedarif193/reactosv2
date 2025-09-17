@@ -62,6 +62,7 @@ static INTERNAL_UEFI_DISK* InternalUefiDisk = NULL;
 static EFI_GUID bioGuid = BLOCK_IO_PROTOCOL;
 static EFI_BLOCK_IO* bio;
 static EFI_HANDLE* handles = NULL;
+static ULONG GlobalSystemHandleCount = 0; /* For ARM64 boot path detection */
 
 /* FUNCTIONS *****************************************************************/
 
@@ -83,6 +84,7 @@ DiskReportError(BOOLEAN bShowError)
     return lReportError;
 }
 
+#ifndef _ARM64_
 static
 BOOLEAN
 UefiGetBootPartitionEntry(
@@ -107,6 +109,7 @@ UefiGetBootPartitionEntry(
     TRACE("UefiGetBootPartitionEntry: Boot Partition is: %d\n", PartitionNum);
     return TRUE;
 }
+#endif /* !_ARM64_ */
 
 static
 ARC_STATUS
@@ -168,11 +171,30 @@ UefiDiskOpen(CHAR *Path, OPENMODE OpenMode, ULONG *FileId)
 
     if (DrivePartition != 0xff && DrivePartition != 0)
     {
+        /* Try to get partition entry */
         if (!DiskGetPartitionEntry(DriveNumber, DrivePartition, &PartitionTableEntry))
-            return EINVAL;
+        {
+            /* For UEFI boot, if partition 1 fails, try treating it as a raw disk */
+            if (DrivePartition == 1)
+            {
+                TRACE("Partition 1 not found, trying raw disk access\n");
+                GEOMETRY Geometry;
+                if (!MachDiskGetDriveGeometry(DriveNumber, &Geometry))
+                    return EINVAL;
 
-        SectorOffset = PartitionTableEntry.SectorCountBeforePartition;
-        SectorCount = PartitionTableEntry.PartitionSectorCount;
+                SectorOffset = 0;
+                SectorCount = Geometry.Sectors;
+            }
+            else
+            {
+                return EINVAL;
+            }
+        }
+        else
+        {
+            SectorOffset = PartitionTableEntry.SectorCountBeforePartition;
+            SectorCount = PartitionTableEntry.PartitionSectorCount;
+        }
     }
     else
     {
@@ -295,6 +317,7 @@ static const DEVVTBL UefiDiskVtbl =
     UefiDiskSeek,
 };
 
+#ifndef _ARM64_
 static
 VOID
 GetHarddiskInformation(UCHAR DriveNumber)
@@ -383,6 +406,7 @@ GetHarddiskInformation(UCHAR DriveNumber)
     Identifier[19] = 0;
     TRACE("Identifier: %s\n", Identifier);
 }
+#endif /* !_ARM64_ */
 
 static
 VOID
@@ -397,14 +421,65 @@ UefiSetupBlockDevices(VOID)
     PcBiosDiskCount = 0;
     UefiBootRootIdentifier = 0;
 
+    TRACE("UefiSetupBlockDevices: Starting block device enumeration\n");
+
     /* 1) Setup a list of boot handles by using the LocateHandle protocol */
     Status = GlobalSystemTable->BootServices->LocateHandle(ByProtocol, &bioGuid, NULL, &handle_size, handles);
+
+#ifdef _ARM64_
+    /* ARM64: Use UEFI allocation directly */
+    EFI_PHYSICAL_ADDRESS HandlesAddress = 0;
+    UINTN HandlePages = (handle_size + EFI_PAGE_SIZE - 1) / EFI_PAGE_SIZE;
+
+    Status = GlobalSystemTable->BootServices->AllocatePages(
+        AllocateAnyPages,
+        EfiLoaderData,
+        HandlePages,
+        &HandlesAddress);
+
+    if (EFI_ERROR(Status))
+    {
+        TRACE("ARM64: Failed to allocate handles buffer: %ld\n", Status);
+        return;
+    }
+
+    handles = (EFI_HANDLE*)(UINTN)HandlesAddress;
+#else
     handles = MmAllocateMemoryWithType(handle_size, LoaderFirmwareTemporary);
+#endif
+
     Status = GlobalSystemTable->BootServices->LocateHandle(ByProtocol, &bioGuid, NULL, &handle_size, handles);
     SystemHandleCount = handle_size / sizeof(EFI_HANDLE);
+    GlobalSystemHandleCount = SystemHandleCount; /* Store for later use */
+
+#ifdef _ARM64_
+    /* ARM64: Use UEFI allocation for internal disk array */
+    EFI_PHYSICAL_ADDRESS DiskArrayAddress = 0;
+    UINTN DiskArraySize = sizeof(INTERNAL_UEFI_DISK) * SystemHandleCount;
+    UINTN DiskArrayPages = (DiskArraySize + EFI_PAGE_SIZE - 1) / EFI_PAGE_SIZE;
+
+    Status = GlobalSystemTable->BootServices->AllocatePages(
+        AllocateAnyPages,
+        EfiLoaderData,
+        DiskArrayPages,
+        &DiskArrayAddress);
+
+    if (EFI_ERROR(Status))
+    {
+        TRACE("ARM64: Failed to allocate disk array: %ld\n", Status);
+        return;
+    }
+
+    InternalUefiDisk = (INTERNAL_UEFI_DISK*)(UINTN)DiskArrayAddress;
+    RtlZeroMemory(InternalUefiDisk, DiskArraySize);
+#else
     InternalUefiDisk = MmAllocateMemoryWithType(sizeof(INTERNAL_UEFI_DISK) * SystemHandleCount, LoaderFirmwareTemporary);
+#endif
 
     BlockDeviceIndex = 0;
+    TRACE("UefiSetupBlockDevices: Found %lu block devices, PublicBootHandle=0x%p\n",
+          SystemHandleCount, PublicBootHandle);
+
     /* 2) Parse the handle list */
     for (i = 0; i < SystemHandleCount; ++i)
     {
@@ -412,6 +487,7 @@ UefiSetupBlockDevices(VOID)
         if (handles[i] == PublicBootHandle)
         {
             OffsetToBoot = i; /* Drive offset in the handles list */
+            TRACE("UefiSetupBlockDevices: Found boot handle at offset %lu\n", i);
         }
 
         if (EFI_ERROR(Status) || 
@@ -424,21 +500,75 @@ UefiSetupBlockDevices(VOID)
         }
         if (bio->Media->LogicalPartition == FALSE)
         {
-            TRACE("Found root of a HDD\n");
+            TRACE("Found root of a HDD at handle %lu (handle=0x%p)\n", i, handles[i]);
             PcBiosDiskCount++;
             InternalUefiDisk[BlockDeviceIndex].ArcDriveNumber = BlockDeviceIndex;
             InternalUefiDisk[BlockDeviceIndex].UefiRootNumber = i;
+
+#ifdef _ARM64_
+            /* ARM64: Detect partition type and register devices accordingly */
+            TRACE("ARM64: Detecting partition type for drive %lu\n", BlockDeviceIndex);
+
+            /* Detect partition type for this drive */
+            DiskDetectPartitionType(BlockDeviceIndex + FIRST_BIOS_DISK);
+
+            /* Register device nodes */
+            CHAR ArcName[MAX_PATH];
+            sprintf(ArcName, "multi(0)disk(0)rdisk(%lu)", (unsigned long)BlockDeviceIndex);
+            FsRegisterDevice(ArcName, &UefiDiskVtbl);
+
+            /* Always register partition(0) for raw disk access */
+            sprintf(ArcName, "multi(0)disk(0)rdisk(%lu)partition(0)", (unsigned long)BlockDeviceIndex);
+            FsRegisterDevice(ArcName, &UefiDiskVtbl);
+
+            /* Register partition(1) for ESP access (works for both partitioned and raw disks) */
+            sprintf(ArcName, "multi(0)disk(0)rdisk(%lu)partition(1)", (unsigned long)BlockDeviceIndex);
+            FsRegisterDevice(ArcName, &UefiDiskVtbl);
+            TRACE("ARM64: Registered partition nodes for disk %u\n", BlockDeviceIndex);
+#else
             GetHarddiskInformation(BlockDeviceIndex + FIRST_BIOS_DISK);
+#endif
             BlockDeviceIndex++;
         }
         else if (handles[i] == PublicBootHandle)
         {
+            TRACE("ARM64: Boot handle found at index %lu, checking if partition...\n", i);
             GlobalSystemTable->BootServices->HandleProtocol(handles[i], &bioGuid, (void**)&bio);
-            if (bio->Media->LogicalPartition == FALSE)
+
+            /* For ESP boot, we're likely booting from a partition */
+            if (bio->Media->LogicalPartition == TRUE)
+            {
+                TRACE("ARM64: Boot device is a partition (ESP)\n");
+                /* Find the root disk for this partition */
+                ULONG j;
+                for (j = i; j > 0; j--)
+                {
+                    EFI_BLOCK_IO* rootBio;
+                    Status = GlobalSystemTable->BootServices->HandleProtocol(handles[j-1], &bioGuid, (void**)&rootBio);
+                    if (!EFI_ERROR(Status) && rootBio && rootBio->Media->LogicalPartition == FALSE)
+                    {
+                        TRACE("ARM64: Found root disk at index %lu for boot partition\n", j-1);
+                        UefiBootRootIdentifier = j-1;
+                        /* Find which disk this is */
+                        for (ULONG k = 0; k < BlockDeviceIndex; k++)
+                        {
+                            if (InternalUefiDisk[k].UefiRootNumber == (j-1))
+                            {
+                                InternalUefiDisk[k].IsThisTheBootDrive = TRUE;
+                                PublicBootArcDisk = k;
+                                TRACE("ARM64: Boot drive is ARC disk %lu\n", k);
+                                break;
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+            else if (bio->Media->LogicalPartition == FALSE)
             {
                 ULONG j;
 
-                TRACE("Found root at index %u\n", i);
+                TRACE("Found root disk as boot device at index %u\n", i);
                 UefiBootRootIdentifier = i;
 
                 for (j = 0; j <= PcBiosDiskCount; ++j)
@@ -454,15 +584,35 @@ UefiSetupBlockDevices(VOID)
             }
         }
     }
+
+    TRACE("UefiSetupBlockDevices: Enumeration complete. PcBiosDiskCount=%d, PublicBootArcDisk=%lu\n",
+          PcBiosDiskCount, PublicBootArcDisk);
 }
 
 static
 BOOLEAN
 UefiSetBootpath(VOID)
 {
-   TRACE("UefiSetBootpath: Setting up boot path\n");
+   TRACE("UefiSetBootpath: Setting up boot path. UefiBootRootIdentifier=%lu, PublicBootArcDisk=%lu\n",
+         UefiBootRootIdentifier, PublicBootArcDisk);
+
+   if (handles == NULL)
+   {
+       ERR("UefiSetBootpath: handles array is NULL!\n");
+       return FALSE;
+   }
+
    GlobalSystemTable->BootServices->HandleProtocol(handles[UefiBootRootIdentifier], &bioGuid, (void**)&bio);
+   if (bio == NULL)
+   {
+       ERR("UefiSetBootpath: Failed to get block I/O protocol\n");
+       return FALSE;
+   }
+
    FrldrBootDrive = (FIRST_BIOS_DISK + PublicBootArcDisk);
+   TRACE("UefiSetBootpath: FrldrBootDrive=0x%02x, RemovableMedia=%d, BlockSize=%lu\n",
+         FrldrBootDrive, bio->Media->RemovableMedia, bio->Media->BlockSize);
+
    if (bio->Media->RemovableMedia == TRUE && bio->Media->BlockSize == 2048)
    {
         /* Boot Partition 0xFF is the magic value that indicates booting from CD-ROM (see isoboot.S) */
@@ -472,6 +622,44 @@ UefiSetBootpath(VOID)
    }
    else
    {
+#ifdef _ARM64_
+        /* ARM64: For ESP boot, we need to handle this differently */
+        ULONG BootPartition = 1; /* Default to partition 1 for ESP */
+
+        /* For ARM64 UEFI boot, we're likely booting from ESP which is usually partition 1 */
+        TRACE("ARM64: Using simplified boot partition detection for ESP\n");
+
+        /* Check if we're booting from a partition or raw disk */
+        EFI_BLOCK_IO* bootBio = NULL;
+        GlobalSystemTable->BootServices->HandleProtocol(PublicBootHandle, &bioGuid, (void**)&bootBio);
+
+        if (bootBio && bootBio->Media->LogicalPartition)
+        {
+            /* We're booting from a partition */
+            if (OffsetToBoot > UefiBootRootIdentifier)
+            {
+                /* Calculate which partition */
+                BootPartition = OffsetToBoot - UefiBootRootIdentifier;
+                TRACE("ARM64: Boot device is partition %lu (offset=%lu, root=%lu)\n",
+                      BootPartition, OffsetToBoot, UefiBootRootIdentifier);
+            }
+            else
+            {
+                BootPartition = 1; /* Default to partition 1 */
+                TRACE("ARM64: Boot device is partition (defaulting to 1)\n");
+            }
+        }
+        else
+        {
+            /* We're booting from a raw disk (no partitions) */
+            BootPartition = 1; /* Use partition 1 for raw disk access */
+            TRACE("ARM64: Boot device is raw disk (no partitions), using partition(1) for compatibility\n");
+        }
+
+        RtlStringCbPrintfA(FrLdrBootPath, sizeof(FrLdrBootPath),
+                           "multi(0)disk(0)rdisk(%u)partition(%lu)",
+                           PublicBootArcDisk, BootPartition);
+#else
         ULONG BootPartition;
         PARTITION_TABLE_ENTRY PartitionEntry;
 
@@ -485,6 +673,21 @@ UefiSetBootpath(VOID)
         RtlStringCbPrintfA(FrLdrBootPath, sizeof(FrLdrBootPath),
                            "multi(0)disk(0)rdisk(%u)partition(%lu)",
                            PublicBootArcDisk, BootPartition);
+#endif
+    }
+
+    TRACE("UefiSetBootpath: Boot path set to: '%s'\n", FrLdrBootPath);
+
+    /* Register the boot device with the filesystem */
+    if (FrLdrBootPath[0] != '\0')
+    {
+        TRACE("UefiSetBootpath: Registering boot device '%s'\n", FrLdrBootPath);
+        FsRegisterDevice(FrLdrBootPath, &UefiDiskVtbl);
+    }
+    else
+    {
+        ERR("UefiSetBootpath: FrLdrBootPath is empty!\n");
+        return FALSE;
     }
 
     return TRUE;
@@ -495,15 +698,41 @@ UefiInitializeBootDevices(VOID)
 {
     ULONG i = 0;
 
-#ifdef _ARM64_
-    /* ARM64: Skip boot device init since MM isn't fully initialized */
-    return TRUE;
-#endif
+    TRACE("UefiInitializeBootDevices: Starting boot device initialization\n");
 
+#ifdef _ARM64_
+    /* ARM64: Use UEFI allocation directly for disk buffer */
+    EFI_STATUS Status;
+    EFI_PHYSICAL_ADDRESS BufferAddress = 0;
+
+    TRACE("ARM64: Allocating disk read buffer\n");
+    DiskReadBufferSize = EFI_PAGE_SIZE;
+
+    /* Allocate disk read buffer via UEFI */
+    Status = GlobalSystemTable->BootServices->AllocatePages(
+        AllocateAnyPages,
+        EfiLoaderData,
+        1, /* 1 page */
+        &BufferAddress);
+
+    if (EFI_ERROR(Status))
+    {
+        TRACE("ARM64: Failed to allocate disk read buffer: %ld\n", Status);
+        return FALSE;
+    }
+
+    DiskReadBuffer = (PVOID)(UINTN)BufferAddress;
+    TRACE("ARM64: Allocated disk read buffer at 0x%p\n", DiskReadBuffer);
+
+    /* Now proceed with device setup */
+    UefiSetupBlockDevices();
+    UefiSetBootpath();
+#else
     DiskReadBufferSize = EFI_PAGE_SIZE;
     DiskReadBuffer = MmAllocateMemoryWithType(DiskReadBufferSize, LoaderFirmwareTemporary);
     UefiSetupBlockDevices();
     UefiSetBootpath();
+#endif
     
     // AGENT-MODIFIED: Enumerate all ARC disks for proper Windows boot support
     UefiEnumerateArcDisks();

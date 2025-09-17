@@ -19,6 +19,7 @@
 
 #ifndef _M_ARM
 #include <freeldr.h>
+#include <fs/fat.h>
 
 #include <debug.h>
 DBG_DEFAULT_CHANNEL(DISK);
@@ -321,6 +322,44 @@ DiskDetectPartitionType(
     BOOLEAN GPTProtect = FALSE;
     PARTITION_TABLE_ENTRY PartitionTableEntry;
 
+    /* First, check if this is a raw FAT32 volume (e.g., ESP without partition table) */
+    if (MachDiskReadLogicalSectors(DriveNumber, 0, 1, DiskReadBuffer))
+    {
+        PFAT32_BOOTSECTOR Fat32BootSector = (PFAT32_BOOTSECTOR)DiskReadBuffer;
+        PFAT_BOOTSECTOR FatBootSector = (PFAT_BOOTSECTOR)DiskReadBuffer;
+
+        /* Check for FAT32 signature */
+        if (Fat32BootSector->BootSectorMagic == 0xAA55 &&
+            Fat32BootSector->BytesPerSector >= 512 &&
+            Fat32BootSector->SectorsPerCluster > 0 &&
+            Fat32BootSector->NumberOfFats > 0 &&
+            (Fat32BootSector->FileSystemType[0] == 'F' &&
+             Fat32BootSector->FileSystemType[1] == 'A' &&
+             Fat32BootSector->FileSystemType[2] == 'T'))
+        {
+            /* This looks like a FAT32 boot sector, not an MBR */
+            DiskPartitionType[DriveNumber] = PARTITION_STYLE_RAW;
+            TRACE("Drive 0x%X detected as RAW FAT32 volume (no partition table)\n", DriveNumber);
+            return;
+        }
+
+        /* Also check for FAT16/FAT12 */
+        if (FatBootSector->BootSectorMagic == 0xAA55 &&
+            FatBootSector->BytesPerSector >= 512 &&
+            FatBootSector->SectorsPerCluster > 0 &&
+            FatBootSector->NumberOfFats > 0 &&
+            FatBootSector->RootDirEntries > 0 &&  /* FAT12/16 has root dir entries */
+            (FatBootSector->FileSystemType[0] == 'F' &&
+             FatBootSector->FileSystemType[1] == 'A' &&
+             FatBootSector->FileSystemType[2] == 'T'))
+        {
+            /* This looks like a FAT16/FAT12 boot sector, not an MBR */
+            DiskPartitionType[DriveNumber] = PARTITION_STYLE_RAW;
+            TRACE("Drive 0x%X detected as RAW FAT volume (no partition table)\n", DriveNumber);
+            return;
+        }
+    }
+
     /* Probe for Master Boot Record */
     if (DiskReadBootRecord(DriveNumber, 0, &MasterBootRecord))
     {
@@ -360,7 +399,7 @@ DiskDetectPartitionType(
 
     /* Failed to detect partitions, assume partitionless disk */
     DiskPartitionType[DriveNumber] = PARTITION_STYLE_RAW;
-    TRACE("Drive 0x%X partition type unknown\n", DriveNumber);
+    TRACE("Drive 0x%X partition type RAW (no partition table)\n", DriveNumber);
 }
 
 BOOLEAN
@@ -382,7 +421,19 @@ DiskGetBootPartitionEntry(
         }
         case PARTITION_STYLE_RAW:
         {
-            FIXME("DiskGetBootPartitionEntry() unimplemented for RAW\n");
+            /* For raw disks (e.g., ESP without partition table), use the whole disk */
+            TRACE("DiskGetBootPartitionEntry() for RAW disk\n");
+            RtlZeroMemory(PartitionTableEntry, sizeof(PARTITION_TABLE_ENTRY));
+            /* Get disk geometry to fill in the partition entry */
+            GEOMETRY DiskGeometry;
+            if (MachDiskGetDriveGeometry(DriveNumber, &DiskGeometry))
+            {
+                PartitionTableEntry->SystemIndicator = PARTITION_FAT32;  /* Assume FAT32 for ESP */
+                PartitionTableEntry->SectorCountBeforePartition = 0;  /* Start at beginning */
+                PartitionTableEntry->PartitionSectorCount = DiskGeometry.Sectors;
+                *BootPartition = 0;  /* Partition 0 means raw disk */
+                return TRUE;
+            }
             return FALSE;
         }
         case PARTITION_STYLE_BRFR:
@@ -422,7 +473,21 @@ DiskGetPartitionEntry(
         }
         case PARTITION_STYLE_RAW:
         {
-            FIXME("DiskGetPartitionEntry() unimplemented for RAW\n");
+            /* For raw disks, partition 0 means the whole disk, partition 1 can also mean the whole disk for compatibility */
+            if (PartitionNumber == 0 || PartitionNumber == 1)
+            {
+                TRACE("DiskGetPartitionEntry() for RAW disk, partition %lu\n", PartitionNumber);
+                RtlZeroMemory(PartitionTableEntry, sizeof(PARTITION_TABLE_ENTRY));
+                /* Get disk geometry to fill in the partition entry */
+                GEOMETRY DiskGeometry;
+                if (MachDiskGetDriveGeometry(DriveNumber, &DiskGeometry))
+                {
+                    PartitionTableEntry->SystemIndicator = PARTITION_FAT32;  /* Assume FAT32 for ESP */
+                    PartitionTableEntry->SectorCountBeforePartition = 0;  /* Start at beginning */
+                    PartitionTableEntry->PartitionSectorCount = DiskGeometry.Sectors;
+                    return TRUE;
+                }
+            }
             return FALSE;
         }
         case PARTITION_STYLE_BRFR:
