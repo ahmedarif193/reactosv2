@@ -122,16 +122,16 @@ BOOLEAN UiInitialize(BOOLEAN ShowUi)
     }
 
 #ifdef _ARM64_
-    TRACE("ARM64: About to call MachVideoSetDisplayMode with '%s'\n", SettingText);
+    TRACE("ARM64/UI: Calling MachVideoSetDisplayMode('%s', TRUE)\n", SettingText);
 #endif
     UiDisplayMode = MachVideoSetDisplayMode(SettingText, TRUE);
 #ifdef _ARM64_
-    TRACE("ARM64: MachVideoSetDisplayMode returned %d\n", UiDisplayMode);
-    TRACE("ARM64: About to call MachVideoGetDisplaySize\n");
+    TRACE("ARM64/UI: MachVideoSetDisplayMode returned %d\n", UiDisplayMode);
+    TRACE("ARM64/UI: Calling MachVideoGetDisplaySize...\n");
 #endif
     MachVideoGetDisplaySize(&UiScreenWidth, &UiScreenHeight, &Depth);
 #ifdef _ARM64_
-    TRACE("ARM64: MachVideoGetDisplaySize returned %lux%lu depth=%lu\n", UiScreenWidth, UiScreenHeight, Depth);
+    TRACE("ARM64/UI: Display %lux%lu depth=%lu\n", UiScreenWidth, UiScreenHeight, Depth);
 #endif
 
     /* Select the UI */
@@ -146,12 +146,18 @@ BOOLEAN UiInitialize(BOOLEAN ShowUi)
 #else
     {
         // Switch back to text mode.
+        TRACE("UI: Graphics mode requested but unsupported, forcing text mode.\n");
         MachVideoSetDisplayMode(NULL, TRUE);
         UiDisplayMode = VideoTextMode;
     }
 #endif
     else // if (UiDisplayMode == VideoTextMode)
         UiVtbl = (UiMinimal ? MiniTuiVtbl : TuiVtbl);
+
+    TRACE("UI: Using %s UI in %s mode (%lux%lu).\n",
+          UiMinimal ? "minimal" : "TUI",
+          UiDisplayMode == VideoTextMode ? "text" : "graphics",
+          UiScreenWidth, UiScreenHeight);
 
     /* Load the UI and initialize its default settings */
     if (!UiVtbl.Initialize())

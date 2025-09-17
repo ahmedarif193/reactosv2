@@ -52,6 +52,21 @@ static UINT32 ConsoleY = 0;
 static UINT32 MaxConsoleX = 0;
 static UINT32 MaxConsoleY = 0;
 static BOOLEAN GopConsoleInitialized = FALSE;
+static BOOLEAN GopBltOnly = FALSE;
+
+/* Pretty-print pixel format */
+static const char*
+PixelFormatName(UINT32 pf)
+{
+    switch (pf)
+    {
+        case 0: return "RGBR888";      /* PixelRedGreenBlueReserved8BitPerColor */
+        case 1: return "BGRR888";      /* PixelBlueGreenRedReserved8BitPerColor */
+        case 2: return "BitMask";      /* PixelBitMask */
+        case 3: return "BltOnly";      /* PixelBltOnly */
+        default: return "Unknown";
+    }
+}
 
 /* FUNCTIONS ******************************************************************/
 
@@ -112,7 +127,9 @@ UefiFindOptimalGopMode(EFI_GRAPHICS_OUTPUT_PROTOCOL* gop)
             {
                 BestScore = Score;
                 BestMode = CurrentMode;
-                /* track best silently */
+                TRACE("[GOP] Candidate mode %u: %ux%u pf=%u score=%u (new best)\n",
+                      (unsigned)CurrentMode, (unsigned)Width, (unsigned)Height,
+                      (unsigned)Info->PixelFormat, (unsigned)Score);
             }
         }
     }
@@ -126,16 +143,18 @@ UefiInitializeVideo(VOID)
     EFI_GRAPHICS_OUTPUT_PROTOCOL* gop = NULL;
     UINT32 OptimalMode;
 
+    TRACE("[GOP] UefiInitializeVideo entry\n");
     RtlZeroMemory(&framebufferData, sizeof(framebufferData));
     if (!GlobalSystemTable)
         return EFI_ABORTED;
     if (!GlobalSystemTable->BootServices)
         return EFI_ABORTED;
 
+    TRACE("[GOP] LocateProtocol(EFI_GRAPHICS_OUTPUT_PROTOCOL)\n");
     Status = GlobalSystemTable->BootServices->LocateProtocol(&EfiGraphicsOutputProtocol, 0, (void**)&gop);
     if (Status != EFI_SUCCESS)
     {
-        TRACE("Failed to find GOP with status %d\n", Status);
+        TRACE("[GOP] LocateProtocol failed: %lx\n", (ULONG_PTR)Status);
         /* Don't fail completely, just skip GOP setup */
         return EFI_SUCCESS;
     }
@@ -149,13 +168,27 @@ UefiInitializeVideo(VOID)
 
     if (!gop->Mode)
         return EFI_DEVICE_ERROR;
-    /* Do not TRACE mode details here to avoid early debug path */
+    TRACE("[GOP] Mode struct at %p, MaxMode=%u, CurrentMode=%u\n",
+          gop->Mode, (unsigned)gop->Mode->MaxMode, (unsigned)gop->Mode->Mode);
+    if (gop->Mode->Info)
+    {
+        TRACE("[GOP] Current: %ux%u, ppsl=%u, pf=%u(%s), FBBase=%p, FBSize=%lu\n",
+              (unsigned)gop->Mode->Info->HorizontalResolution,
+              (unsigned)gop->Mode->Info->VerticalResolution,
+              (unsigned)gop->Mode->Info->PixelsPerScanLine,
+              (unsigned)gop->Mode->Info->PixelFormat,
+              PixelFormatName(gop->Mode->Info->PixelFormat),
+              (PVOID)gop->Mode->FrameBufferBase,
+              (ULONG_PTR)gop->Mode->FrameBufferSize);
+    }
     
     /* AGENT-MODIFIED: Find and set optimal resolution instead of hardcoded low res */
     OptimalMode = UefiFindOptimalGopMode(gop);
     if (OptimalMode != gop->Mode->Mode)
     {
+        TRACE("[GOP] Switching mode: %u -> %u\n", (unsigned)gop->Mode->Mode, (unsigned)OptimalMode);
         Status = gop->SetMode(gop, OptimalMode);
+        TRACE("[GOP] SetMode status: %lx\n", (ULONG_PTR)Status);
         /* Continue with current mode if SetMode fails */
     }
 
@@ -174,6 +207,24 @@ UefiInitializeVideo(VOID)
     framebufferData.PixelsPerScanLine  = gop->Mode->Info->PixelsPerScanLine;
     framebufferData.PixelFormat        = gop->Mode->Info->PixelFormat;
 
+    /* Track BLT-only state and warn if no linear framebuffer is exposed */
+    GopBltOnly = (gop->Mode->Info->PixelFormat == PixelBltOnly) ||
+                 (gop->Mode->FrameBufferBase == 0) ||
+                 (gop->Mode->FrameBufferSize == 0);
+    if (GopBltOnly)
+    {
+        TRACE("[GOP] Warning: BLT-only or no linear FB. Software text console will not draw to VRAM.\n");
+    }
+
+    TRACE("[GOP] Final mode: %ux%u ppsl=%u pf=%u(%s) fb=%p size=%lu\n",
+          (unsigned)framebufferData.ScreenWidth,
+          (unsigned)framebufferData.ScreenHeight,
+          (unsigned)framebufferData.PixelsPerScanLine,
+          (unsigned)framebufferData.PixelFormat,
+          PixelFormatName(framebufferData.PixelFormat),
+          (PVOID)framebufferData.BaseAddress,
+          (ULONG_PTR)framebufferData.BufferSize);
+
     /* AGENT-MODIFIED: Initialize console dimensions for software text rendering */
     /* Check for division by zero */
     if (CHAR_WIDTH == 0 || CHAR_HEIGHT == 0) {
@@ -187,7 +238,7 @@ UefiInitializeVideo(VOID)
     ConsoleX = 0;
     ConsoleY = 0;
     GopConsoleInitialized = TRUE;
-
+    TRACE("[GOP] UefiInitializeVideo complete\n");
     return Status;
 }
 
@@ -233,7 +284,10 @@ UefiVideoClearScreenColor(ULONG Color, BOOLEAN FullScreen)
     /* Safety check - make sure framebuffer is initialized */
     if (!GopConsoleInitialized || !framebufferData.BaseAddress ||
         framebufferData.ScreenWidth == 0 || framebufferData.ScreenHeight == 0)
+    {
+        TRACE("[GOP] UefiVideoClearScreenColor skipped (FB uninitialized or BLT-only).\n");
         return;
+    }
 #endif
 
     /* Extra safety for all platforms */
@@ -320,6 +374,7 @@ UefiVideoGetDisplaySize(PULONG Width, PULONG Height, PULONG Depth)
         *Width = 80;   /* Standard text console width */
         *Height = 25;  /* Standard text console height */
         *Depth = 0;
+        TRACE("[GOP] UefiVideoGetDisplaySize fallback (uninitialized).\n");
         return;
     }
 #endif
@@ -347,6 +402,7 @@ UefiVideoSetDisplayMode(char *DisplayMode, BOOLEAN Init)
     if (Init && !GopConsoleInitialized)
     {
         /* Try to initialize video if not already done */
+        TRACE("[GOP] UefiVideoSetDisplayMode: Init requested, calling UefiInitializeVideo()\n");
         UefiInitializeVideo();
     }
 #endif

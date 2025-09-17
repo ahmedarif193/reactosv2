@@ -27,6 +27,7 @@ MachInit(const char *CmdLine)
 #ifdef _ARM64_
     /* For ARM64, use the ARM64-specific machine initialization */
     extern VOID Arm64MachInit(const char *CmdLine);
+    TRACE("[ARM64] MachInit: forwarding to Arm64MachInit\n");
     Arm64MachInit(CmdLine);
     /* The ARM64MachInit will set up MachVtbl and initialize everything including GOP */
     /* Reference the debug channel to avoid unused warnings in release builds */
@@ -34,6 +35,7 @@ MachInit(const char *CmdLine)
     return;
 #else
     /* For non-ARM64 platforms, use the generic UEFI setup */
+    TRACE("[UEFI] MachInit (generic) setting up MachVtbl...\n");
     RtlZeroMemory(&MachVtbl, sizeof(MachVtbl));
 
     MachVtbl.ConsPutChar = UefiConsPutChar;
@@ -66,6 +68,7 @@ MachInit(const char *CmdLine)
     MachVtbl.HwDetect = UefiHwDetect;
     MachVtbl.HwIdle = UefiHwIdle;
     /* Setup GOP for non-ARM64 platforms */
+    TRACE("[GOP] Calling UefiInitializeVideo() (non-ARM64)\n");
     if (UefiInitializeVideo() != EFI_SUCCESS)
     {
         ERR("Failed to setup GOP\n");
@@ -73,5 +76,6 @@ MachInit(const char *CmdLine)
 
     /* Reference the debug channel to avoid unused warnings in release builds */
     (void)DbgDefaultChannel;
+    TRACE("[UEFI] MachInit (generic) complete\n");
 #endif
 }
