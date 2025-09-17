@@ -19,7 +19,8 @@ QEMU_EXTRA=${QEMU_EXTRA:-}
 BUILD_DIR="./output-MinGW-arm64"
 WORK_DIR="$BUILD_DIR/qemu_freeldr_test"
 UEFI_LOADER="${BUILD_DIR}/boot/freeldr/freeldr/uefildr.efi"
-FREELDR_INI="./boot/freeldr/FREELDR.INI"
+# Use LiveCD configuration by default to match LiveCD boot menu
+FREELDR_INI="./boot/bootdata/livecd.ini"
 ESP_IMG="$WORK_DIR/esp.img"
 ESP_SIZE=64  # MB
 
@@ -88,6 +89,7 @@ TitleText=ReactOS ARM64 UEFI FreeLDR
 MenuTextColor=White
 MenuColor=Blue
 TextColor=Yellow
+MinimalUI=Yes
 
 [Operating Systems]
 TestMenu="Test Boot Menu"
@@ -140,16 +142,19 @@ fi
 
 echo -e "\nImage location: ${GREEN}$ESP_IMG${NC}"
 echo -e "\nTo test with QEMU, run:"
-echo "qemu-system-aarch64 \\"
-echo "    -M virt \\"
-echo "    -cpu cortex-a72 \\"
-echo "    -m 2G \\"
-echo "    -bios /usr/share/qemu-efi-aarch64/QEMU_EFI.fd \\"
-echo "    -drive file=$ESP_IMG,format=raw,if=none,id=boot \\"
-echo "    -device virtio-blk-pci,drive=boot,bootindex=0 \\"
-echo "    -device virtio-gpu-pci \\"
-echo "    -display $QEMU_DISPLAY \\"
-echo "    -serial file:$QEMU_SERIAL"
+echo "qemu-system-aarch64 \\" 
+echo "    -M virt \\" 
+echo "    -cpu cortex-a72 \\" 
+echo "    -m 2G \\" 
+echo "    -bios /usr/share/qemu-efi-aarch64/QEMU_EFI.fd \\" 
+echo "    -drive file=$ESP_IMG,format=raw,if=none,id=boot \\" 
+echo "    -device virtio-blk-pci,drive=boot,bootindex=0 \\" 
+echo "    -device qemu-xhci \\" 
+echo "    -device usb-kbd \\" 
+echo "    -device usb-tablet \\" 
+echo "    -device ramfb \\" 
+echo "    -display $QEMU_DISPLAY \\" 
+echo "    -serial file:$QEMU_SERIAL" 
 
 # Run QEMU with internal timeout so callers don't need an outer timeout
 if command -v timeout >/dev/null 2>&1; then
@@ -165,7 +170,10 @@ fi
   -bios /usr/share/qemu-efi-aarch64/QEMU_EFI.fd \
   -drive file=$ESP_IMG,format=raw,if=none,id=boot \
   -device virtio-blk-pci,drive=boot,bootindex=0 \
-  -device virtio-gpu-pci \
+  -device qemu-xhci \
+  -device usb-kbd \
+  -device usb-tablet \
+  -device ramfb \
   -display "$QEMU_DISPLAY" \
   -serial file:"$QEMU_SERIAL" \
   ${QEMU_EXTRA}
@@ -176,3 +184,33 @@ if [ -f "$QEMU_SERIAL" ]; then
   sed -n '1,300p' "$QEMU_SERIAL"
 fi
 
+    # 145   -echo "qemu-system-aarch64 \\"
+    # 146   -echo "    -M virt \\"
+    # 147   -echo "    -cpu cortex-a72 \\"
+    # 148   -echo "    -m 2G \\"
+    # 149   -echo "    -bios /usr/share/qemu-efi-aarch64/QEMU_EFI.fd \\"
+    # 150   -echo "    -drive file=$ESP_IMG,format=raw,if=none,id=boot \\"
+    # 151   -echo "    -device virtio-blk-pci,drive=boot,bootindex=0 \\"
+    # 152   -echo "    -device virtio-gpu-pci \\"
+    # 153   -echo "    -display $QEMU_DISPLAY \\"
+    # 154   -echo "    -serial file:$QEMU_SERIAL"
+
+# qemu-system-aarch64 \
+#   -M virt \
+#   -cpu cortex-a72 \
+#   -m 2G \
+#   -bios /usr/share/qemu-efi-aarch64/QEMU_EFI.fd \
+#   -drive file=/home/ahmed/WorkDir/reactos_arm64/output-MinGW-arm64/qemu_freeldr_test/esp.img,format=raw,if=none,id=boot \
+#   -device virtio-blk-pci,drive=boot,bootindex=0 \
+#   -device virtio-gpu-pci \
+#   -display gtk
+
+# qemu-system-aarch64 \
+#   -M virt \
+#   -cpu cortex-a72 \
+#   -m 2G \
+#   -bios /usr/share/qemu-efi-aarch64/QEMU_EFI.fd \
+#   -drive file=/home/ahmed/WorkDir/reactos_arm64/output-MinGW-arm64/qemu_freeldr_test/esp.img,format=raw,if=none,id=boot \
+#   -device virtio-blk-pci,drive=boot,bootindex=0 \
+#   -device ramfb \
+#   -display gtk
