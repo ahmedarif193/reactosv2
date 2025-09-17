@@ -411,7 +411,8 @@ FrLdrHeapAllocateEx(
 #if DBG && (defined(_M_IX86) || defined(_M_AMD64))
         Heap->AllocationTime += (__rdtsc() - Time);
 #endif
-        //TODO uncomment this TRACE("HeapAllocate(%p, %ld, %.4s) -> return %p\n", HeapHandle, ByteSize, &Tag, Block->Data);
+        //FIXME ! HUGE BUG : DELETIING this trace causes an exception ! (timing issue ?)
+        TRACE("HeapAllocate(%p, %ld, %.4s) -> return %p\n", HeapHandle, ByteSize, &Tag, Block->Data);
 
         /* HACK: zero out the allocation */
         RtlZeroMemory(Block->Data, Block->Size * sizeof(HEAP_BLOCK));
