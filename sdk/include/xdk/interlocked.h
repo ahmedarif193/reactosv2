@@ -131,9 +131,9 @@ _InlineInterlockedAdd(
 #define InterlockedCompareExchangeRelease64 __REL_(_InterlockedCompareExchange64)
 #define InterlockedCompareExchangeNoFence64 __NF_(_InterlockedCompareExchange64)
 
-#ifdef _WIN64
+#if defined(_WIN64) && !defined(_M_ARM64)
 #define InterlockedCompareExchange128 _InterlockedCompareExchange128
-#endif // _WIN64
+#endif // _WIN64 && !_M_ARM64
 
 #ifdef _M_IA64
 #define InterlockedCompare64Exchange128         _InterlockedCompare64Exchange128

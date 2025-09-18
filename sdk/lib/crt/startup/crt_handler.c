@@ -42,7 +42,7 @@ PBYTE _GetPEImageBase (void);
 int __mingw_init_ehandler (void);
 extern void __cdecl _fpreset (void);
 
-#if defined(_WIN64) && !defined(_MSC_VER)
+#if defined(_WIN64) && !defined(_MSC_VER) && !defined(__aarch64__)
 EXCEPTION_DISPOSITION __mingw_SEH_error_handler(struct _EXCEPTION_RECORD *, void *, struct _CONTEXT *, void *);
 
 #define MAX_PDATA_ENTRIES 32
@@ -83,6 +83,14 @@ __mingw_init_ehandler (void)
 #ifdef _DEBUG_CRT
   if (!e || e > MAX_PDATA_ENTRIES)
     abort ();
+#endif
+
+#if defined(__aarch64__)
+int __mingw_init_ehandler(void)
+{
+  /* On ARM64, unwind info is provided via .xdata/.pdata; no emulation. */
+  return 1;
+}
 #endif
   /* RtlAddFunctionTable.  */
   if (e != 0)

@@ -159,9 +159,20 @@ typedef struct _TRAPFRAME_LOG_ENTRY
 // Processor Region Control Block
 // Based on WoA
 //
+typedef struct _KTHREAD KTHREAD, *PKTHREAD;
+
 typedef struct _KPRCB
 {
-    ULONG dummy;
+    /* Minimal bring-up subset used by scheduler helpers */
+    UCHAR Number;                      /* Processor index */
+    UCHAR Reserved0[3];
+    PKTHREAD CurrentThread;            /* Currently running thread */
+    ULONG ReadySummary;                /* Bitmap of ready priorities */
+    LIST_ENTRY DispatcherReadyListHead[32]; /* Ready queues by priority */
+    KSPIN_LOCK_QUEUE LockQueue[LockQueueMaximumLock];
+    PP_LOOKASIDE_LIST PPLookasideList[16];
+    UCHAR DpcRoutineActive;
+    ULONG TimerRequest;
 } KPRCB, *PKPRCB;
 
 //
@@ -269,15 +280,22 @@ typedef struct _KPROCESSOR_STATE
 } KPROCESSOR_STATE, *PKPROCESSOR_STATE;
 
 //
-// Macro to get current KPRCB
+// PCR/PRCB accessors (bring-up shim)
 //
+#ifndef NTOS_MODE_USER
+extern struct _KIPCR KiInitialPcr;
 FORCEINLINE
-struct _KPRCB *
-KeGetCurrentPrcb(VOID)
-{  
-    //UNIMPLEMENTED;
-    return 0;
+struct _KIPCR * KeGetPcr(VOID)
+{
+    return &KiInitialPcr;
 }
+
+FORCEINLINE
+struct _KPRCB * KeGetCurrentPrcb(VOID)
+{
+    return &KiInitialPcr.Prcb;
+}
+#endif
 
 //
 // Just read it from the PCR
@@ -286,8 +304,12 @@ KeGetCurrentPrcb(VOID)
 #define _KeGetCurrentThread()          KeGetCurrentPrcb()->CurrentThread
 #define _KeGetPreviousMode()           KeGetCurrentPrcb()->CurrentThread->PreviousMode
 #define _KeIsExecutingDpc()            (KeGetCurrentPrcb()->DpcRoutineActive != 0)
+#ifndef KeGetCurrentThread
 #define KeGetCurrentThread()           _KeGetCurrentThread()
+#endif
+#ifndef KeGetPreviousMode
 #define KeGetPreviousMode()            _KeGetPreviousMode()
+#endif
 
 #endif // !NTOS_MODE_USER
 

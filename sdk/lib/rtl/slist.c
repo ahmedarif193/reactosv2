@@ -15,7 +15,12 @@
 #include <debug.h>
 
 #ifdef _WIN64
+#ifdef _M_ARM64
+/* ARM64 doesn't support 16-byte SLists due to lack of 128-bit CAS */
+BOOLEAN RtlpUse16ByteSLists = FALSE;
+#else
 BOOLEAN RtlpUse16ByteSLists = -1;
+#endif
 #endif
 
 /* FUNCTIONS ***************************************************************/
@@ -132,10 +137,16 @@ RtlInterlockedPushListSList(
             NewSListHead.Header16.Init = 1;
 
             /* Atomically exchange the SlistHead with the new one */
+#ifndef _M_ARM64
             exchanged = _InterlockedCompareExchange128((PLONG64)SListHead,
                                                        NewSListHead.Region,
                                                        NewSListHead.Alignment,
                                                        (PLONG64)&OldSListHead);
+#else
+            /* ARM64: This code path should never be reached as RtlpUse16ByteSLists is always FALSE */
+            ASSERT(FALSE);
+            exchanged = FALSE;
+#endif
         } while (!exchanged);
 
         return FirstEntry;
@@ -208,7 +219,7 @@ RtlInterlockedPushListSList(
 }
 
 
-#if !defined(_M_IX86) && !defined(_M_AMD64)
+#if !defined(_M_IX86) && !defined(_M_AMD64) && !defined(_M_ARM64)
 
 _WARN("C based S-List functions can bugcheck, if not handled properly in kernel")
 

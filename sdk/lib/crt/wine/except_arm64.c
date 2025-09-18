@@ -130,7 +130,7 @@ void __cdecl MSVCRT_longjmp(_JUMP_BUFFER *jmp, int retval)
         rec.ExceptionInformation[0] = (DWORD_PTR)jmp;
         RtlUnwind((void *)jmp->Frame, (void *)jmp->Lr, &rec, IntToPtr(retval));
     }
-    __wine_longjmp( (__wine_jmp_buf *)jmp, retval );
+    __wine_longjmp( *(__wine_jmp_buf *)jmp, retval );
 }
 
 /*********************************************************************

@@ -296,7 +296,9 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/wmi/wmidrv.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/se/debug.c)
 
-list(APPEND ASM_SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/zw.S)
+if(NOT ARCH STREQUAL "arm64")
+    list(APPEND ASM_SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/zw.S)
+endif()
 
 if(ARCH STREQUAL "i386")
     list(APPEND ASM_SOURCE

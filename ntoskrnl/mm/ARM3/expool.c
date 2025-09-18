@@ -1465,7 +1465,6 @@ ExpReallocateBigPageTable(
     ULONG i;
     ULONG PagesFreed;
     ULONG Hash;
-    ULONG HashMask;
 
     /* Must be holding ExpLargePoolTableLock */
     ASSERT(KeGetCurrentIrql() == DISPATCH_LEVEL);
@@ -1529,7 +1528,6 @@ ExpReallocateBigPageTable(
 
     /* Copy over all items */
     OldTable = PoolBigPageTable;
-    HashMask = NewSize - 1;
     for (i = 0; i < OldSize; i++)
     {
         /* Skip over empty items */

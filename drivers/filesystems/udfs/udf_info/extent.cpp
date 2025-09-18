@@ -2987,7 +2987,7 @@ UDFReadExtentCached(
     OSSTATUS status;
     // prevent reading out of data space
     if(Offset > ExtInfo->Length) return STATUS_END_OF_FILE;
-    if(Offset+Length > (uint64)ExtInfo->Length) Length = (uint32)(ExtInfo->Length - Offset);
+    if((uint64)Offset + (uint64)Length > (uint64)ExtInfo->Length) Length = (uint32)(ExtInfo->Length - Offset);
     Offset += ExtInfo->Offset;               // used for in-ICB data
     // read maximal possible part of each frag of extent
     while(((LONG)Length) > 0) {
@@ -3041,7 +3041,7 @@ UDFReadExtent(
     OSSTATUS status;
     // prevent reading out of data space
     if(Offset > ExtInfo->Length) return STATUS_END_OF_FILE;
-    if(Offset+Length > (uint64)ExtInfo->Length) Length = (uint32)(ExtInfo->Length - Offset);
+    if((uint64)Offset + (uint64)Length > (uint64)ExtInfo->Length) Length = (uint32)(ExtInfo->Length - Offset);
     Offset += ExtInfo->Offset;               // used for in-ICB data
     // read maximal possible part of each frag of extent
     Lba = UDFExtentOffsetToLba(Vcb, Extent, Offset, &sect_offs, &to_read, &flags, &index);

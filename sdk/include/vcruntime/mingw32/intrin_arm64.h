@@ -52,7 +52,16 @@ __INTRIN_INLINE unsigned char _interlockedbittestandreset64(volatile long long* 
     return (unsigned char)((prev >> (b & 63)) & 1ull);
 }
 
+__INTRIN_INLINE void __yield(void)
+{
+    __asm__ __volatile__("yield" ::: "memory");
+}
+
+__INTRIN_INLINE long long _InterlockedExchangeAdd64(volatile long long* a, long long b)
+{
+    return __sync_fetch_and_add((volatile long long*)a, b);
+}
+
 #endif /* __GNUC__ */
 
 #endif /* KJK_INTRIN_ARM64_H_ */
-

@@ -5,15 +5,15 @@
 /* #include <kxarm64.h> */
 
 /* CODE **********************************************************************/
-    TEXTAREA
+    .text
+    .align 2
+    .global __chkstk
+__chkstk:
+    /* Stack probing stub for ARM64: nothing required for GCC/Mingw */
+    ret
 
-    LEAF_ENTRY __chkstk
-    /* TODO: add an assert fail call, as this is unimplemented */
-    LEAF_END __chkstk
-
-    LEAF_ENTRY __alloca_probe
-    /* TODO: add an assert fail call, as this is unimplemented */
-    LEAF_END __alloca_probe
-
-    END
+    .global __alloca_probe
+__alloca_probe:
+    /* Stack probing stub for ARM64: nothing required for GCC/Mingw */
+    ret
 /* EOF */

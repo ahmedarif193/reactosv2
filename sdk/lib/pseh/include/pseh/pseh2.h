@@ -44,6 +44,10 @@
 
 #include "pseh2_64.h"
 
+#elif defined(__GNUC__) && !defined(__clang__) && (defined(__aarch64__) || defined(_M_ARM64))
+
+#include "pseh2_arm64.h"
+
 #elif defined(_USE_DUMMY_PSEH) || defined (__arm__) || defined(_M_AMD64)
 
 #ifdef __cplusplus

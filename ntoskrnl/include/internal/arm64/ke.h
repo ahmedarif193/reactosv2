@@ -4,12 +4,15 @@
 
 /* ARM64 Kernel Executive Definitions */
 
+/* Make KPCR visible using existing KIPCR definition */
+typedef KIPCR KPCR, *PKPCR;
+
 #define KiServiceExit2 KiExceptionExit
 
 #define SYNCH_LEVEL DISPATCH_LEVEL
 
 /* ARM64 PCR (Processor Control Region) */
-#define PCR ((KPCR * const)ARM64_PCR_ADDRESS)
+#define PCR ((KPCR *)(ARM64_PCR_ADDRESS))
 
 /* ARM64 specific addresses */
 #define ARM64_PCR_ADDRESS           0xFFFFF80000000000ULL
@@ -25,8 +28,12 @@
 #define MAXIMUM_BUILTIN_VECTOR      32
 
 /* ARM64 page size definitions */
+#ifndef PAGE_SIZE
 #define PAGE_SIZE                   0x1000      /* 4KB pages */
+#endif
+#ifndef PAGE_SHIFT
 #define PAGE_SHIFT                  12
+#endif
 
 /* ARM64 Exception Levels */
 #define ARM64_EL0                   0
@@ -206,7 +213,7 @@ KiCallUserMode(
 
 /* ARM64 specific PCR access */
 #define KeGetPcr() PCR
-#define KeGetCurrentPrcb() (PCR->Prcb)
+#define KeGetCurrentPrcb() (&(PCR->Prcb))
 
 /* ARM64 IRQL manipulation (using GIC priority) */
 #define KfLowerIrql(NewIrql) \

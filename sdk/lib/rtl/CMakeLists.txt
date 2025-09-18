@@ -122,11 +122,25 @@ elseif(ARCH STREQUAL "arm")
         arm/except.c
         byteswap.c
         mem.c)
+elseif(ARCH STREQUAL "arm64")
+    list(APPEND ASM_SOURCE
+        arm64/debug_asm.S
+        arm64/except_asm.S
+        arm64/slist.S)
+    list(APPEND SOURCE
+        bitmap64.c
+        byteswap.c
+        arm64/except.c
+        arm64/unwind.c
+        arm64/stubs.c
+        mem.c)
 endif()
 
 add_asm_files(rtl_asm ${ASM_SOURCE})
 add_library(rtl ${SOURCE} ${rtl_asm})
-target_link_libraries(rtl PRIVATE pseh)
+if(NOT ARCH STREQUAL "arm64")
+    target_link_libraries(rtl PRIVATE pseh)
+endif()
 add_pch(rtl rtl.h SOURCE)
 add_dependencies(rtl psdk asm)
 
@@ -140,4 +154,6 @@ list(APPEND SOURCE_VISTA
 add_library(rtl_vista ${SOURCE_VISTA})
 add_pch(rtl_vista rtl_vista.h SOURCE_VISTA)
 add_dependencies(rtl_vista psdk)
-target_link_libraries(rtl_vista PRIVATE pseh)
+if(NOT ARCH STREQUAL "arm64")
+    target_link_libraries(rtl_vista PRIVATE pseh)
+endif()

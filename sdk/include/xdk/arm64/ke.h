@@ -15,8 +15,12 @@ $if (_WDMDDK_)
 
 #define SharedUserData          ((KUSER_SHARED_DATA * const)KI_USER_SHARED_DATA)
 
+#ifndef PAGE_SIZE
 #define PAGE_SIZE               0x1000
+#endif
+#ifndef PAGE_SHIFT
 #define PAGE_SHIFT              12L
+#endif
 
 #define PAUSE_PROCESSOR YieldProcessor();
 
@@ -43,6 +47,10 @@ NTAPI
 KeGetCurrentIrql(VOID);
 
 #define DbgRaiseAssertionFailure() __break(0xf001)
+
+/* Match other arches: map Ke{Lower,Raise}Irql to Kf* */
+#define KeLowerIrql(a) KfLowerIrql(a)
+#define KeRaiseIrql(a,b) *(b) = KfRaiseIrql(a)
 
 $endif (_WDMDDK_)
 $if (_NTDDK_)

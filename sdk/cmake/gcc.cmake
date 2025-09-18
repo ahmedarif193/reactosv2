@@ -25,8 +25,13 @@ elseif(NOT DEFINED NO_ROSSYM)
     set(NO_ROSSYM FALSE)
 endif()
 
+# PSEH3 is only supported on x86/x64. Disable for arm64 to use compiler or PSEH2 fallback.
 if(NOT DEFINED USE_PSEH3)
-    set(USE_PSEH3 1)
+    if(ARCH STREQUAL "arm64")
+        set(USE_PSEH3 0)
+    else()
+        set(USE_PSEH3 1)
+    endif()
 endif()
 
 if(USE_PSEH3)
@@ -474,7 +479,7 @@ function(generate_import_lib _libname _dllname _spec_file __version_arg __dbg_ar
     set(LIBRARY_PRIVATE_DIR ${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/${_libname}.dir)
     # For amd64, we need to run ranlib after dlltool to add proper index
     # FIXME: For amd64, we need to run ranlib after dlltool to ensure proper index
-    if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "i386")
+    if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "i386" OR ARCH STREQUAL "arm64")
         add_custom_command(
             OUTPUT ${LIBRARY_PRIVATE_DIR}/${_libname}.a
             # Delete any existing file in the private directory before creating new one
@@ -507,7 +512,7 @@ function(generate_import_lib _libname _dllname _spec_file __version_arg __dbg_ar
     
     # FIXME: On amd64, AR corrupts import libraries when using EXTERNAL_OBJECT
     # Force a copy operation to preserve the correct import library
-    if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "i386")
+    if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "i386" OR ARCH STREQUAL "arm64")
         # Override the library file with a proper copy after it's created
         add_custom_command(TARGET ${_libname} POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy ${LIBRARY_PRIVATE_DIR}/${_libname}.a $<TARGET_FILE:${_libname}>

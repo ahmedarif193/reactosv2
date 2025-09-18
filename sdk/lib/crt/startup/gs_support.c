@@ -105,6 +105,16 @@ __security_init_cookie (void)
 __declspec(noreturn) void __cdecl __report_gsfailure (ULONG_PTR);
 
 #ifndef _MSC_VER
+#if defined(__aarch64__) || defined(_M_ARM64)
+__declspec(noreturn) void __cdecl
+__report_gsfailure (ULONG_PTR StackCookie)
+{
+  (void)StackCookie;
+  /* Minimal ARM64 implementation: terminate immediately. */
+  TerminateProcess (GetCurrentProcess (), STATUS_STACK_BUFFER_OVERRUN);
+  abort();
+}
+#else
 __declspec(noreturn) void __cdecl
 __report_gsfailure (ULONG_PTR StackCookie)
 {
@@ -120,7 +130,7 @@ __report_gsfailure (ULONG_PTR StackCookie)
   if (fctEntry != NULL)
     {
       RtlVirtualUnwind (UNW_FLAG_NHANDLER, imgBase, controlPC, fctEntry,
-			&GS_ContextRecord, &hndData, &establisherFrame, NULL);
+                        &GS_ContextRecord, &hndData, &establisherFrame, NULL);
     }
   else
 #endif /* _WIN64 */
@@ -150,4 +160,5 @@ __report_gsfailure (ULONG_PTR StackCookie)
   TerminateProcess (GetCurrentProcess (), STATUS_STACK_BUFFER_OVERRUN);
   abort();
 }
+#endif /* arm64 vs default */
 #endif /* !_MSC_VER */

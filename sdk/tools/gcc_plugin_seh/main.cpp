@@ -141,8 +141,11 @@ handle_seh_pragma(cpp_reader* UNUSED parser)
 
     seh_fun->handlers.push_back({is_except, (unsigned int)TREE_INT_CST_LOW(line)});
 
-    /* Make sure we use a frame pointer. REACTOS' PSEH depends on this */
+    /* Make sure we use a frame pointer where applicable */
+#ifdef TARGET_amd64
+    /* x86_64 backend exposes this flag */
     cfun->machine->accesses_prev_frame = 1;
+#endif
 }
 
 static

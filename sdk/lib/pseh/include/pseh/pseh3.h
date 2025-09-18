@@ -12,6 +12,30 @@
 
 #include <excpt.h>
 
+#if defined(__aarch64__) || defined(_M_ARM64)
+/* ARM64: provide PSEH3 surface via ARM64 SEH2 implementation */
+#include "pseh2_arm64.h"
+
+#define _SEH3_TRY      _SEH2_TRY
+#define _SEH3_EXCEPT   _SEH2_EXCEPT
+#define _SEH3_FINALLY  _SEH2_FINALLY
+#define _SEH3_END      _SEH2_END
+#define _SEH3_LEAVE    _SEH2_LEAVE
+#define _SEH3_VOLATILE _SEH2_VOLATILE
+
+#ifndef _abnormal_termination
+#define _abnormal_termination  _SEH2_AbnormalTermination
+#endif
+#ifndef _exception_code
+#define _exception_code        _SEH2_GetExceptionCode
+#endif
+#ifndef _exception_info
+#define _exception_info        _SEH2_GetExceptionInformation
+#endif
+
+/* Skip the rest of PSEH3 (x86-specific) implementation on ARM64 */
+#else
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -499,3 +523,5 @@ _Pragma("GCC diagnostic pop") \
 #ifdef __cplusplus
 }; // extern "C"
 #endif
+
+#endif /* !ARM64 */
