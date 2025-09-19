@@ -225,6 +225,34 @@ struct thunkCode
 };
 #pragma pack(pop)
 
+#elif defined(_M_ARM64) || defined(__aarch64__)
+
+#pragma pack(push,8)
+struct thunkCode
+{
+    DWORD m_mov_x0;     /* mov x0, m_this */
+    DWORD m_ldr_x0;     /* ldr x0, [x0] */
+    DWORD m_mov_pc;     /* mov pc, m_proc */
+    DWORD m_ldr_pc;     /* ldr pc, [pc] */
+    DWORD64 m_this;
+    DWORD64 m_proc;
+
+    void
+    Init(WNDPROC proc, void *pThis)
+    {
+        // ARM64 thunk implementation
+        // MOV X0, #imm (load this pointer)
+        m_mov_x0 = 0x58000040;  // LDR X0, [PC, #8]
+        m_ldr_x0 = 0x58000061;  // LDR X1, [PC, #12]
+        m_mov_pc = 0xD61F0020;  // BR X1
+        m_ldr_pc = 0x00000000;  // NOP for alignment
+        m_this = (DWORD64)pThis;
+        m_proc = (DWORD64)proc;
+        FlushInstructionCache(GetCurrentProcess(), this, sizeof(thunkCode));
+    }
+};
+#pragma pack(pop)
+
 #else
 #error ARCH not supported
 #endif

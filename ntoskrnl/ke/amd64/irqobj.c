@@ -118,6 +118,7 @@ KiAllocateInterruptVector(
  * @return TRUE if handled, FALSE otherwise
  */
 static BOOLEAN
+__attribute__((unused))
 KiGenericInterruptHandler(
     _In_ UCHAR Vector,
     _In_ PKTRAP_FRAME TrapFrame)
@@ -395,7 +396,7 @@ KeRegisterInterruptHandler(
     IdtEntry.OffsetLow = (USHORT)((ULONG_PTR)Handler & 0xFFFF);
     IdtEntry.Selector = KGDT64_R0_CODE;
     IdtEntry.IstIndex = 0;
-    IdtEntry.Type = 0x8E;  /* Interrupt gate */
+    IdtEntry.Type = 0xE;  /* Interrupt gate (5-bit type field) */
     IdtEntry.Dpl = 0;
     IdtEntry.Present = 1;
     IdtEntry.OffsetMiddle = (USHORT)(((ULONG_PTR)Handler >> 16) & 0xFFFF);

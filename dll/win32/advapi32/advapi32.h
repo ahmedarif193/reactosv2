@@ -15,6 +15,12 @@
 #include <stdio.h>
 
 /* PSDK/NDK Headers */
+#ifndef UNICODE
+#define UNICODE
+#endif
+#ifndef _UNICODE
+#define _UNICODE
+#endif
 #define WINE_STRICT_PROTOTYPES
 #define WIN32_NO_STATUS
 #define WIN32_LEAN_AND_MEAN

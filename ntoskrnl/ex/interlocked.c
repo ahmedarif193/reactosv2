@@ -83,6 +83,8 @@ ExInterlockedAddLargeInteger(
     return OldValue;
 }
 
+/* ARM64 has native atomic implementation in ex/arm64/fastinterlck.c for some functions */
+#if !defined(_M_ARM64)
 ULONG
 NTAPI
 ExInterlockedAddUlong(
@@ -108,7 +110,9 @@ ExInterlockedAddUlong(
     /* Return the old value */
     return OldValue;
 }
+#endif /* !_M_ARM64 - ExInterlockedAddUlong */
 
+/* List manipulation functions are not implemented in ARM64 fastinterlck.c, so enable for all architectures */
 PLIST_ENTRY
 NTAPI
 ExInterlockedInsertHeadList(
@@ -248,6 +252,7 @@ ExInterlockedPushEntryList(
     return OldListEntry;
 }
 
+#if !defined(_M_ARM64)
 INTERLOCKED_RESULT
 NTAPI
 ExInterlockedIncrementLong(
@@ -275,7 +280,10 @@ ExInterlockedDecrementLong(
            (Result > 0) ? ResultPositive :
            ResultZero;
 }
+#endif /* !_M_ARM64 - ExInterlockedIncrementLong and ExInterlockedDecrementLong */
 
+/* ARM64 has native atomic implementation in ex/arm64/fastinterlck.c */
+#if !defined(_M_ARM64)
 ULONG
 NTAPI
 ExInterlockedExchangeUlong(
@@ -285,6 +293,7 @@ ExInterlockedExchangeUlong(
 {
     return (ULONG)_InterlockedExchange((PLONG)Target, (LONG)Value);
 }
+#endif /* !_M_ARM64 */
 
 #ifdef _M_IX86
 

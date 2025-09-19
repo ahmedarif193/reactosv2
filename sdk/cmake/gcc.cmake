@@ -263,7 +263,7 @@ elseif(ARCH STREQUAL "arm")
     add_definitions(-U_UNICODE -UUNICODE)
     add_definitions(-D__MSVCRT__) # DUBIOUS
 elseif(ARCH STREQUAL "arm64")
-    add_definitions(-U_UNICODE -UUNICODE)
+    # Don't undefine UNICODE for ARM64 - it breaks many builds
     add_definitions(-D__MSVCRT__) # DUBIOUS
     add_definitions(-D_M_ARM64)
     # ARM64 specific optimizations
@@ -522,7 +522,17 @@ function(generate_import_lib _libname _dllname _spec_file __version_arg __dbg_ar
     # Do the same with delay-import libs
     set(LIBRARY_PRIVATE_DIR ${CMAKE_CURRENT_BINARY_DIR}${CMAKE_FILES_DIRECTORY}/${_libname}_delayed.dir)
     # FIXME: For amd64, we need to run ranlib after dlltool to ensure proper index
-    if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "i386")
+    # For arm64, dlltool doesn't support --output-delaylib, use --output-lib instead
+    if(ARCH STREQUAL "arm64")
+        add_custom_command(
+            OUTPUT ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
+            # Delete any existing file in the private directory before creating new one
+            COMMAND ${CMAKE_COMMAND} -E rm -f ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
+            COMMAND ${CMAKE_DLLTOOL} --def ${CMAKE_CURRENT_BINARY_DIR}/${_libname}_implib.def --kill-at --output-lib=${_libname}_delayed.a -t ${_libname}_delayed
+            COMMAND ${CMAKE_RANLIB} ${_libname}_delayed.a
+            DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/${_libname}_implib.def
+            WORKING_DIRECTORY ${LIBRARY_PRIVATE_DIR})
+    elseif(ARCH STREQUAL "amd64" OR ARCH STREQUAL "i386")
         add_custom_command(
             OUTPUT ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
             # Delete any existing file in the private directory before creating new one
@@ -555,11 +565,11 @@ function(generate_import_lib _libname _dllname _spec_file __version_arg __dbg_ar
     
     # FIXME: AR corrupts import libraries when using EXTERNAL_OBJECT
     # Force a copy operation to preserve the correct import library
-    if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "i386")
+    if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "i386" OR ARCH STREQUAL "arm64")
         # Override the library file with a proper copy after it's created
         add_custom_command(TARGET ${_libname}_delayed POST_BUILD
             COMMAND ${CMAKE_COMMAND} -E copy ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a $<TARGET_FILE:${_libname}_delayed>
-            COMMENT "FIXME: Overwriting ${_libname}_delayed with proper import library (amd64 workaround)")
+            COMMENT "FIXME: Overwriting ${_libname}_delayed with proper import library (amd64/arm64 workaround)")
     endif()
 endfunction()
 

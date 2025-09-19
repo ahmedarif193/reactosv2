@@ -56,15 +56,6 @@ RtlDispatchException(
     return FALSE;
 }
 
-VOID
-NTAPI
-RtlRaiseException(
-    _In_ PEXCEPTION_RECORD ExceptionRecord)
-{
-    DPRINT1("RtlRaiseException: stub for ARM64\n");
-    /* TODO: Implement raise exception */
-    ASSERT(FALSE);
-}
 
 VOID
 NTAPI

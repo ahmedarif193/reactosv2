@@ -1761,6 +1761,12 @@ MmArmAccessFault(IN ULONG FaultCode,
                 DbgPrint("MM:***PC %p\n", TrapFrame->Pc);
                 DbgPrint("MM:***R0 %p, R1 %p R2 %p, R3 %p\n", TrapFrame->R0, TrapFrame->R1, TrapFrame->R2, TrapFrame->R3);
                 DbgPrint("MM:***R11 %p, R12 %p SP %p, LR %p\n", TrapFrame->R11, TrapFrame->R12, TrapFrame->Sp, TrapFrame->Lr);
+#elif defined(_M_ARM64)
+                DbgPrint("MM:***PC %p, SPSR %lx\n", TrapFrame->Pc, TrapFrame->Spsr);
+                DbgPrint("MM:***X0 %p, X1 %p X2 %p, X3 %p\n", TrapFrame->X0, TrapFrame->X1, TrapFrame->X2, TrapFrame->X3);
+                DbgPrint("MM:***FP %p, LR %p SP %p\n", TrapFrame->Fp, TrapFrame->Lr, TrapFrame->Sp);
+#else
+                UNREFERENCED_PARAMETER(TrapFrame);
 #endif
             }
 
@@ -2648,6 +2654,8 @@ ExitUser:
     return Status;
 }
 
+/* ARM64 has specific implementation in mm/arm64/page.c */
+#if !defined(_M_ARM64)
 NTSTATUS
 NTAPI
 MmGetExecuteOptions(IN PULONG ExecuteOptions)
@@ -2757,5 +2765,6 @@ MmSetExecuteOptions(IN ULONG ExecuteOptions)
     KiReleaseProcessLock(&ProcessLock);
     return Status;
 }
+#endif /* !_M_ARM64 */
 
 /* EOF */

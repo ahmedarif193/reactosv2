@@ -112,6 +112,19 @@ MACRO(STUBCODE_K, Name, SyscallId, ArgCount)
     j KiSystemService
     nop
 ENDM
+#elif defined(_M_ARM64) || defined(_ARM64_)
+MACRO(STUBCODE_U, Name, SyscallId, ArgCount)
+    mov w8, #SyscallId
+    svc #0
+    ret
+ENDM
+MACRO(STUBCODE_K, Name, SyscallId, ArgCount)
+    EXTERN Nt&Name
+    adrp x16, Nt&Name
+    add x16, x16, #:lo12:Nt&Name
+    mov x9, #ArgCount * 8
+    b KiZwSystemService
+ENDM
 #else
 #error unsupported architecture
 #endif

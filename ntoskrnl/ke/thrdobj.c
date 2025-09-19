@@ -886,6 +886,8 @@ KeInitThread(IN OUT PKTHREAD Thread,
     return Status;
 }
 
+/* ARM64 has its own implementation via macro in internal/arm64/ke.h */
+#if !defined(_M_ARM64)
 VOID
 NTAPI
 KeInitializeThread(IN PKPROCESS Process,
@@ -911,6 +913,7 @@ KeInitializeThread(IN PKPROCESS Process,
         KeStartThread(Thread);
     }
 }
+#endif /* !_M_ARM64 */
 
 VOID
 NTAPI

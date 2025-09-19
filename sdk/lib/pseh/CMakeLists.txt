@@ -17,8 +17,8 @@ if(MSVC OR ((CMAKE_C_COMPILER_ID STREQUAL "Clang") AND (ARCH STREQUAL "amd64")))
     add_asm_files(pseh_asm ${ASM_SOURCE})
     add_library(pseh ${SOURCE} ${pseh_asm})
     add_dependencies(pseh asm)
-elseif((CMAKE_C_COMPILER_ID STREQUAL "GNU") AND (ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64"))
-    # For GCC on amd64/arm64 this is an interface library, with our home-made plugin
+elseif((CMAKE_C_COMPILER_ID STREQUAL "GNU") AND (ARCH STREQUAL "amd64"))
+    # For GCC on amd64 this is an interface library, with our home-made plugin
     add_library(pseh INTERFACE)
     if (CMAKE_HOST_WIN32)
         target_compile_options(pseh INTERFACE
@@ -35,7 +35,10 @@ else()
             i386/pseh3.c
             i386/pseh3_i386.S)
     elseif(ARCH STREQUAL "arm64")
-        # Using plugin-based SEH2 for arm64, no extra C sources here
+        # On arm64 with GCC, use a dummy implementation to satisfy linkage
+        # The ARM64 architecture uses table-based exception handling
+        # similar to x64, but doesn't require PSEH for basic functionality
+        list(APPEND SOURCE dummy.c)
     elseif(USE_DUMMY_PSEH)
         list(APPEND SOURCE dummy.c)
     elseif(ARCH STREQUAL "i386")

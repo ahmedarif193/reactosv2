@@ -223,6 +223,22 @@ elseif(ARCH STREQUAL "arm")
     list(APPEND CRT_MATH_ASM_SOURCE
         math/arm/_logb.s
     )
+elseif(ARCH STREQUAL "arm64")
+    list(APPEND LIBCNTPR_MATH_SOURCE
+        math/cos.c
+        math/ceilf.c
+        math/fabs.c
+        math/fabsf.c
+        math/floorf.c
+        math/sin.c
+        math/sqrt.c
+        math/sqrtf.c
+    )
+    list(APPEND LIBCNTPR_MATH_ASM_SOURCE
+        math/arm64/floor.s
+        math/arm64/log10.s
+        math/arm64/pow.s
+    )
 endif()
 
 if(NOT ARCH STREQUAL "i386")

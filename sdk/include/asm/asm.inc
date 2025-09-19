@@ -252,8 +252,10 @@ ENDM
 
 #else /***********************************************************************/
 
-/* Force intel syntax */
+/* Force intel syntax (x86 only) */
+#if defined(_M_IX86) || defined(_M_AMD64) || defined(__i386__) || defined(__x86_64__)
 .intel_syntax noprefix
+#endif
 
 /* Put dwarf debug info in the .dwarf_debug section, which will be properly stripped */
 .cfi_sections .debug_frame

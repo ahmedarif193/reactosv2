@@ -70,16 +70,26 @@ ExInitPoolLookasidePointers(VOID)
         InitializeSListHead(&Entry->ListHead);
 
         /* Bind to PRCB */
+#ifdef _M_ARM64
+        /* ARM64 uses GENERAL_LOOKASIDE_POOL directly, copy the structure */
+        RtlCopyMemory(&Prcb->PPNPagedLookasideList[i], Entry, sizeof(GENERAL_LOOKASIDE));
+#else
         Prcb->PPNPagedLookasideList[i].P = Entry;
         Prcb->PPNPagedLookasideList[i].L = Entry;
+#endif
 
         /* Initialize the paged list */
         Entry = &ExpSmallPagedPoolLookasideLists[i];
         InitializeSListHead(&Entry->ListHead);
 
         /* Bind to PRCB */
+#ifdef _M_ARM64
+        /* ARM64 uses GENERAL_LOOKASIDE_POOL directly, copy the structure */
+        RtlCopyMemory(&Prcb->PPPagedLookasideList[i], Entry, sizeof(GENERAL_LOOKASIDE));
+#else
         Prcb->PPPagedLookasideList[i].P = Entry;
         Prcb->PPPagedLookasideList[i].L = Entry;
+#endif
     }
 }
 

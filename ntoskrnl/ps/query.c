@@ -1119,7 +1119,12 @@ NtQueryInformationProcess(
             if (ExAcquireRundownProtection(&Process->RundownProtect))
             {
                 /* Get the WOW64 process structure */
+#ifdef _M_ARM64
+                /* ARM64 does not support WOW64 */
+                Wow64 = 0;
+#else
                 Wow64 = (ULONG_PTR)Process->Wow64Process;
+#endif
                 /* Release the lock */
                 ExReleaseRundownProtection(&Process->RundownProtect);
             }

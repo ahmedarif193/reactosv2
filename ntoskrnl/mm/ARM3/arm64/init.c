@@ -16,6 +16,66 @@
 
 /* GLOBALS ******************************************************************/
 
+/* ARM64 PTE Constants for Memory Management */
+
+/* Template PTE and PDE for a kernel page with ARM64-specific flags */
+/* ARM64 kernel pages: Valid=1, AP=00 (kernel RW), AF=1 (accessed),
+   Attributes for normal cacheable memory, no execute restrictions for kernel */
+MMPTE ValidKernelPde = {{
+    ARM64_PTE_VALID |                      /* Entry is valid */
+    ARM64_PTE_TYPE_TABLE |                 /* Table descriptor for PDE */
+    ARM64_PTE_AP_KERNEL_RW |               /* Kernel read/write access */
+    ARM64_PTE_AF |                         /* Access flag set */
+    ARM64_PTE_SH_INNER |                   /* Inner shareable */
+    (0ULL << 2)                            /* AttrIndx=0 for normal cacheable memory */
+}};
+
+MMPTE ValidKernelPte = {{
+    ARM64_PTE_VALID |                      /* Entry is valid */
+    ARM64_PTE_TYPE_BLOCK |                 /* Block/page descriptor for PTE */
+    ARM64_PTE_AP_KERNEL_RW |               /* Kernel read/write access */
+    ARM64_PTE_AF |                         /* Access flag set */
+    ARM64_PTE_DIRTY |                      /* Custom dirty bit */
+    ARM64_PTE_SH_INNER |                   /* Inner shareable */
+    (0ULL << 2)                            /* AttrIndx=0 for normal cacheable memory */
+}};
+
+/* The same, but for local pages (non-global) */
+MMPTE ValidKernelPdeLocal = {{
+    ARM64_PTE_VALID |                      /* Entry is valid */
+    ARM64_PTE_TYPE_TABLE |                 /* Table descriptor for PDE */
+    ARM64_PTE_AP_KERNEL_RW |               /* Kernel read/write access */
+    ARM64_PTE_AF |                         /* Access flag set */
+    ARM64_PTE_SH_INNER |                   /* Inner shareable */
+    (0ULL << 2)                            /* AttrIndx=0 for normal cacheable memory */
+    /* Note: Global bit is not set, making this local */
+}};
+
+MMPTE ValidKernelPteLocal = {{
+    ARM64_PTE_VALID |                      /* Entry is valid */
+    ARM64_PTE_TYPE_BLOCK |                 /* Block/page descriptor for PTE */
+    ARM64_PTE_AP_KERNEL_RW |               /* Kernel read/write access */
+    ARM64_PTE_AF |                         /* Access flag set */
+    ARM64_PTE_DIRTY |                      /* Custom dirty bit */
+    ARM64_PTE_SH_INNER |                   /* Inner shareable */
+    (0ULL << 2)                            /* AttrIndx=0 for normal cacheable memory */
+    /* Note: Global bit is not set, making this local */
+}};
+
+/* Template PDE for a demand-zero page - software PTE with protection bits */
+MMPDE DemandZeroPde = {{MM_EXECUTE_READWRITE << MM_PTE_SOFTWARE_PROTECTION_BITS}};
+MMPTE DemandZeroPte = {{MM_READWRITE << MM_PTE_SOFTWARE_PROTECTION_BITS}};
+
+/* Template PTE for prototype page - software PTE with prototype flag */
+MMPTE PrototypePte = {{
+    (MM_EXECUTE_READWRITE << MM_PTE_SOFTWARE_PROTECTION_BITS) |
+    ARM64_PTE_SW_PROTOTYPE |               /* ARM64 software prototype bit */
+    (MI_PTE_LOOKUP_NEEDED << 32)           /* Lookup needed marker in upper bits */
+}};
+
+/* Template PTE for decommitted page - software PTE with decommit protection */
+MMPTE MmDecommittedPte = {{MM_DECOMMIT << MM_PTE_SOFTWARE_PROTECTION_BITS}};
+
 /* ARM64 specific page table structures */
 ULONG_PTR MmArmTranslationTableBase;
 ULONG_PTR MmArmPageGlobalDirectory;
@@ -29,9 +89,9 @@ ULONG_PTR MmArmPageGlobalDirectory;
  * and initializes architecture-specific memory management features.
  *
  * @param LoaderBlock - Pointer to loader parameter block
- * @return NTSTATUS - Success or failure status
+ * @return BOOLEAN - TRUE on success, FALSE on failure
  */
-NTSTATUS
+BOOLEAN
 NTAPI
 MmArmInitSystem(IN ULONG Phase,
                 IN PLOADER_PARAMETER_BLOCK LoaderBlock)
@@ -85,7 +145,7 @@ MmArmInitSystem(IN ULONG Phase,
         /* DSB, ISB, DMB instructions for memory ordering */
     }
 
-    return STATUS_SUCCESS;
+    return TRUE;
 }
 
 /*

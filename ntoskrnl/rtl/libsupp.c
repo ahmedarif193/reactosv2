@@ -314,7 +314,7 @@ RtlpHandleDpcStackException(IN PEXCEPTION_REGISTRATION_RECORD RegistrationFrame,
     return FALSE;
 }
 
-#if !defined(_ARM_) && !defined(_AMD64_)
+#if !defined(_ARM_) && !defined(_AMD64_) && !defined(_M_ARM64)
 
 BOOLEAN
 NTAPI
@@ -339,7 +339,6 @@ RtlpCaptureStackLimits(IN ULONG_PTR Ebp,
     }
     else
     {
-        /* Now we're going to assume we're on the DPC stack */
         *StackEnd = (ULONG_PTR)(KeGetPcr()->Prcb->DpcStack);
         *StackBegin = *StackEnd - KERNEL_STACK_SIZE;
 
@@ -391,6 +390,8 @@ RtlWalkFrameChain(OUT PVOID *Callers,
     __asm__("mr %0,1" : "=r" (Stack) : );
 #elif defined(_M_ARM)
     __asm__("mov sp, %0" : "=r"(Stack) : );
+#elif defined(_M_ARM64)
+    __asm__("mov %0, sp" : "=r"(Stack) : );
 #else
 #error Unknown architecture
 #endif
@@ -434,6 +435,8 @@ RtlWalkFrameChain(OUT PVOID *Callers,
             Stack = TrapFrame->Ebp;
 #elif defined(_M_PPC)
             Stack = TrapFrame->Gpr1;
+#elif defined(_M_ARM64)
+            Stack = TrapFrame->Sp;
 #else
 #error Unknown architecture
 #endif
@@ -476,10 +479,14 @@ RtlWalkFrameChain(OUT PVOID *Callers,
             if ((StackBegin < Eip) && (Eip < StackEnd)) break;
 
             /* Check if we reached a user-mode address */
+#ifdef _M_ARM64
+            if (!(Flags) && (Eip < 0x8000000000000000ULL)) break; /* ARM64 user/kernel boundary */
+#else
             if (!(Flags) && !(Eip & 0x80000000)) break; // FIXME: 3GB breakage
+#endif
 
             /* Save this frame */
-            Callers[i] = (PVOID)Eip;
+            Callers[i] = (PVOID)(ULONG_PTR)Eip;
 
             /* Check if we should continue */
             if (StopSearch)

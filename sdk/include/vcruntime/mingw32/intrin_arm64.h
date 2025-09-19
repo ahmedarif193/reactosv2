@@ -38,11 +38,25 @@ __INTRIN_INLINE unsigned char _BitScanReverse64(unsigned long* Index, unsigned l
     return 1;
 }
 
+__INTRIN_INLINE unsigned char _interlockedbittestandset(volatile long* a, long b)
+{
+    unsigned long mask = 1ul << (b & 31);
+    unsigned long prev = __sync_fetch_and_or((volatile unsigned long*)a, mask);
+    return (unsigned char)((prev >> (b & 31)) & 1ul);
+}
+
 __INTRIN_INLINE unsigned char _interlockedbittestandset64(volatile long long* a, long b)
 {
     unsigned long long mask = 1ull << (b & 63);
     unsigned long long prev = __sync_fetch_and_or((volatile unsigned long long*)a, mask);
     return (unsigned char)((prev >> (b & 63)) & 1ull);
+}
+
+__INTRIN_INLINE unsigned char _interlockedbittestandreset(volatile long* a, long b)
+{
+    unsigned long mask = 1ul << (b & 31);
+    unsigned long prev = __sync_fetch_and_and((volatile unsigned long*)a, ~mask);
+    return (unsigned char)((prev >> (b & 31)) & 1ul);
 }
 
 __INTRIN_INLINE unsigned char _interlockedbittestandreset64(volatile long long* a, long b)
@@ -60,6 +74,14 @@ __INTRIN_INLINE void __yield(void)
 __INTRIN_INLINE long long _InterlockedExchangeAdd64(volatile long long* a, long long b)
 {
     return __sync_fetch_and_add((volatile long long*)a, b);
+}
+
+__declspec(noreturn)
+__INTRIN_INLINE void __fastfail(unsigned int Code)
+{
+    /* ARM64 uses BRK instruction for fast fail */
+    __asm__ __volatile__("brk #0xF000" : : "r"(Code) : "memory");
+    __builtin_unreachable();
 }
 
 #endif /* __GNUC__ */

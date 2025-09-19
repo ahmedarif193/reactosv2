@@ -53,6 +53,30 @@ VOID NTAPI RtlpBreakWithStatusInstruction(VOID);
 #define KPRCB_PCR_PAGE_OFFSET          FIELD_OFFSET(KPRCB, PcrPage)
 #define CBSTACK_FRAME_POINTER          DummyFramePointer
 
+#elif defined(_M_ARM64)
+
+#ifndef KPCR_SELF_PCR_OFFSET
+#define KPCR_SELF_PCR_OFFSET           0
+#endif
+#ifndef KPCR_CURRENT_PRCB_OFFSET
+#define KPCR_CURRENT_PRCB_OFFSET       FIELD_OFFSET(KIPCR, Prcb)
+#endif
+#ifndef KPCR_CONTAINED_PRCB_OFFSET
+#define KPCR_CONTAINED_PRCB_OFFSET     0
+#endif
+#ifndef KPCR_INITIAL_STACK_OFFSET
+#define KPCR_INITIAL_STACK_OFFSET      0  /* ARM64 placeholder */
+#endif
+#ifndef KPCR_STACK_LIMIT_OFFSET
+#define KPCR_STACK_LIMIT_OFFSET        0  /* ARM64 placeholder */
+#endif
+#ifndef KPRCB_PCR_PAGE_OFFSET
+#define KPRCB_PCR_PAGE_OFFSET          0  /* ARM64 placeholder */
+#endif
+#ifndef CBSTACK_FRAME_POINTER
+#define CBSTACK_FRAME_POINTER          DummyFramePointer
+#endif
+
 #else
 #error Unsupported Architecture
 #endif
@@ -531,7 +555,7 @@ KDDEBUGGER_DATA64 KdDebuggerDataBlock =
     PtrToUL64(RtlpBreakWithStatusInstruction),
     0,
     FIELD_OFFSET(KTHREAD, CallbackStack),
-#if defined(_M_ARM) || defined(_M_AMD64)
+#if defined(_M_ARM) || defined(_M_AMD64) || defined(_M_ARM64)
     0,
     0,
 #else

@@ -258,7 +258,7 @@ MmGetPteForAddress(
     }
 
     /* Get PDPT entry */
-    Pdpte = (PMMPTE)(Pml4e->u.Hard.PageFrameNumber << PAGE_SHIFT);
+    Pdpte = (PMMPTE)((ULONG_PTR)Pml4e->u.Hard.PageFrameNumber << PAGE_SHIFT);
     Pdpte += ((ULONG_PTR)Address >> 30) & 0x1FF;
 
     if (!Pdpte->u.Hard.Valid)
@@ -287,7 +287,7 @@ MmGetPteForAddress(
     }
 
     /* Get PD entry */
-    Pde = (PMMPTE)(Pdpte->u.Hard.PageFrameNumber << PAGE_SHIFT);
+    Pde = (PMMPTE)((ULONG_PTR)Pdpte->u.Hard.PageFrameNumber << PAGE_SHIFT);
     Pde += ((ULONG_PTR)Address >> 21) & 0x1FF;
 
     if (!Pde->u.Hard.Valid)
@@ -316,7 +316,7 @@ MmGetPteForAddress(
     }
 
     /* Get PT entry */
-    Pte = (PMMPTE)(Pde->u.Hard.PageFrameNumber << PAGE_SHIFT);
+    Pte = (PMMPTE)((ULONG_PTR)Pde->u.Hard.PageFrameNumber << PAGE_SHIFT);
     Pte += ((ULONG_PTR)Address >> 12) & 0x1FF;
 
     return Pte;

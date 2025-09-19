@@ -132,13 +132,17 @@ list(APPEND FREELDR_BASE_SOURCE
     ntldr/ntldropts.c # Should be in rosload, but is currently needed by machpc.c, etc.
     lib/rtl/libsupp.c)
 
-if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64" OR ARCH STREQUAL "arm64")
+# The legacy freeldr.def only exists for x86/x64 BIOS builds
+if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
     # Must be included together with disk/scsiport.c
     list(APPEND FREELDR_BASE_SOURCE
         ${CMAKE_CURRENT_BINARY_DIR}/freeldr.def)
 endif()
 
-include(pcat.cmake)
+# Build the legacy PC/AT (BIOS) FreeLoader only on x86/x64
+if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
+    include(pcat.cmake)
+endif()
 
 # ARM64 doesn't need rosload - it uses UEFI direct loading
 if(NOT ARCH STREQUAL "arm64")

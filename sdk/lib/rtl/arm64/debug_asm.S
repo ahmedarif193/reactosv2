@@ -17,7 +17,9 @@ DbgBreakPoint:
 
 /* DbgBreakPointWithStatus */
 .global DbgBreakPointWithStatus
+.global RtlpBreakWithStatusInstruction
 DbgBreakPointWithStatus:
+RtlpBreakWithStatusInstruction:
     /* Status parameter in x0 */
     brk #0xF001
     ret

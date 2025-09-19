@@ -4,6 +4,13 @@
 #include <stdarg.h>
 #include <assert.h>
 
+#ifndef UNICODE
+#define UNICODE
+#endif
+#ifndef _UNICODE
+#define _UNICODE
+#endif
+
 #define COBJMACROS
 #define WIN32_NO_STATUS
 #define _INC_WINDOWS

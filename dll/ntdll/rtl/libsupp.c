@@ -231,7 +231,7 @@ RtlWalkFrameChain(OUT PVOID *Callers,
                   IN ULONG Flags)
 {
     ULONG_PTR Stack, NewStack, StackBegin, StackEnd = 0;
-    ULONG Eip;
+    ULONG_PTR Eip;
     BOOLEAN Result, StopSearch = FALSE;
     ULONG i = 0;
 
@@ -251,6 +251,13 @@ RtlWalkFrameChain(OUT PVOID *Callers,
     __asm__("mov sp, %0" : "=r"(Stack) : );
 #elif defined(_MSC_VER)
     // FIXME: Hack. Probably won't work if this ever actually manages to run someday.
+    Stack = (ULONG_PTR)&Stack;
+#endif
+#elif defined(_M_ARM64)
+#if defined __GNUC__
+    __asm__("mov %0, sp" : "=r"(Stack) : );
+#elif defined(_MSC_VER)
+    // FIXME: Hack. Use frame pointer for now
     Stack = (ULONG_PTR)&Stack;
 #endif
 #else

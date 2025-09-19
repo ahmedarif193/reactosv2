@@ -150,6 +150,26 @@ C_ASSERT(SYSTEM_PD_SIZE == PAGE_SIZE);
 #define PTE_DISABLE_CACHE       0x10
 #define PTE_WRITECOMBINED_CACHE 0x10
 #define PTE_PROTECT_MASK        0x610
+#elif defined(_M_ARM64)
+//
+// Protection Flags for ARM64 - similar to ARM
+//
+#define PTE_READONLY            0x200
+#define PTE_EXECUTE             0 // Not worrying about NX yet
+#define PTE_EXECUTE_READ        0 // Not worrying about NX yet
+#define PTE_READWRITE           0 // Doesn't exist on ARM64
+#define PTE_WRITECOPY           0 // Doesn't exist on ARM64
+#define PTE_EXECUTE_READWRITE   0 // Not worrying about NX yet
+#define PTE_EXECUTE_WRITECOPY   0 // Not worrying about NX yet
+#define PTE_PROTOTYPE           0x400 // Using the Shared bit
+
+//
+// Cache flags for ARM64
+//
+#define PTE_ENABLE_CACHE        0
+#define PTE_DISABLE_CACHE       0x10
+#define PTE_WRITECOMBINED_CACHE 0x10
+#define PTE_PROTECT_MASK        0x610
 #else
 #error Define these please!
 #endif
@@ -952,7 +972,12 @@ MI_IS_PHYSICAL_ADDRESS(IN PVOID Address)
 
     /* Large pages are never paged out, always physically resident */
     PointerPde = MiAddressToPde(Address);
+#ifdef _ARM64_
+    /* ARM64 uses NotLargePage bit - inverted logic */
+    return (!(PointerPde->u.Hard.NotLargePage) && (PointerPde->u.Hard.Valid));
+#else
     return ((PointerPde->u.Hard.LargePage) && (PointerPde->u.Hard.Valid));
+#endif
 }
 
 //

@@ -44,13 +44,13 @@
 #define CTX_PSTATE  0x108    /* Processor state */
 
 /* Thread structure offsets (simplified) */
-#define THREAD_CONTEXT_FRAME    0x200   /* Offset to saved context */
+/* #define THREAD_CONTEXT_FRAME    0x200 */  /* Offset to saved context - now in ksarm64.h */
 #define THREAD_INITIAL_STACK    0x018   /* InitialStack field */
 #define THREAD_KERNEL_STACK     0x020   /* KernelStack field */
-#define THREAD_APCSTATE_PROCESS 0x050   /* ApcState.Process field */
+/* #define THREAD_APCSTATE_PROCESS 0x050 */  /* ApcState.Process field - now in ksarm64.h */
 
 /* Process structure offsets */
-#define PROCESS_DIRECTORYTABLEBASE  0x018   /* DirectoryTableBase field */
+/* #define PROCESS_DIRECTORYTABLEBASE  0x018 */  /* DirectoryTableBase field - now in ksarm64.h */
 
 .text
 
@@ -65,24 +65,25 @@
  *   x1 = PKTHREAD NewThread
  */
 .globl KiSwapContext
-.type KiSwapContext, %function
+/* .type KiSwapContext, %function - not supported by MinGW */
 KiSwapContext:
     /* Disable interrupts during context switch */
     mrs x2, daif
     msr daifset, #0xF
     
     /* Save current thread's callee-saved registers */
-    stp x19, x20, [x0, #THREAD_CONTEXT_FRAME + CTX_X19]
-    stp x21, x22, [x0, #THREAD_CONTEXT_FRAME + CTX_X21]
-    stp x23, x24, [x0, #THREAD_CONTEXT_FRAME + CTX_X23]
-    stp x25, x26, [x0, #THREAD_CONTEXT_FRAME + CTX_X25]
-    stp x27, x28, [x0, #THREAD_CONTEXT_FRAME + CTX_X27]
-    stp x29, x30, [x0, #THREAD_CONTEXT_FRAME + CTX_X29]
+    add x4, x0, #THREAD_CONTEXT_FRAME
+    stp x19, x20, [x4, #CTX_X19]
+    stp x21, x22, [x4, #CTX_X21]
+    stp x23, x24, [x4, #CTX_X23]
+    stp x25, x26, [x4, #CTX_X25]
+    stp x27, x28, [x4, #CTX_X27]
+    stp x29, x30, [x4, #CTX_X29]
     
     /* Save stack pointer and DAIF state */
     mov x3, sp
-    str x3, [x0, #THREAD_CONTEXT_FRAME + CTX_SP]
-    str x2, [x0, #THREAD_CONTEXT_FRAME + CTX_PSTATE]
+    str x3, [x4, #CTX_SP]
+    str x2, [x4, #CTX_PSTATE]
     
     /* Check if we're switching between different processes */
     ldr x3, [x0, #THREAD_APCSTATE_PROCESS]  /* Old process */
@@ -102,19 +103,20 @@ KiSwapContext:
 
 switch_context:
     /* Restore new thread's callee-saved registers */
-    ldp x19, x20, [x1, #THREAD_CONTEXT_FRAME + CTX_X19]
-    ldp x21, x22, [x1, #THREAD_CONTEXT_FRAME + CTX_X21]
-    ldp x23, x24, [x1, #THREAD_CONTEXT_FRAME + CTX_X23]
-    ldp x25, x26, [x1, #THREAD_CONTEXT_FRAME + CTX_X25]
-    ldp x27, x28, [x1, #THREAD_CONTEXT_FRAME + CTX_X27]
-    ldp x29, x30, [x1, #THREAD_CONTEXT_FRAME + CTX_X29]
+    add x5, x1, #THREAD_CONTEXT_FRAME
+    ldp x19, x20, [x5, #CTX_X19]
+    ldp x21, x22, [x5, #CTX_X21]
+    ldp x23, x24, [x5, #CTX_X23]
+    ldp x25, x26, [x5, #CTX_X25]
+    ldp x27, x28, [x5, #CTX_X27]
+    ldp x29, x30, [x5, #CTX_X29]
     
     /* Restore stack pointer */
-    ldr x3, [x1, #THREAD_CONTEXT_FRAME + CTX_SP]
+    ldr x3, [x5, #CTX_SP]
     mov sp, x3
     
     /* Restore interrupt state */
-    ldr x2, [x1, #THREAD_CONTEXT_FRAME + CTX_PSTATE]
+    ldr x2, [x5, #CTX_PSTATE]
     msr daif, x2
     
     /* Update current thread in PRCB (if PCR is accessible) */
@@ -132,7 +134,7 @@ switch_context:
  *   x3 = PVOID StartContext
  */
 .globl KiInitializeContextFrame
-.type KiInitializeContextFrame, %function
+/* .type KiInitializeContextFrame, %function - not supported by MinGW */
 KiInitializeContextFrame:
     /* Clear the context frame */
     add x4, x0, #THREAD_CONTEXT_FRAME
@@ -169,7 +171,7 @@ KiInitializeContextFrame:
  * Called when a thread returns from its start routine
  */
 .globl KiThreadExit
-.type KiThreadExit, %function
+/* .type KiThreadExit, %function - not supported by MinGW */
 KiThreadExit:
     /* Call kernel thread termination */
     bl PsTerminateSystemThread
@@ -182,7 +184,7 @@ KiThreadExit:
  * Used by the scheduler when no threads are ready to run
  */
 .globl KiIdleLoop
-.type KiIdleLoop, %function
+/* .type KiIdleLoop, %function - not supported by MinGW */
 KiIdleLoop:
     /* Enable interrupts and wait for interrupt */
     msr daifclr, #0xF
@@ -205,7 +207,7 @@ idle_wait:
  *   x0 = PFLOATING_SAVE_AREA FloatSave
  */
 .globl KiSaveFloatingPointState
-.type KiSaveFloatingPointState, %function
+/* .type KiSaveFloatingPointState, %function - not supported by MinGW */
 KiSaveFloatingPointState:
     /* Save FPCR and FPSR */
     mrs x1, fpcr
@@ -239,7 +241,7 @@ KiSaveFloatingPointState:
  *   x0 = PFLOATING_SAVE_AREA FloatSave
  */
 .globl KiRestoreFloatingPointState
-.type KiRestoreFloatingPointState, %function
+/* .type KiRestoreFloatingPointState, %function - not supported by MinGW */
 KiRestoreFloatingPointState:
     /* Restore FPCR and FPSR */
     ldp x1, x2, [x0], #16
@@ -276,7 +278,7 @@ KiRestoreFloatingPointState:
  *   x2 = PKIRQL OldIrql (saved DAIF state)
  */
 .globl KiAtomicSwapContext
-.type KiAtomicSwapContext, %function
+/* .type KiAtomicSwapContext, %function - not supported by MinGW */
 KiAtomicSwapContext:
     /* Save the old IRQL/DAIF state */
     str x2, [sp, #-16]!
@@ -293,7 +295,7 @@ KiAtomicSwapContext:
  * Used to return from system calls efficiently
  */
 .globl KiFastSystemCallReturn  
-.type KiFastSystemCallReturn, %function
+/* .type KiFastSystemCallReturn, %function - not supported by MinGW */
 KiFastSystemCallReturn:
     /* TODO: Implement fast system call return */
     /* For now, use normal exception return */
@@ -304,7 +306,7 @@ KiFastSystemCallReturn:
  * Called by the timer interrupt to handle thread quantum expiration
  */
 .globl KiDispatchInterrupt
-.type KiDispatchInterrupt, %function
+/* .type KiDispatchInterrupt, %function - not supported by MinGW */
 KiDispatchInterrupt:
     /* Save volatile registers */
     stp x0, x1, [sp, #-16]!
@@ -331,7 +333,7 @@ KiDispatchInterrupt:
  *   x0 = PVOID Address (must be page-aligned)
  */
 .globl KiZeroPage
-.type KiZeroPage, %function
+/* .type KiZeroPage, %function - not supported by MinGW */
 KiZeroPage:
     /* Clear SIMD register */
     movi v0.16b, #0
@@ -355,7 +357,7 @@ KiZeroPage:
  *   x1 = PVOID Source  
  */
 .globl KiCopyPage
-.type KiCopyPage, %function
+/* .type KiCopyPage, %function - not supported by MinGW */
 KiCopyPage:
     mov x2, #(4096 / 64)  /* 64 bytes per iteration */
     
@@ -366,6 +368,45 @@ KiCopyPage:
     subs x2, x2, #1
     b.ne 1b
     
+    ret
+
+/*
+ * KeSwitchKernelStack
+ *
+ * Switches the current thread's kernel stack to a new stack.
+ * Returns the old stack base.
+ *
+ * Parameters:
+ *   x0 = PVOID StackBase (new stack base)
+ *   x1 = PVOID StackLimit (new stack limit)
+ *
+ * Returns:
+ *   x0 = PVOID (old stack base)
+ */
+.globl KeSwitchKernelStack
+/* .type KeSwitchKernelStack, %function - not supported by MinGW */
+KeSwitchKernelStack:
+    /* Save current SP as the old stack to return */
+    mov x2, sp
+
+    /* Get current thread from TPIDR_EL1 (or from PCR) */
+    /* For now, assume we can get the thread from a global or PCR */
+    /* TODO: Implement proper thread pointer retrieval */
+
+    /* Switch to the new stack */
+    /* The new stack base is in x0, limit is in x1 */
+    mov sp, x0
+
+    /* TODO: Update thread's stack information */
+    /* This would typically involve updating:
+     * - Thread->KernelStack
+     * - Thread->StackBase
+     * - Thread->StackLimit
+     * - PCR stack information
+     */
+
+    /* Return the old stack pointer in x0 */
+    mov x0, x2
     ret
 
 .end

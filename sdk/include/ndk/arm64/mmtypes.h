@@ -17,26 +17,51 @@ extern "C" {
 #define MM_ALLOCATION_GRANULARITY_SHIFT   16L
 #define MM_PAGE_FRAME_NUMBER_SIZE         20
 
+//
+// User space range limit for ARM64
+// ARM64 uses 48-bit virtual addresses with user space in the lower half
+// User space: 0x0000_0000_0000_0000 to 0x0000_7FFF_FFFF_FFFF (128TB)
+// Kernel space: 0xFFFF_8000_0000_0000 to 0xFFFF_FFFF_FFFF_FFFF (128TB)
+//
+#define MI_HIGHEST_USER_ADDRESS         (PVOID)0x00007FFFFFFFFFFFULL
+
+//
+// Address of the shared user page (ARM64)
+//
+#define MM_SHARED_USER_DATA_VA          0x7FFE0000ULL
+
 /* Following structs are based on WoA symbols */
 typedef struct _HARDWARE_PTE
 {
     /* 8 Byte struct */
     ULONG64 Valid:1;
-    ULONG64 NotLargePage:1;
+    union {
+        ULONG64 NotLargePage:1;
+        ULONG64 LargePage:1;  /* Inverted logic - LargePage = !NotLargePage */
+    };
     ULONG64 CacheType:2;
     ULONG64 OsAvailable2:1;
     ULONG64 NonSecure:1;
     ULONG64 Owner:1;
-    ULONG64 NotDirty:1;
+    union {
+        ULONG64 NotDirty:1;
+        ULONG64 Dirty:1;     /* Inverted logic - Dirty = !NotDirty */
+    };
     ULONG64 Shareability:2;
     ULONG64 Accessed:1;
-    ULONG64 NonGlobal:1;
+    union {
+        ULONG64 NonGlobal:1;
+        ULONG64 Global:1;    /* Inverted logic - Global = !NonGlobal */
+    };
     ULONG64 PageFrameNumber:36;
     ULONG64 RsvdZ1:4;
     ULONG64 ContigousBit:1;
     ULONG64 PrivilegedNoExecute:1;
     ULONG64 UserNoExecute:1;
-    ULONG64 Writable:1;
+    union {
+        ULONG64 Writable:1;
+        ULONG64 Write:1;     /* Alias for Writable */
+    };
     ULONG64 CopyOnWrite:1;
     ULONG64 OsAvailable:2;
     ULONG64 PxnTable:1;
@@ -97,11 +122,13 @@ typedef struct _MMPTE_SUBSECTION
     ULONG64 Valid:1;
     ULONG64 Protection:5;
     ULONG64 OnStandbyLookaside:1;
-    ULONG64 RsvdZ1:3;
+    ULONG64 WhichPool:1;
+    ULONG64 RsvdZ1:2;
     ULONG64 Prototype:1;
     ULONG64 ColdPage:1;
-    ULONG64 RsvdZ2:4;
-    ULONG64 SubsectionAddress:48;
+    ULONG64 SubsectionAddressLow:4;
+    ULONG64 SubsectionAddressHigh:20;
+    ULONG64 SubsectionAddress:28;  /* Upper bits of address */
 } MMPTE_SUBSECTION;
 
 typedef struct _MMPTE_TIMESTAMP
@@ -142,7 +169,8 @@ typedef struct _MMPTE
         MMPTE_SUBSECTION Subsect;
         MMPTE_LIST List;
     } u;
-} MMPTE, *PMMPTE;
+} MMPTE, *PMMPTE,
+  MMPDE, *PMMPDE;
 
 #ifdef __cplusplus
 }; // extern "C"

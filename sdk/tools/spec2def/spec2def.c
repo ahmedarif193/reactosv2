@@ -568,9 +568,9 @@ PrintName(FILE *fileDest, EXPORT *pexp, PSTRING pstr, int fDeco)
         /* Print the undecorated function name */
         fprintf(fileDest, "%.*s", nNameLength, pcName);
     }
-    else if (fDeco &&
-        ((pexp->nCallingConvention == CC_STDCALL) ||
-         (pexp->nCallingConvention == CC_FASTCALL)))
+    else if ((giArch == ARCH_X86) && fDeco &&
+             ((pexp->nCallingConvention == CC_STDCALL) ||
+              (pexp->nCallingConvention == CC_FASTCALL)))
     {
         /* Beware with C++ exports */
         int is_cpp = pcName[0] == '?';
@@ -1616,15 +1616,18 @@ int main(int argc, char *argv[])
     else if (strcasecmp(pszArchString, "x86_64") == 0) giArch = ARCH_AMD64;
     else if (strcasecmp(pszArchString, "ia64") == 0) giArch = ARCH_IA64;
     else if (strcasecmp(pszArchString, "arm") == 0) giArch = ARCH_ARM;
-    else if (strcasecmp(pszArchString, "arm64") == 0) giArch = ARCH_ARM64;
+    else if (strcasecmp(pszArchString, "arm64") == 0 || strcasecmp(pszArchString, "aarch64") == 0) giArch = ARCH_ARM64;
     else if (strcasecmp(pszArchString, "ppc") == 0) giArch = ARCH_PPC;
 
-    if ((giArch == ARCH_AMD64) || (giArch == ARCH_IA64))
+    /* Treat 64-bit architectures as win64-style (no stdcall suffixes, PE+) */
+    if ((giArch == ARCH_AMD64) || (giArch == ARCH_IA64) || (giArch == ARCH_ARM64))
     {
         pszArchString2 = "win64";
     }
     else
+    {
         pszArchString2 = "win32";
+    }
 
     /* Set a default dll name */
     if (!pszDllName)

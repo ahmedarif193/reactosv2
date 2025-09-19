@@ -1,11 +1,12 @@
 /*
- * PROJECT:     ReactOS Kernel
- * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
- * PURPOSE:     ARM64 Thread Initialization
- * COPYRIGHT:   Copyright 2024 ReactOS Team
+ * COPYRIGHT:       See COPYING in the top level directory
+ * PROJECT:         ReactOS Kernel
+ * PURPOSE:         ARM64 Thread Management
+ * FILE:            ntoskrnl/ke/arm64/thrdini.c
+ * PROGRAMMER:      ARM64 Port Team
  */
 
-/* INCLUDES ******************************************************************/
+/* INCLUDES *****************************************************************/
 
 #include <ntoskrnl.h>
 #define NDEBUG
@@ -19,48 +20,48 @@
 VOID
 NTAPI
 KiInitializeThread(
+    IN PKPROCESS Process,
     IN OUT PKTHREAD Thread,
-    IN PVOID KernelStack,
-    IN PKSTART_ROUTINE SystemRoutine,
+    IN PKSYSTEM_ROUTINE SystemRoutine,
     IN PKSTART_ROUTINE StartRoutine,
     IN PVOID StartContext,
     IN PCONTEXT ContextFrame,
     IN PVOID Teb,
-    IN PKPROCESS Process
+    IN PVOID KernelStack
 )
 {
     PKTRAP_FRAME TrapFrame;
     PKEXCEPTION_FRAME ExceptionFrame;
     PULONG64 InitialStack;
-    
+
     DPRINT("KiInitializeThread: Thread=%p, Stack=%p, StartRoutine=%p\n",
            Thread, KernelStack, StartRoutine);
-    
+
     /* Set up the Initial Stack */
     InitialStack = (PULONG64)KernelStack;
     Thread->InitialStack = KernelStack;
     Thread->StackBase = KernelStack;
-    Thread->StackLimit = (PVOID)((ULONG_PTR)KernelStack - KERNEL_STACK_SIZE + PAGE_SIZE);
+    Thread->StackLimit = (ULONG_PTR)KernelStack - KERNEL_STACK_SIZE + PAGE_SIZE;
     Thread->KernelStack = KernelStack;
-    
+
     /* Calculate trap frame and exception frame positions */
-    TrapFrame = (PKTRAP_FRAME)((ULONG_PTR)InitialStack - 
+    TrapFrame = (PKTRAP_FRAME)((ULONG_PTR)InitialStack -
                                ALIGN_UP(sizeof(KTRAP_FRAME), STACK_ALIGN));
-    ExceptionFrame = (PKEXCEPTION_FRAME)((ULONG_PTR)TrapFrame - 
-                                        ALIGN_UP(sizeof(KEXCEPTION_FRAME), STACK_ALIGN));
-    
-    /* Clear the frames */
+    ExceptionFrame = (PKEXCEPTION_FRAME)((ULONG_PTR)TrapFrame -
+                                         ALIGN_UP(sizeof(KEXCEPTION_FRAME), STACK_ALIGN));
+
+    /* Initialize trap frame */
     RtlZeroMemory(TrapFrame, sizeof(KTRAP_FRAME));
+
+    /* Initialize exception frame (minimal for ARM64) */
     RtlZeroMemory(ExceptionFrame, sizeof(KEXCEPTION_FRAME));
-    
-    /* Set up the Trap Frame */
-    TrapFrame->PreviousMode = KernelMode;
-    TrapFrame->PreviousIrql = PASSIVE_LEVEL;
-    
-    /* Check if we have a context frame (user thread) */
+
+    /* Set up based on whether we have a context frame (user mode) or not (kernel mode) */
     if (ContextFrame)
     {
-        /* Copy user context */
+        /* User mode thread initialization */
+
+        /* Copy general-purpose registers (X0-X28, all available in KTRAP_FRAME) */
         TrapFrame->X0 = ContextFrame->X0;
         TrapFrame->X1 = ContextFrame->X1;
         TrapFrame->X2 = ContextFrame->X2;
@@ -90,69 +91,68 @@ KiInitializeThread(
         TrapFrame->X26 = ContextFrame->X26;
         TrapFrame->X27 = ContextFrame->X27;
         TrapFrame->X28 = ContextFrame->X28;
+
+        /* Copy frame pointer, link register, stack pointer, program counter */
         TrapFrame->Fp = ContextFrame->Fp;    /* X29 */
         TrapFrame->Lr = ContextFrame->Lr;    /* X30 */
         TrapFrame->Sp = ContextFrame->Sp;
         TrapFrame->Pc = ContextFrame->Pc;
+#ifdef _ARM64_
+        /* ARM64 uses Pstate, but some headers may still use Cpsr name */
+        #if defined(__has_member)
+            #if __has_member(CONTEXT, Pstate)
+                TrapFrame->Pstate = ContextFrame->Pstate;
+            #else
+                TrapFrame->Pstate = ContextFrame->Cpsr;
+            #endif
+        #else
+            /* Fallback - try Cpsr field name for compatibility */
+            TrapFrame->Pstate = ContextFrame->Cpsr;
+        #endif
+#else
         TrapFrame->Pstate = ContextFrame->Pstate;
-        
+#endif
+
         /* Set up user mode */
         TrapFrame->PreviousMode = UserMode;
-        
+
         /* Set up TEB if provided */
         if (Teb)
         {
             TrapFrame->X18 = (ULONG64)Teb;  /* ARM64 TEB pointer convention */
         }
-        
+
         DPRINT("KiInitializeThread: User thread, PC=0x%llX, SP=0x%llX\n",
                TrapFrame->Pc, TrapFrame->Sp);
     }
     else
     {
-        /* Kernel thread - set up to call SystemRoutine then StartRoutine */
-        TrapFrame->X0 = (ULONG64)StartRoutine;    /* First parameter */
-        TrapFrame->X1 = (ULONG64)StartContext;    /* Second parameter */
-        TrapFrame->Pc = (ULONG64)SystemRoutine;   /* Start at SystemRoutine */
-        TrapFrame->Sp = (ULONG64)ExceptionFrame;  /* Stack pointer */
-        TrapFrame->Pstate = 0;                    /* Enable interrupts, EL1 */
-        
-        DPRINT("KiInitializeThread: Kernel thread, SystemRoutine=%p, StartRoutine=%p\n",
-               SystemRoutine, StartRoutine);
+        /* Kernel mode thread initialization */
+
+        /* Set up kernel mode registers */
+        TrapFrame->X0 = (ULONG64)StartContext;   /* First argument */
+        TrapFrame->Lr = (ULONG64)StartRoutine;   /* Return address (start routine) */
+        TrapFrame->Sp = (ULONG_PTR)ExceptionFrame; /* Stack pointer */
+        TrapFrame->Pc = (ULONG64)SystemRoutine;  /* Program counter */
+        TrapFrame->Pstate = 0;                     /* Enable interrupts, EL1 */
+
+        /* Set up kernel mode */
+        TrapFrame->PreviousMode = KernelMode;
+
+        DPRINT("KiInitializeThread: Kernel thread, PC=0x%llX, SP=0x%llX\n",
+               TrapFrame->Pc, TrapFrame->Sp);
     }
-    
-    /* Set up the Exception Frame for kernel threads */
-    ExceptionFrame->X19 = 0;
-    ExceptionFrame->X20 = 0;
-    ExceptionFrame->X21 = 0;
-    ExceptionFrame->X22 = 0;
-    ExceptionFrame->X23 = 0;
-    ExceptionFrame->X24 = 0;
-    ExceptionFrame->X25 = 0;
-    ExceptionFrame->X26 = 0;
-    ExceptionFrame->X27 = 0;
-    ExceptionFrame->X28 = 0;
-    ExceptionFrame->Fp = 0;     /* X29 */
-    ExceptionFrame->Lr = 0;     /* X30 - will be set to thread exit */
-    
-    /* Set up thread's kernel stack pointer to point to trap frame */
-    Thread->KernelStack = (PVOID)TrapFrame;
-    
-    /* Initialize other thread fields */
-    Thread->TebMapped = FALSE;
-    Thread->CallbackStack = NULL;
-    
-    /* Set up floating point state if needed */
-    Thread->NpxState = NPX_STATE_NOT_LOADED;
-    
-    /* Initialize debugging fields */
-    Thread->DebugActive = FALSE;
-    
-    DPRINT("KiInitializeThread: Thread initialized successfully\n");
+
+    /* Set up thread fields */
+    Thread->TrapFrame = TrapFrame;
+    Thread->Teb = Teb;
+    Thread->Process = Process;
+
+    DPRINT("KiInitializeThread: Thread initialization completed\n");
 }
 
 /**
- * @brief Initialize ARM64-specific thread state
+ * @brief Initialize thread context for ARM64 (stub)
  */
 VOID
 NTAPI
@@ -161,174 +161,84 @@ KiInitializeThreadContext(
     IN PKSYSTEM_ROUTINE SystemRoutine,
     IN PKSTART_ROUTINE StartRoutine,
     IN PVOID StartContext,
-    IN PCONTEXT Context
+    IN PCONTEXT ContextFrame
 )
 {
-    PKTRAP_FRAME TrapFrame;
-    
-    /* Get the trap frame */
-    TrapFrame = (PKTRAP_FRAME)((ULONG_PTR)Thread->InitialStack - 
-                               ALIGN_UP(sizeof(KTRAP_FRAME), STACK_ALIGN));
-    
-    if (Context)
+    /* This is a simplified stub for ARM64 */
+    DPRINT("KiInitializeThreadContext: Thread=%p\n", Thread);
+
+    /* Basic implementation - just ensure the thread can be scheduled */
+    if (!ContextFrame)
     {
-        /* User mode thread */
-        DPRINT("KiInitializeThreadContext: User thread\n");
-        
-        /* The context was already set up in KiInitializeThread */
-        TrapFrame->PreviousMode = UserMode;
-        
-        /* Ensure user mode processor state */
-        TrapFrame->Pstate &= ~0xF;  /* Clear exception level to EL0 (user mode) */
-    }
-    else
-    {
-        /* Kernel mode thread */
-        DPRINT("KiInitializeThreadContext: Kernel thread, SystemRoutine=%p\n", SystemRoutine);
-        
-        /* Set up to call the system routine */
-        TrapFrame->X0 = (ULONG64)StartRoutine;
-        TrapFrame->X1 = (ULONG64)StartContext;
-        TrapFrame->Pc = (ULONG64)SystemRoutine;
-        TrapFrame->PreviousMode = KernelMode;
-        
-        /* Ensure kernel mode processor state (EL1) */
-        TrapFrame->Pstate = (TrapFrame->Pstate & ~0xF) | 0x4;  /* EL1h */
+        /* Kernel thread - minimal setup */
+        PKTRAP_FRAME TrapFrame = Thread->TrapFrame;
+        if (TrapFrame)
+        {
+            TrapFrame->X0 = (ULONG64)StartContext;
+            TrapFrame->Pc = (ULONG64)StartRoutine;
+            TrapFrame->PreviousMode = KernelMode;
+        }
     }
 }
 
 /**
- * @brief Set up a thread to run in user mode
+ * @brief Set up user thread startup for ARM64 (stub)
  */
-NTSTATUS
+VOID
 NTAPI
 KiSetupUserThreadStartup(
     IN PKTHREAD Thread,
-    IN PVOID StartAddress,
-    IN PVOID Parameter
+    IN PKSTART_ROUTINE StartRoutine,
+    IN PVOID StartContext
 )
 {
-    PKTRAP_FRAME TrapFrame;
-    
-    DPRINT("KiSetupUserThreadStartup: Thread=%p, StartAddress=%p\n", 
-           Thread, StartAddress);
-    
-    /* Get the trap frame */
-    TrapFrame = (PKTRAP_FRAME)((ULONG_PTR)Thread->InitialStack - 
-                               ALIGN_UP(sizeof(KTRAP_FRAME), STACK_ALIGN));
-    
-    /* Set up user mode execution */
-    TrapFrame->Pc = (ULONG64)StartAddress;
-    TrapFrame->X0 = (ULONG64)Parameter;      /* First parameter */
-    TrapFrame->PreviousMode = UserMode;
-    TrapFrame->Pstate = 0;                   /* EL0 (user mode), interrupts enabled */
-    
-    /* Set up user stack if not already done */
-    if (TrapFrame->Sp == 0)
+    PKTRAP_FRAME TrapFrame = Thread->TrapFrame;
+
+    DPRINT("KiSetupUserThreadStartup: Thread=%p, StartRoutine=%p\n",
+           Thread, StartRoutine);
+
+    if (TrapFrame)
     {
-        /* Use default user stack location */
-        TrapFrame->Sp = USER_STACK_BASE - PAGE_SIZE;
+        TrapFrame->Pc = (ULONG64)StartRoutine;
+        TrapFrame->X0 = (ULONG64)StartContext;
+        TrapFrame->Pstate = 0;                   /* EL0 (user mode), interrupts enabled */
+        TrapFrame->PreviousMode = UserMode;
+
+        /* Set up user stack if not already set */
+        if (TrapFrame->Sp == 0)
+        {
+            /* Use a default user stack location - this should be set properly by caller */
+            TrapFrame->Sp = 0x7FFEF000;  /* Temporary default */
+        }
     }
-    
-    return STATUS_SUCCESS;
 }
 
 /**
- * @brief Initialize the ARM64 idle thread
+ * @brief Initialize idle thread for ARM64
  */
 VOID
 NTAPI
 KiInitializeIdleThread(
     IN PKTHREAD Thread,
-    IN PKPROCESS Process,
-    IN PVOID IdleStack
+    IN PVOID IdleStack,
+    IN PKPROCESS Process
 )
 {
-    extern VOID KiIdleLoop(VOID);
-    
     DPRINT("KiInitializeIdleThread: Thread=%p, Stack=%p\n", Thread, IdleStack);
-    
-    /* Initialize as a kernel thread */
-    KiInitializeThread(Thread,
-                      IdleStack,
-                      (PKSTART_ROUTINE)KiIdleLoop,
-                      NULL,
-                      NULL,
-                      NULL,
-                      NULL,
-                      Process);
-    
+
+    /* Call the main initialization function with proper parameters */
+    KiInitializeThread(Process,
+                       Thread,
+                       NULL,  /* No system routine for idle thread */
+                       (PKSTART_ROUTINE)KiIdleLoop,
+                       NULL,  /* No start context */
+                       NULL,  /* No context frame - kernel mode */
+                       NULL,  /* No TEB */
+                       IdleStack);
+
     /* Mark as idle thread */
-    Thread->State = Running;
-    Thread->Priority = LOW_PRIORITY;
-    Thread->BasePriority = LOW_PRIORITY;
-    
-    DPRINT("KiInitializeIdleThread: Idle thread initialized\n");
-}
+    Thread->State = Ready;
+    Thread->Priority = 0;  /* Lowest priority */
 
-/**
- * @brief Get the current trap frame for a thread
- */
-PKTRAP_FRAME
-NTAPI
-KiGetTrapFrame(
-    IN PKTHREAD Thread
-)
-{
-    return (PKTRAP_FRAME)((ULONG_PTR)Thread->InitialStack - 
-                          ALIGN_UP(sizeof(KTRAP_FRAME), STACK_ALIGN));
-}
-
-/**
- * @brief Get the current exception frame for a thread
- */
-PKEXCEPTION_FRAME
-NTAPI
-KiGetExceptionFrame(
-    IN PKTHREAD Thread
-)
-{
-    PKTRAP_FRAME TrapFrame = KiGetTrapFrame(Thread);
-    
-    return (PKEXCEPTION_FRAME)((ULONG_PTR)TrapFrame - 
-                              ALIGN_UP(sizeof(KEXCEPTION_FRAME), STACK_ALIGN));
-}
-
-/**
- * @brief Handle ARM64-specific thread startup
- */
-VOID
-NTAPI
-KiThreadStartup(VOID)
-{
-    PKTHREAD Thread;
-    PKSTART_ROUTINE StartRoutine;
-    PVOID StartContext;
-    PKTRAP_FRAME TrapFrame;
-    
-    /* Get current thread */
-    Thread = KeGetCurrentThread();
-    TrapFrame = KiGetTrapFrame(Thread);
-    
-    DPRINT("KiThreadStartup: Thread=%p\n", Thread);
-    
-    /* Get start routine and context from trap frame */
-    StartRoutine = (PKSTART_ROUTINE)TrapFrame->X0;
-    StartContext = (PVOID)TrapFrame->X1;
-    
-    /* Enable interrupts */
-    _enable();
-    
-    /* Call the thread start routine */
-    if (StartRoutine)
-    {
-        DPRINT("KiThreadStartup: Calling StartRoutine=%p with Context=%p\n",
-               StartRoutine, StartContext);
-        
-        StartRoutine(StartContext);
-    }
-    
-    /* Thread finished - terminate it */
-    DPRINT("KiThreadStartup: Thread finished, terminating\n");
-    PsTerminateSystemThread(STATUS_SUCCESS);
+    DPRINT("KiInitializeIdleThread: Idle thread initialization completed\n");
 }

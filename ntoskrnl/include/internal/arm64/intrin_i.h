@@ -39,7 +39,12 @@ extern "C" {
 #define __yield()           __asm__ volatile("yield" ::: "memory")
 
 /* ARM64 Debug Instructions */
-#define __brk(val)          __asm__ volatile("brk %0" :: "i"(val))
+#ifndef __break
+static __inline__ void __break(int val)
+{
+    __asm__ __volatile__("brk #%0" : : "i"(val));
+}
+#endif
 
 /* ARM64 Atomic Operations using GCC built-ins */
 #define _InterlockedIncrement(ptr) \
@@ -82,34 +87,23 @@ extern "C" {
 #define _InterlockedExchangeAdd64(ptr, val) \
     __sync_fetch_and_add(ptr, val)
 
-/* ARM64 Bit Manipulation */
-static __inline__ unsigned char _BitScanForward(unsigned long *Index, unsigned long Mask)
-{
-    if (Mask == 0) return 0;
-    *Index = __builtin_ctzl(Mask);
-    return 1;
-}
+#define _InterlockedAdd64(ptr, val) \
+    __sync_add_and_fetch(ptr, val)
 
-static __inline__ unsigned char _BitScanReverse(unsigned long *Index, unsigned long Mask) 
-{
-    if (Mask == 0) return 0;
-    *Index = 31 - __builtin_clzl(Mask);
-    return 1;
-}
+#define _InterlockedAnd64(ptr, val) \
+    __sync_and_and_fetch(ptr, val)
 
-static __inline__ unsigned char _BitScanForward64(unsigned long *Index, unsigned long long Mask)
-{
-    if (Mask == 0) return 0;
-    *Index = __builtin_ctzll(Mask);
-    return 1;
-}
+#define _InterlockedOr64(ptr, val) \
+    __sync_or_and_fetch(ptr, val)
 
-static __inline__ unsigned char _BitScanReverse64(unsigned long *Index, unsigned long long Mask)
-{
-    if (Mask == 0) return 0;
-    *Index = 63 - __builtin_clzll(Mask);
-    return 1;
-}
+#define _InterlockedXor64(ptr, val) \
+    __sync_xor_and_fetch(ptr, val)
+
+/* ARM64 Bit Manipulation - already defined in mingw32/intrin_arm64.h */
+/* Only define if not already defined */
+#ifndef _BitScanForward
+/* These are provided by mingw32/intrin_arm64.h, no need to redefine */
+#endif
 
 /* ARM64 Read/Write System Registers */
 static __inline__ unsigned long long __readcntvct(void)
@@ -333,6 +327,17 @@ static __inline__ unsigned long long __rndr(void)
     unsigned long long val;
     __asm__ volatile("mrs %0, s3_3_c2_c4_0" : "=r"(val)); /* RNDR */
     return val;
+}
+
+/* ARM64 IRQL Management */
+FORCEINLINE
+VOID
+KeSetCurrentIrql(KIRQL Irql)
+{
+    /* ARM64: IRQL is managed through interrupt priority in GIC */
+    /* This would interact with the GIC to set interrupt priority */
+    /* For now, just store in PCR */
+    KeGetPcr()->CurrentIrql = Irql;
 }
 
 #ifdef __cplusplus

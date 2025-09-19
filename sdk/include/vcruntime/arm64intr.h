@@ -31,9 +31,282 @@ void __dmb(unsigned int _Type);
 void __dsb(unsigned int _Type);
 void __isb(unsigned int _Type);
 
+/* Memory barrier intrinsics */
+void _ReadWriteBarrier(void);
+void _ReadBarrier(void);
+void _WriteBarrier(void);
+
+/* Bit rotation intrinsics */
+unsigned int _rotl(unsigned int value, int shift);
+unsigned int _rotr(unsigned int value, int shift);
+
+/* Interlocked functions for ARM64 */
+long _InterlockedIncrement(long volatile * _Addend);
+long _InterlockedDecrement(long volatile * _Addend);
+long _InterlockedExchangeAdd(long volatile * _Addend, long _Value);
+long long _InterlockedAnd64(long long volatile * _Value, long long _Mask);
+long long _InterlockedOr64(long long volatile * _Value, long long _Mask);
+long long _InterlockedCompareExchange64(long long volatile * _Destination, long long _Exchange, long long _Comparand);
+char _InterlockedCompareExchange8(char volatile * _Destination, char _Exchange, char _Comparand);
+short _InterlockedCompareExchange16(short volatile * _Destination, short _Exchange, short _Comparand);
+long _InterlockedCompareExchange(long volatile * _Destination, long _Exchange, long _Comparand);
+short _InterlockedIncrement16(short volatile * _Addend);
+short _InterlockedDecrement16(short volatile * _Addend);
+long _InterlockedExchange(long volatile * _Target, long _Value);
+char _InterlockedExchange8(char volatile * _Target, char _Value);
+short _InterlockedExchange16(short volatile * _Target, short _Value);
+long _InterlockedAnd(long volatile * _Value, long _Mask);
+char _InterlockedAnd8(char volatile * _Value, char _Mask);
+short _InterlockedAnd16(short volatile * _Value, short _Mask);
+long _InterlockedOr(long volatile * _Value, long _Mask);
+char _InterlockedOr8(char volatile * _Value, char _Mask);
+short _InterlockedOr16(short volatile * _Value, short _Mask);
+long _InterlockedXor(long volatile * _Value, long _Mask);
+char _InterlockedXor8(char volatile * _Value, char _Mask);
+short _InterlockedXor16(short volatile * _Value, short _Mask);
+void _disable(void);
+void _enable(void);
+void* _ReturnAddress(void);
+void __debugbreak(void);
+
+#ifdef __GNUC__
+/* GCC/MinGW implementation using built-in atomics */
+__forceinline long _InterlockedIncrement(long volatile * _Addend)
+{
+    return __atomic_add_fetch(_Addend, 1, __ATOMIC_SEQ_CST);
+}
+
+__forceinline long _InterlockedDecrement(long volatile * _Addend)
+{
+    return __atomic_sub_fetch(_Addend, 1, __ATOMIC_SEQ_CST);
+}
+
+__forceinline long _InterlockedExchangeAdd(long volatile * _Addend, long _Value)
+{
+    return __atomic_fetch_add(_Addend, _Value, __ATOMIC_SEQ_CST);
+}
+
+__forceinline void* _InterlockedCompareExchangePointer(void* volatile * _Destination, void* _Exchange, void* _Comparand)
+{
+    void* expected = _Comparand;
+    __atomic_compare_exchange_n(_Destination, &expected, _Exchange, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+    return expected;
+}
+
+__forceinline void* _InterlockedExchangePointer(void* volatile * _Target, void* _Value)
+{
+    return (void*)__atomic_exchange_n(_Target, _Value, __ATOMIC_SEQ_CST);
+}
+
+__forceinline unsigned long _byteswap_ulong(unsigned long value)
+{
+    return __builtin_bswap32(value);
+}
+
+__forceinline unsigned short _byteswap_ushort(unsigned short value)
+{
+    return __builtin_bswap16(value);
+}
+
+__forceinline unsigned long long _byteswap_uint64(unsigned long long value)
+{
+    return __builtin_bswap64(value);
+}
+
+__forceinline long long _InterlockedAnd64(long long volatile * _Value, long long _Mask)
+{
+    return __atomic_fetch_and(_Value, _Mask, __ATOMIC_SEQ_CST);
+}
+
+__forceinline long long _InterlockedOr64(long long volatile * _Value, long long _Mask)
+{
+    return __atomic_fetch_or(_Value, _Mask, __ATOMIC_SEQ_CST);
+}
+
+__forceinline long long _InterlockedCompareExchange64(long long volatile * _Destination, long long _Exchange, long long _Comparand)
+{
+    long long expected = _Comparand;
+    __atomic_compare_exchange_n(_Destination, &expected, _Exchange, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+    return expected;
+}
+
+__forceinline char _InterlockedCompareExchange8(char volatile * _Destination, char _Exchange, char _Comparand)
+{
+    char expected = _Comparand;
+    __atomic_compare_exchange_n(_Destination, &expected, _Exchange, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+    return expected;
+}
+
+__forceinline void _disable(void)
+{
+    __asm__ volatile("msr daifset, #2" ::: "memory");
+}
+
+__forceinline void _enable(void)
+{
+    __asm__ volatile("msr daifclr, #2" ::: "memory");
+}
+
+__forceinline void* _ReturnAddress(void)
+{
+    return __builtin_return_address(0);
+}
+
+__forceinline void __debugbreak(void)
+{
+    __asm__ volatile("brk #0");
+}
+
+/* Memory barrier implementations */
+__forceinline void _ReadWriteBarrier(void)
+{
+    __asm__ volatile("" ::: "memory");
+}
+
+__forceinline void _ReadBarrier(void)
+{
+    __asm__ volatile("" ::: "memory");
+}
+
+__forceinline void _WriteBarrier(void)
+{
+    __asm__ volatile("" ::: "memory");
+}
+
+/* Bit rotation implementations */
+__forceinline unsigned int _rotl(unsigned int value, int shift)
+{
+    const unsigned int mask = 31;
+    shift &= mask;
+    return (value << shift) | (value >> ((32 - shift) & mask));
+}
+
+__forceinline unsigned int _rotr(unsigned int value, int shift)
+{
+    const unsigned int mask = 31;
+    shift &= mask;
+    return (value >> shift) | (value << ((32 - shift) & mask));
+}
+
+/* Additional interlocked implementations */
+__forceinline short _InterlockedCompareExchange16(short volatile * _Destination, short _Exchange, short _Comparand)
+{
+    short expected = _Comparand;
+    __atomic_compare_exchange_n(_Destination, &expected, _Exchange, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+    return expected;
+}
+
+__forceinline long _InterlockedCompareExchange(long volatile * _Destination, long _Exchange, long _Comparand)
+{
+    long expected = _Comparand;
+    __atomic_compare_exchange_n(_Destination, &expected, _Exchange, 0, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST);
+    return expected;
+}
+
+__forceinline short _InterlockedIncrement16(short volatile * _Addend)
+{
+    return __atomic_add_fetch(_Addend, 1, __ATOMIC_SEQ_CST);
+}
+
+__forceinline short _InterlockedDecrement16(short volatile * _Addend)
+{
+    return __atomic_sub_fetch(_Addend, 1, __ATOMIC_SEQ_CST);
+}
+
+__forceinline long _InterlockedExchange(long volatile * _Target, long _Value)
+{
+    return __atomic_exchange_n(_Target, _Value, __ATOMIC_SEQ_CST);
+}
+
+__forceinline char _InterlockedExchange8(char volatile * _Target, char _Value)
+{
+    return __atomic_exchange_n(_Target, _Value, __ATOMIC_SEQ_CST);
+}
+
+__forceinline short _InterlockedExchange16(short volatile * _Target, short _Value)
+{
+    return __atomic_exchange_n(_Target, _Value, __ATOMIC_SEQ_CST);
+}
+
+__forceinline long _InterlockedAnd(long volatile * _Value, long _Mask)
+{
+    return __atomic_fetch_and(_Value, _Mask, __ATOMIC_SEQ_CST);
+}
+
+__forceinline char _InterlockedAnd8(char volatile * _Value, char _Mask)
+{
+    return __atomic_fetch_and(_Value, _Mask, __ATOMIC_SEQ_CST);
+}
+
+__forceinline short _InterlockedAnd16(short volatile * _Value, short _Mask)
+{
+    return __atomic_fetch_and(_Value, _Mask, __ATOMIC_SEQ_CST);
+}
+
+__forceinline long _InterlockedOr(long volatile * _Value, long _Mask)
+{
+    return __atomic_fetch_or(_Value, _Mask, __ATOMIC_SEQ_CST);
+}
+
+__forceinline char _InterlockedOr8(char volatile * _Value, char _Mask)
+{
+    return __atomic_fetch_or(_Value, _Mask, __ATOMIC_SEQ_CST);
+}
+
+__forceinline short _InterlockedOr16(short volatile * _Value, short _Mask)
+{
+    return __atomic_fetch_or(_Value, _Mask, __ATOMIC_SEQ_CST);
+}
+
+__forceinline long _InterlockedXor(long volatile * _Value, long _Mask)
+{
+    return __atomic_fetch_xor(_Value, _Mask, __ATOMIC_SEQ_CST);
+}
+
+__forceinline char _InterlockedXor8(char volatile * _Value, char _Mask)
+{
+    return __atomic_fetch_xor(_Value, _Mask, __ATOMIC_SEQ_CST);
+}
+
+__forceinline short _InterlockedXor16(short volatile * _Value, short _Mask)
+{
+    return __atomic_fetch_xor(_Value, _Mask, __ATOMIC_SEQ_CST);
+}
+#else
 #pragma intrinsic(__dmb)
 #pragma intrinsic(__dsb)
 #pragma intrinsic(__isb)
+#pragma intrinsic(_ReadWriteBarrier)
+#pragma intrinsic(_ReadBarrier)
+#pragma intrinsic(_WriteBarrier)
+#pragma intrinsic(_rotl)
+#pragma intrinsic(_rotr)
+#pragma intrinsic(_InterlockedIncrement)
+#pragma intrinsic(_InterlockedDecrement)
+#pragma intrinsic(_InterlockedExchangeAdd)
+#pragma intrinsic(_InterlockedAnd64)
+#pragma intrinsic(_InterlockedOr64)
+#pragma intrinsic(_InterlockedCompareExchange64)
+#pragma intrinsic(_InterlockedCompareExchange8)
+#pragma intrinsic(_InterlockedCompareExchange16)
+#pragma intrinsic(_InterlockedCompareExchange)
+#pragma intrinsic(_InterlockedExchange)
+#pragma intrinsic(_InterlockedExchange8)
+#pragma intrinsic(_InterlockedExchange16)
+#pragma intrinsic(_InterlockedAnd)
+#pragma intrinsic(_InterlockedAnd8)
+#pragma intrinsic(_InterlockedAnd16)
+#pragma intrinsic(_InterlockedOr)
+#pragma intrinsic(_InterlockedOr8)
+#pragma intrinsic(_InterlockedOr16)
+#pragma intrinsic(_InterlockedXor)
+#pragma intrinsic(_InterlockedXor8)
+#pragma intrinsic(_InterlockedXor16)
+#pragma intrinsic(_disable)
+#pragma intrinsic(_enable)
+#pragma intrinsic(_ReturnAddress)
+#pragma intrinsic(__debugbreak)
+#endif
 
 #if defined(__cplusplus)
 } // extern "C"

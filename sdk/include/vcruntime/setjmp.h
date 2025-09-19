@@ -195,10 +195,23 @@ typedef struct __JUMP_BUFFER {
 #elif defined(_X86_)
 # define mingw_getsp() \
   ({ void* value; __asm__ __volatile__("movl %%esp, %[value]" : [value] "=r" (value)); value; })
+#elif defined(_M_ARM64) || defined(__aarch64__) || defined(__arm64__) || defined(_ARM64_)
+# define mingw_getsp() \
+  ({ void* value; __asm__ __volatile__("mov %[value], sp" : [value] "=r" (value)); value; })
 #endif
 #define setjmp(BUF) _setjmp((BUF),mingw_getsp())
   int __MINGW_NOTHROW __cdecl _setjmp(jmp_buf _Buf,void *_Ctx);
 #else /* _INC_SETJMPEX */
+#if defined(__x86_64)
+# define mingw_getsp() \
+  ({ void* value; __asm__ __volatile__("movq %%rsp, %[value]" : [value] "=r" (value)); value; })
+#elif defined(_X86_)
+# define mingw_getsp() \
+  ({ void* value; __asm__ __volatile__("movl %%esp, %[value]" : [value] "=r" (value)); value; })
+#elif defined(_M_ARM64) || defined(__aarch64__) || defined(__arm64__) || defined(_ARM64_)
+# define mingw_getsp() \
+  ({ void* value; __asm__ __volatile__("mov %[value], sp" : [value] "=r" (value)); value; })
+#endif
 #undef setjmp
 #define setjmp(BUF) _setjmpex((BUF),mingw_getsp())
 #define setjmpex(BUF) _setjmpex((BUF),mingw_getsp())

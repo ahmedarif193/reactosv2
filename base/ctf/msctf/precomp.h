@@ -8,6 +8,13 @@
 
 #pragma once
 
+#ifndef UNICODE
+#define UNICODE
+#endif
+#ifndef _UNICODE
+#define _UNICODE
+#endif
+
 #include <initguid.h>
 #include <windef.h>
 #include <winbase.h>

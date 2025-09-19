@@ -73,6 +73,12 @@
 
 #define ASSERT_KM_POINTER(_x) \
    ASSERT(((ULONG_PTR)(_x)) != (ULONG_PTR)0xccccccccccccccccULL); \
-   ASSERT(((PVOID)(_x)) >= MmSystemRangeStart);
+   do { \
+       if (sizeof(PVOID) == 8) { \
+           ASSERT(((ULONG_PTR)(_x)) >= 0xFFFF000000000000ULL); \
+       } else { \
+           ASSERT(((ULONG_PTR)(_x)) >= 0x80000000UL); \
+       } \
+   } while(0);
 
 /* EOF */

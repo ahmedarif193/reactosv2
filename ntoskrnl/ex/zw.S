@@ -9,6 +9,16 @@
 
 #include <sysfuncs.h>
 
+#elif defined(_M_ARM64)
+
+.text
+
+EXTERN KiZwSystemService:PROC
+
+#define SVC_(name, argcount) STUB_K name, argcount
+
+#include <sysfuncs.h>
+
 #else
 
 #ifdef _M_IX86

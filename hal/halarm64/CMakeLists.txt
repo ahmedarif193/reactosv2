@@ -8,7 +8,8 @@ include_directories(
     ${REACTOS_SOURCE_DIR}/ntoskrnl/include)
 
 list(APPEND HAL_SOURCE
-    halarm64.c)
+    halarm64.c
+    portio.c)
 
 add_asm_files(hal_asm)
 

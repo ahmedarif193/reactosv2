@@ -28,7 +28,7 @@ PspGetContext(
     RtlZeroMemory(Context, sizeof(CONTEXT));
     
     /* Set context flags */
-    Context->ContextFlags = CONTEXT_FULL;
+    Context->ContextFlags = 0x00400001L | 0x00400002L | 0x00400004L;  /* CONTEXT_CONTROL | CONTEXT_INTEGER | CONTEXT_FLOATING_POINT for ARM64 */
     
     if (TrapFrame)
     {
@@ -70,25 +70,13 @@ PspGetContext(
         /* Copy stack pointer, program counter, and processor state */
         Context->Sp = TrapFrame->Sp;
         Context->Pc = TrapFrame->Pc;
-        Context->Pstate = TrapFrame->Pstate;
+        /* ARM64 uses Pstate, but some headers may still use Cpsr name */
+        Context->Cpsr = TrapFrame->Pstate;
     }
     
-    if (ExceptionFrame)
-    {
-        /* Exception frame contains callee-saved registers */
-        Context->X19 = ExceptionFrame->X19;
-        Context->X20 = ExceptionFrame->X20;
-        Context->X21 = ExceptionFrame->X21;
-        Context->X22 = ExceptionFrame->X22;
-        Context->X23 = ExceptionFrame->X23;
-        Context->X24 = ExceptionFrame->X24;
-        Context->X25 = ExceptionFrame->X25;
-        Context->X26 = ExceptionFrame->X26;
-        Context->X27 = ExceptionFrame->X27;
-        Context->X28 = ExceptionFrame->X28;
-        Context->Fp = ExceptionFrame->Fp;   /* X29 */
-        Context->Lr = ExceptionFrame->Lr;   /* X30 */
-    }
+    /* TODO: Exception frame is not yet implemented for ARM64 */
+    /* All registers are currently stored in the KTRAP_FRAME */
+    UNREFERENCED_PARAMETER(ExceptionFrame);
 }
 
 /**
@@ -148,31 +136,18 @@ PspSetContext(
         if (PreviousMode == UserMode)
         {
             /* Ensure user mode processor state */
-            TrapFrame->Pstate = (Context->Pstate & ~0xF) | 0x0;  /* EL0 */
+            TrapFrame->Pstate = (Context->Cpsr & ~0xF) | 0x0;  /* EL0 */
         }
         else
         {
             /* Keep kernel mode processor state */
-            TrapFrame->Pstate = (Context->Pstate & ~0xF) | 0x4;  /* EL1h */
+            TrapFrame->Pstate = (Context->Cpsr & ~0xF) | 0x4;  /* EL1h */
         }
     }
     
-    if (ExceptionFrame)
-    {
-        /* Copy callee-saved registers to exception frame */
-        ExceptionFrame->X19 = Context->X19;
-        ExceptionFrame->X20 = Context->X20;
-        ExceptionFrame->X21 = Context->X21;
-        ExceptionFrame->X22 = Context->X22;
-        ExceptionFrame->X23 = Context->X23;
-        ExceptionFrame->X24 = Context->X24;
-        ExceptionFrame->X25 = Context->X25;
-        ExceptionFrame->X26 = Context->X26;
-        ExceptionFrame->X27 = Context->X27;
-        ExceptionFrame->X28 = Context->X28;
-        ExceptionFrame->Fp = Context->Fp;   /* X29 */
-        ExceptionFrame->Lr = Context->Lr;   /* X30 */
-    }
+    /* TODO: Exception frame is not yet implemented for ARM64 */
+    /* All registers are currently stored in the KTRAP_FRAME */
+    UNREFERENCED_PARAMETER(ExceptionFrame);
 }
 
 /**
@@ -203,8 +178,8 @@ PspGetSetContextSpecialApc(
                                          ALIGN_UP(sizeof(KTRAP_FRAME), STACK_ALIGN) -
                                          ALIGN_UP(sizeof(KEXCEPTION_FRAME), STACK_ALIGN));
     
-    /* Check if we're getting or setting context */
-    if (GetSetContext->Mode == GetContext)
+    /* Check if it's a set or get */
+    if (Apc->SystemArgument1 == 0)
     {
         /* Get the context */
         PspGetContext(TrapFrame, ExceptionFrame, &GetSetContext->Context);
@@ -217,4 +192,61 @@ PspGetSetContextSpecialApc(
     
     /* Free the context structure */
     ExFreePoolWithTag(GetSetContext, TAG_PS_APC);
+}
+
+/**
+ * @brief Kernel routine for get/set context operations
+ */
+VOID
+NTAPI
+PspGetOrSetContextKernelRoutine(
+    _In_ PKAPC Apc,
+    _Inout_ PKNORMAL_ROUTINE* NormalRoutine,
+    _Inout_ PVOID* NormalContext,
+    _Inout_ PVOID* SystemArgument1,
+    _Inout_ PVOID* SystemArgument2)
+{
+    PGET_SET_CTX_CONTEXT GetSetContext;
+    PKTHREAD Thread;
+    PKTRAP_FRAME TrapFrame = NULL;
+    PKEXCEPTION_FRAME ExceptionFrame = NULL;
+
+    PAGED_CODE();
+
+    /* Get the Context Structure */
+    GetSetContext = CONTAINING_RECORD(Apc, GET_SET_CTX_CONTEXT, Apc);
+    Thread = Apc->SystemArgument2;
+    NT_ASSERT(KeGetCurrentThread() == Thread);
+
+    /* If this is a kernel-mode request, grab the saved trap frame */
+    if (GetSetContext->Mode == KernelMode)
+    {
+        TrapFrame = Thread->TrapFrame;
+    }
+
+    /* If we don't have one, grab it from the stack */
+    if (TrapFrame == NULL)
+    {
+        /* Get the thread's base trap frame */
+        TrapFrame = (PKTRAP_FRAME)((ULONG_PTR)Thread->InitialStack -
+                                   ALIGN_UP(sizeof(KTRAP_FRAME), STACK_ALIGN));
+    }
+
+    /* ARM64 currently stores everything in the trap frame */
+    ExceptionFrame = NULL;
+
+    /* Check if it's a set or get */
+    if (Apc->SystemArgument1 != 0)
+    {
+        /* Set the context */
+        PspSetContext(TrapFrame, ExceptionFrame, &GetSetContext->Context, GetSetContext->Mode);
+    }
+    else
+    {
+        /* Get the context */
+        PspGetContext(TrapFrame, ExceptionFrame, &GetSetContext->Context);
+    }
+
+    /* Notify the Native API that we are done */
+    KeSetEvent(&GetSetContext->Event, IO_NO_INCREMENT, FALSE);
 }

@@ -34,7 +34,83 @@ ULONG HalpActiveProcessors = 0;
 PVOID HalpDeviceTree = NULL;
 PVOID HalpAcpiTables = NULL;
 
+/* Current IRQL - stored per processor */
+KIRQL HalpCurrentIrql[32] = { PASSIVE_LEVEL };
+
 /* FUNCTIONS *****************************************************************/
+
+/**
+ * @brief Get current IRQL (HAL implementation for ARM64)
+ */
+KIRQL
+NTAPI
+KeGetCurrentIrql(VOID)
+{
+    /* TODO: Get actual processor number */
+    /* For now, assume processor 0 */
+    return HalpCurrentIrql[0];
+}
+
+/**
+ * @brief Raise IRQL (Fast version)
+ */
+#undef KfRaiseIrql
+KIRQL
+FASTCALL
+KfRaiseIrql(IN KIRQL NewIrql)
+{
+    KIRQL OldIrql;
+
+    /* TODO: Get actual processor number */
+    /* For now, assume processor 0 */
+    OldIrql = HalpCurrentIrql[0];
+
+    /* Set new IRQL */
+    HalpCurrentIrql[0] = NewIrql;
+
+    /* TODO: Update interrupt mask in GIC */
+
+    return OldIrql;
+}
+
+/**
+ * @brief Lower IRQL (Fast version)
+ */
+#undef KfLowerIrql
+VOID
+FASTCALL
+KfLowerIrql(IN KIRQL NewIrql)
+{
+    /* TODO: Get actual processor number */
+    /* For now, assume processor 0 */
+    HalpCurrentIrql[0] = NewIrql;
+
+    /* TODO: Update interrupt mask in GIC */
+}
+
+/**
+ * @brief Standard Raise IRQL
+ */
+#undef KeRaiseIrql
+VOID
+NTAPI
+KeRaiseIrql(
+    IN KIRQL NewIrql,
+    OUT PKIRQL OldIrql)
+{
+    *OldIrql = KfRaiseIrql(NewIrql);
+}
+
+/**
+ * @brief Standard Lower IRQL
+ */
+#undef KeLowerIrql
+VOID
+NTAPI
+KeLowerIrql(IN KIRQL NewIrql)
+{
+    KfLowerIrql(NewIrql);
+}
 
 /*
  * @brief Initialize the Hardware Abstraction Layer for ARM64

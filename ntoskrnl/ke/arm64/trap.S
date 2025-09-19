@@ -176,7 +176,9 @@ KiSystemCallHandler32:
  * Context switch routine
  * x0 = OldThread
  * x1 = NewThread
+ * NOTE: This is defined in ctxswitch.S - commenting out duplicate
  */
+#if 0
 .globl KiSwapContext
 KiSwapContext:
     /* Save callee-saved registers for old thread */
@@ -222,8 +224,9 @@ KiSwapContext:
     
     /* Update current thread in PCR */
     /* This would need to be implemented with PCR base */
-    
+
     ret
+#endif /* Duplicate KiSwapContext */
 
 /**
  * Thread startup routine
@@ -374,6 +377,34 @@ KiRestoreFpuState:
     ldp q28, q29, [x0], #32
     ldp q30, q31, [x0], #32
     
+    ret
+
+/**
+ * Kernel-mode system service dispatcher
+ * x16 = Address of system service routine
+ * x9 = Number of stack arguments (in bytes)
+ *
+ * This function is called from the Zw* stubs to invoke
+ * the corresponding Nt* system service in kernel mode.
+ */
+.globl KiZwSystemService
+KiZwSystemService:
+    /* Save return address and frame pointer */
+    stp x29, x30, [sp, #-16]!
+    mov x29, sp
+
+    /*
+     * For kernel-mode calls, we don't need to switch stacks
+     * or validate parameters. Just call the service directly.
+     */
+
+    /* Call the system service pointed to by x16 */
+    blr x16
+
+    /* Restore frame pointer and return address */
+    ldp x29, x30, [sp], #16
+
+    /* Return to caller with result in x0 */
     ret
 
 .end

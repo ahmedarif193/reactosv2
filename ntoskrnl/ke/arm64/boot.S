@@ -33,8 +33,9 @@ _start:
     /* Set up initial stack */
     mov sp, x1
     
-    /* Align stack to 16 bytes */
-    and sp, sp, #~0xF
+    /* Align stack to 16 bytes - clear lower 4 bits */
+    mov x2, sp
+    bic sp, x2, #0xF
     
     /* Store LoaderBlock pointer in preserved register */
     mov x19, x0
@@ -58,8 +59,9 @@ KiSwitchToBootStack:
     /* Set new stack pointer */
     mov sp, x0
     
-    /* Align stack to 16 bytes */
-    and sp, sp, #~0xF
+    /* Align stack to 16 bytes - clear lower 4 bits */
+    mov x2, sp
+    bic sp, x2, #0xF
     
     /* Jump to boot stack initialization */
     b KiSystemStartupBootStack

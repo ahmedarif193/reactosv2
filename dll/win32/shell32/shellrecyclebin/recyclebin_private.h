@@ -1,6 +1,13 @@
 #ifndef _RECYCLEBIN_PRIVATE_H_
 #define _RECYCLEBIN_PRIVATE_H_
 
+#ifndef UNICODE
+#define UNICODE
+#endif
+#ifndef _UNICODE
+#define _UNICODE
+#endif
+
 #include <stdio.h>
 
 #define COBJMACROS

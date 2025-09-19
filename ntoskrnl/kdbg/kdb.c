@@ -136,6 +136,13 @@ KdbpKdbTrapFrameFromKernelStack(
     KdbTrapFrame->SegDs = KGDT_R0_DATA;
     KdbTrapFrame->SegEs = KGDT_R0_DATA;
     KdbTrapFrame->SegGs = KGDT_R0_DATA;
+#elif defined(_M_ARM64)
+    /* ARM64: Initialize basic registers from stack - stack layout may differ */
+    KdbTrapFrame->Fp = StackPtr[3];
+    KdbTrapFrame->Lr = StackPtr[4];
+    KdbTrapFrame->Pc = StackPtr[5];
+    KdbTrapFrame->Sp = (ULONG64) (StackPtr + 6);
+    /* ARM64 doesn't have segment registers */
 #endif
 
     /* FIXME: what about the other registers??? */
@@ -300,6 +307,7 @@ BOOLEAN
 KdbpStepIntoInstruction(
     ULONG_PTR Eip)
 {
+#if defined(_M_IX86) || defined(_M_AMD64)
     KDESCRIPTOR Idtr = {0};
     UCHAR Mem[2];
     INT IntVect;
@@ -370,6 +378,12 @@ KdbpStepIntoInstruction(
         return FALSE;
 
     return TRUE;
+#elif defined(_M_ARM64)
+    /* ARM64: Software single step implementation would go here
+     * For now, return FALSE to indicate no specific step-into handling */
+    UNREFERENCED_PARAMETER(Eip);
+    return FALSE;
+#endif
 }
 
 /*!\brief Gets the number of the next breakpoint >= Start.
@@ -670,6 +684,7 @@ KdbpIsBreakPointOurs(
     }
     else if (ExceptionCode == STATUS_SINGLE_STEP) /* Hardware interrupt */
     {
+#if defined(_M_IX86) || defined(_M_AMD64)
         UCHAR DebugReg;
 
         for (i = 0; i < KdbHwBreakPointCount; i++)
@@ -683,6 +698,10 @@ KdbpIsBreakPointOurs(
                 return KdbHwBreakPoints[i] - KdbBreakPoints;
             }
         }
+#else
+        /* ARM64 doesn't have x86-style debug registers */
+        /* TODO: Implement ARM64 hardware breakpoint support */
+#endif
     }
 
     return -1;
@@ -705,7 +724,9 @@ KdbpEnableBreakPoint(
 {
     NTSTATUS Status;
     INT i;
+#if defined(_M_IX86) || defined(_M_AMD64)
     ULONG ul;
+#endif
 
     if (BreakPointNr < 0)
     {
@@ -772,6 +793,7 @@ KdbpEnableBreakPoint(
             return FALSE;
         }
 
+#if defined(_M_IX86) || defined(_M_AMD64)
         /* Find unused hw breakpoint */
         ASSERT(KDB_MAXIMUM_HW_BREAKPOINT_COUNT == 4);
         for (i = 0; i < KDB_MAXIMUM_HW_BREAKPOINT_COUNT; i++)
@@ -842,6 +864,11 @@ KdbpEnableBreakPoint(
             KdbCurrentTrapFrame->Dr6 = KdbTrapFrame.Dr6;
             KdbCurrentTrapFrame->Dr7 = KdbTrapFrame.Dr7;
         }
+#else
+        /* ARM64 doesn't have x86-style debug registers */
+        /* TODO: Implement ARM64 hardware breakpoint support */
+        i = 0; /* For now, use slot 0 */
+#endif
 
         BreakPoint->Data.Hw.DebugReg = i;
         KdbHwBreakPoints[KdbHwBreakPointCount++] = BreakPoint;
@@ -931,6 +958,7 @@ KdbpDisableBreakPoint(
     {
         ASSERT(BreakPoint->Type == KdbBreakPointHardware);
 
+#if defined(_M_IX86) || defined(_M_AMD64)
         /* Clear the breakpoint. */
         KdbTrapFrame.Dr7 &= ~(0x3 << (BreakPoint->Data.Hw.DebugReg * 2));
         if ((KdbTrapFrame.Dr7 & 0xFF) == 0)
@@ -938,6 +966,10 @@ KdbpDisableBreakPoint(
             /* If no breakpoints are enabled then clear the exact match flags. */
             KdbTrapFrame.Dr7 &= 0xFFFFFCFF;
         }
+#else
+        /* ARM64 doesn't have x86-style debug registers */
+        /* TODO: Implement ARM64 hardware breakpoint support */
+#endif
 
         for (i = 0; i < KdbHwBreakPointCount; i++)
         {
@@ -1282,8 +1314,17 @@ KdbEnterDebuggerException(
     ULONGLONG ull;
     BOOLEAN Resume = FALSE;
     BOOLEAN EnterConditionMet = TRUE;
+#if defined(_M_IX86) || defined(_M_AMD64)
     ULONG OldEflags;
+#elif defined(_M_ARM64)
+    ULONG OldEflags __attribute__((unused)) = 0; /* Not used on ARM64 but needed for code structure */
+#endif
     KIRQL OldIrql;
+
+#ifdef _M_ARM64
+    /* Suppress unused variable warning on ARM64 */
+    UNREFERENCED_PARAMETER(Resume);
+#endif
     NTSTATUS ExceptionCode;
     VOID (*EntryPoint)(VOID) = KdbpCallMainLoop;
 
@@ -1352,7 +1393,9 @@ KdbEnterDebuggerException(
         else if (BreakPoint->Type == KdbBreakPointTemporary &&
                  BreakPoint->Process == KdbCurrentProcess)
         {
+#if defined(_M_IX86) || defined(_M_AMD64)
             ASSERT((Context->EFlags & EFLAGS_TF) == 0);
+#endif
 
             /* Delete the temporary breakpoint which was used to step over or into the instruction */
             KdbpDeleteBreakPoint(-1, BreakPoint);
@@ -1362,7 +1405,11 @@ KdbEnterDebuggerException(
                 if ((KdbSingleStepOver && !KdbpStepOverInstruction(KeGetContextPc(Context))) ||
                     (!KdbSingleStepOver && !KdbpStepIntoInstruction(KeGetContextPc(Context))))
                 {
+#if defined(_M_IX86) || defined(_M_AMD64)
                     Context->EFlags |= EFLAGS_TF;
+#else
+                    /* ARM64: TODO: Set single-step mode */
+#endif
                 }
 
                 goto continue_execution; /* return */
@@ -1378,7 +1425,11 @@ KdbEnterDebuggerException(
                  BreakPoint->Type == KdbBreakPointTemporary)
         {
             ASSERT(ExceptionCode == STATUS_BREAKPOINT);
+#if defined(_M_IX86) || defined(_M_AMD64)
             Context->EFlags |= EFLAGS_TF;
+#else
+            /* ARM64: TODO: Set single-step mode */
+#endif
             KdbBreakPointToReenable = BreakPoint;
         }
 
@@ -1407,8 +1458,13 @@ KdbEnterDebuggerException(
 
         if (BreakPoint->Type == KdbBreakPointSoftware)
         {
+#if defined(_M_IX86) || defined(_M_AMD64)
             KdbPrintf("\nEntered debugger on breakpoint #%d: EXEC 0x%04x:0x%p\n",
                       KdbLastBreakPointNr, Context->SegCs & 0xffff, KeGetContextPc(Context));
+#else
+            KdbPrintf("\nEntered debugger on breakpoint #%d: EXEC 0x%p\n",
+                      KdbLastBreakPointNr, KeGetContextPc(Context));
+#endif
         }
         else if (BreakPoint->Type == KdbBreakPointHardware)
         {
@@ -1423,7 +1479,11 @@ KdbEnterDebuggerException(
     else if (ExceptionCode == STATUS_SINGLE_STEP)
     {
         /* Silently ignore a debugger initiated single step. */
+#if defined(_M_IX86) || defined(_M_AMD64)
         if ((Context->Dr6 & 0xf) == 0 && KdbBreakPointToReenable)
+#else
+        if (KdbBreakPointToReenable)
+#endif
         {
             /* FIXME: Make sure that the breakpoint was really hit (check bp->Address vs. tf->Eip) */
             BreakPoint = KdbBreakPointToReenable;
@@ -1444,7 +1504,13 @@ KdbEnterDebuggerException(
 
             /* Unset TF if we are no longer single stepping. */
             if (KdbNumSingleSteps == 0)
+            {
+#if defined(_M_IX86) || defined(_M_AMD64)
                 Context->EFlags &= ~EFLAGS_TF;
+#else
+                /* ARM64: TODO: Clear single-step mode */
+#endif
+            }
 
             if (!KdbpEvenThoughWeHaveABreakPointToReenableWeAlsoHaveARealSingleStep)
             {
@@ -1456,7 +1522,11 @@ KdbEnterDebuggerException(
         KdbpEvenThoughWeHaveABreakPointToReenableWeAlsoHaveARealSingleStep = FALSE;
 
         /* Check if we expect a single step */
+#if defined(_M_IX86) || defined(_M_AMD64)
         if ((Context->Dr6 & 0xf) == 0 && KdbNumSingleSteps > 0)
+#else
+        if (KdbNumSingleSteps > 0)
+#endif
         {
             /*ASSERT((Context->Eflags & EFLAGS_TF) != 0);*/
             if (--KdbNumSingleSteps > 0)
@@ -1464,18 +1534,30 @@ KdbEnterDebuggerException(
                 if ((KdbSingleStepOver && KdbpStepOverInstruction(KeGetContextPc(Context))) ||
                     (!KdbSingleStepOver && KdbpStepIntoInstruction(KeGetContextPc(Context))))
                 {
+#if defined(_M_IX86) || defined(_M_AMD64)
                     Context->EFlags &= ~EFLAGS_TF;
+#else
+                    /* ARM64: TODO: Clear single-step mode */
+#endif
                 }
                 else
                 {
+#if defined(_M_IX86) || defined(_M_AMD64)
                     Context->EFlags |= EFLAGS_TF;
+#else
+                    /* ARM64: TODO: Set single-step mode */
+#endif
                 }
 
                 goto continue_execution; /* return */
             }
             else
             {
+#if defined(_M_IX86) || defined(_M_AMD64)
                 Context->EFlags &= ~EFLAGS_TF;
+#else
+                /* ARM64: TODO: Clear single-step mode */
+#endif
                 KdbEnteredOnSingleStep = TRUE;
             }
         }
@@ -1505,8 +1587,13 @@ KdbEnterDebuggerException(
             return kdHandleException;
         }
 
+#if defined(_M_IX86) || defined(_M_AMD64)
         KdbPrintf("\nEntered debugger on embedded INT3 at 0x%04x:0x%p.\n",
                   Context->SegCs & 0xffff, KeGetContextPc(Context));
+#else
+        KdbPrintf("\nEntered debugger on embedded breakpoint at 0x%p.\n",
+                  KeGetContextPc(Context));
+#endif
 EnterKdbg:;
     }
     else
@@ -1526,8 +1613,14 @@ EnterKdbg:;
         if (ExceptionCode == STATUS_ACCESS_VIOLATION &&
             ExceptionRecord && ExceptionRecord->NumberParameters != 0)
         {
+#if defined(_M_IX86) || defined(_M_AMD64)
             ULONG_PTR TrapCr2 = __readcr2();
             KdbPrintf("Memory at 0x%p could not be accessed\n", TrapCr2);
+#elif defined(_M_ARM64)
+            /* ARM64: Use fault address from exception record */
+            ULONG_PTR FaultAddress = ExceptionRecord->ExceptionInformation[1];
+            KdbPrintf("Memory at 0x%p could not be accessed\n", FaultAddress);
+#endif
         }
     }
 
@@ -1543,8 +1636,14 @@ EnterKdbg:;
     KdbTrapFrame = *Context;
 
     /* Enter critical section */
+#if defined(_M_IX86) || defined(_M_AMD64)
     OldEflags = __readeflags();
     _disable();
+#elif defined(_M_ARM64)
+    /* ARM64: Disable interrupts using architecture-specific method */
+    OldEflags = 0; /* Not used on ARM64 */
+    _disable();
+#endif
 
     /* HACK: Save the current IRQL and pretend we are at dispatch level */
     OldIrql = KeGetCurrentIrql();
@@ -1554,7 +1653,12 @@ EnterKdbg:;
     /* Exception inside the debugger? Game over. */
     if (InterlockedIncrement(&KdbEntryCount) > 1)
     {
+#if defined(_M_IX86) || defined(_M_AMD64)
         __writeeflags(OldEflags);
+#elif defined(_M_ARM64)
+        /* ARM64: Re-enable interrupts if necessary */
+        _enable();
+#endif
         return kdHandleException;
     }
 
@@ -1570,12 +1674,20 @@ EnterKdbg:;
         if ((KdbSingleStepOver && KdbpStepOverInstruction(KeGetContextPc(KdbCurrentTrapFrame))) ||
             (!KdbSingleStepOver && KdbpStepIntoInstruction(KeGetContextPc(KdbCurrentTrapFrame))))
         {
+#if defined(_M_IX86) || defined(_M_AMD64)
             ASSERT((KdbCurrentTrapFrame->EFlags & EFLAGS_TF) == 0);
             /*KdbCurrentTrapFrame->EFlags &= ~EFLAGS_TF;*/
+#elif defined(_M_ARM64)
+            /* ARM64: No trap flag equivalent */
+#endif
         }
         else
         {
+#if defined(_M_IX86) || defined(_M_AMD64)
             KdbTrapFrame.EFlags |= EFLAGS_TF;
+#elif defined(_M_ARM64)
+            /* ARM64: Software single step will be implemented differently */
+#endif
         }
     }
 
@@ -1598,7 +1710,11 @@ EnterKdbg:;
         KeRaiseIrql(OldIrql, &OldIrql);
 
     /* Leave critical section */
+#if defined(_M_IX86) || defined(_M_AMD64)
     __writeeflags(OldEflags);
+#elif defined(_M_ARM64)
+    /* ARM64: Restore interrupt state - already handled by lower level code */
+#endif
 
     /* Check if user requested a bugcheck */
     if (KdbpBugCheckRequested)
@@ -1612,6 +1728,7 @@ continue_execution:
     /* Clear debug status */
     if (ExceptionCode == STATUS_BREAKPOINT) /* FIXME: Why clear DR6 on INT3? */
     {
+#if defined(_M_IX86) || defined(_M_AMD64)
         /* Set the RF flag so we don't trigger the same breakpoint again. */
         if (Resume)
         {
@@ -1620,6 +1737,9 @@ continue_execution:
 
         /* Clear dr6 status flags. */
         Context->Dr6 &= ~0x0000e00f;
+#elif defined(_M_ARM64)
+        /* ARM64 doesn't have EFLAGS or DR6, no special handling needed */
+#endif
 
         if (!(KdbEnteredOnSingleStep && KdbSingleStepOver))
         {

@@ -31,7 +31,7 @@ Notes:
 Revision History:
 
     This module is a port from FreeBSD 4.3-6.1 ATA driver (ata-dma.c, ata-chipset.c) by
-         Søren Schmidt, Copyright (c) 1998-2008
+         Sï¿½ren Schmidt, Copyright (c) 1998-2008
 
     Changed defaulting-to-generic-PIO/DMA policy
     Added PIO settings for VIA
@@ -151,22 +151,22 @@ AtapiDmaAlloc(
     deviceExtension->chan[c].CopyDmaBuffer = FALSE;
 
     if(!deviceExtension->Host64 && (WinVer_Id() > WinVer_NT)) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaAlloc: allocate tmp buffers below 4Gb\n"));
+        KdPrint3((PRINT_PREFIX "AtapiDmaAlloc: allocate tmp buffers below 4Gb\n"));
         if(chan->DB_PRD) {
-            KdPrint2((PRINT_PREFIX "  already initialized %x\n", chan->DB_PRD));
+            KdPrint3((PRINT_PREFIX "  already initialized %x\n", chan->DB_PRD));
             return;
         }
         chan->DB_PRD = MmAllocateContiguousMemory(sizeof(((PATA_REQ)NULL)->dma_tab), ph4gb);
         if(chan->DB_PRD) {
             chan->DB_PRD_PhAddr = AtapiVirtToPhysAddr(HwDeviceExtension, NULL, (PUCHAR)(chan->DB_PRD), &i, &ph_addru);
             if(!chan->DB_PRD_PhAddr || !i || ((LONG)(chan->DB_PRD_PhAddr) == -1)) {
-                KdPrint2((PRINT_PREFIX "AtapiDmaAlloc: No DB PRD BASE\n" ));
+                KdPrint3((PRINT_PREFIX "AtapiDmaAlloc: No DB PRD BASE\n" ));
                 chan->DB_PRD = NULL;
                 chan->DB_PRD_PhAddr = 0;
                 return;
             }
             if(ph_addru) {
-                KdPrint2((PRINT_PREFIX "AtapiDmaAlloc: No DB PRD below 4Gb\n" ));
+                KdPrint3((PRINT_PREFIX "AtapiDmaAlloc: No DB PRD below 4Gb\n" ));
                 goto err_1;
             }
         }
@@ -174,7 +174,7 @@ AtapiDmaAlloc(
         if(chan->DB_IO) {
             chan->DB_IO_PhAddr = AtapiVirtToPhysAddr(HwDeviceExtension, NULL, (PUCHAR)(chan->DB_IO), &i, &ph_addru);
             if(!chan->DB_IO_PhAddr || !i || ((LONG)(chan->DB_IO_PhAddr) == -1)) {
-                KdPrint2((PRINT_PREFIX "AtapiDmaAlloc: No DB IO BASE\n" ));
+                KdPrint3((PRINT_PREFIX "AtapiDmaAlloc: No DB IO BASE\n" ));
 err_1:
                 MmFreeContiguousMemory(chan->DB_PRD);
                 chan->DB_PRD = NULL;
@@ -184,7 +184,7 @@ err_1:
                 return;
             }
             if(ph_addru) {
-                KdPrint2((PRINT_PREFIX "AtapiDmaAlloc: No DB IO below 4Gb\n" ));
+                KdPrint3((PRINT_PREFIX "AtapiDmaAlloc: No DB IO below 4Gb\n" ));
                 MmFreeContiguousMemory(chan->DB_IO);
                 goto err_1;
             }
@@ -193,9 +193,9 @@ err_1:
 
 
     if(deviceExtension->HwFlags & UNIATA_AHCI) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaAlloc: AHCI\n" ));
+        KdPrint3((PRINT_PREFIX "AtapiDmaAlloc: AHCI\n" ));
         if(chan->AhciCtlBlock) {
-            KdPrint2((PRINT_PREFIX "  already initialized %x\n", chan->AhciCtlBlock));
+            KdPrint3((PRINT_PREFIX "  already initialized %x\n", chan->AhciCtlBlock));
             return;
         }
         // Need 1K-byte alignment
@@ -210,32 +210,32 @@ err_1:
             AhciCtlBlock64 = 0;
             AhciCtlBlock = (PUCHAR)chan->AhciCtlBlock0;
 
-            KdPrint2((PRINT_PREFIX "AtapiDmaAlloc: CLP BASE %I64x\n", AhciCtlBlock64));
+            KdPrint3((PRINT_PREFIX "AtapiDmaAlloc: CLP BASE %I64x\n", AhciCtlBlock64));
 
             AhciCtlBlock64 += AHCI_CLB_ALIGNEMENT_MASK;
             AhciCtlBlock64 &= ~AHCI_CLB_ALIGNEMENT_MASK;
 
-            KdPrint2((PRINT_PREFIX "AtapiDmaAlloc: CLP BASE 1k-aligned %I64x\n", AhciCtlBlock64));
+            KdPrint3((PRINT_PREFIX "AtapiDmaAlloc: CLP BASE 1k-aligned %I64x\n", AhciCtlBlock64));
 
             chan->AhciCtlBlock = (PIDE_AHCI_CHANNEL_CTL_BLOCK)AhciCtlBlock;
 
             chan->AHCI_CTL_PhAddr = AtapiVirtToPhysAddr(HwDeviceExtension, NULL, (PUCHAR)(chan->AhciCtlBlock), &i, &ph_addru);
-            KdPrint2((PRINT_PREFIX "AtapiDmaAlloc: CLP Phys BASE %I64x\n", chan->AHCI_CTL_PhAddr));
+            KdPrint3((PRINT_PREFIX "AtapiDmaAlloc: CLP Phys BASE %I64x\n", chan->AHCI_CTL_PhAddr));
             if(!chan->AHCI_CTL_PhAddr || !i || ((LONG)(chan->AHCI_CTL_PhAddr) == -1)) {
-                KdPrint2((PRINT_PREFIX "AtapiDmaAlloc: No AHCI CLP BASE\n" ));
+                KdPrint3((PRINT_PREFIX "AtapiDmaAlloc: No AHCI CLP BASE\n" ));
                 chan->AhciCtlBlock = NULL;
                 chan->AHCI_CTL_PhAddr = 0;
                 return;
             }
             if(ph_addru) {
-                KdPrint2((PRINT_PREFIX "AtapiDmaAlloc: No AHCI CLP below 4Gb\n" ));
+                KdPrint3((PRINT_PREFIX "AtapiDmaAlloc: No AHCI CLP below 4Gb\n" ));
                 MmFreeContiguousMemory(chan->AhciCtlBlock0);
                 chan->AhciCtlBlock = NULL;
                 chan->AHCI_CTL_PhAddr = 0;
                 return;
             }
         } else {
-            KdPrint2((PRINT_PREFIX "AtapiDmaAlloc: Can't alloc AHCI CLP\n"));
+            KdPrint3((PRINT_PREFIX "AtapiDmaAlloc: Can't alloc AHCI CLP\n"));
         }
     }
 #endif //USE_OWN_DMA
@@ -269,46 +269,46 @@ AtapiDmaSetup(
 
     if(AtaReq->dma_entries) {
         AtaReq->Flags |= REQ_FLAG_DMA_OPERATION;
-        KdPrint2((PRINT_PREFIX "AtapiDmaSetup: already setup, %d entries\n", AtaReq->dma_entries));
+        KdPrint3((PRINT_PREFIX "AtapiDmaSetup: already setup, %d entries\n", AtaReq->dma_entries));
         return TRUE;
     }
     AtaReq->ata.dma_base = 0;
     AtaReq->Flags &= ~REQ_FLAG_DMA_OPERATION;
 
-    KdPrint2((PRINT_PREFIX "AtapiDmaSetup: mode %#x, data %x, count %x, lCh %x, dev %x\n",
+    KdPrint3((PRINT_PREFIX "AtapiDmaSetup: mode %#x, data %x, count %x, lCh %x, dev %x\n",
         chan->lun[DeviceNumber]->TransferMode,
         data, count, lChannel, DeviceNumber ));
     if(chan->lun[DeviceNumber]->TransferMode < ATA_DMA) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaSetup: Not DMA mode, assume this is just preparation\n" ));
+        KdPrint3((PRINT_PREFIX "AtapiDmaSetup: Not DMA mode, assume this is just preparation\n" ));
         //return FALSE;
     }
-    //KdPrint2((PRINT_PREFIX "  checkpoint 1\n" ));
+    //KdPrint3((PRINT_PREFIX "  checkpoint 1\n" ));
     if(!count) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaSetup: count=0\n" ));
+        KdPrint3((PRINT_PREFIX "AtapiDmaSetup: count=0\n" ));
         return FALSE;
     }
-    //KdPrint2((PRINT_PREFIX "  checkpoint 2\n" ));
+    //KdPrint3((PRINT_PREFIX "  checkpoint 2\n" ));
     if(count > deviceExtension->MaximumDmaTransferLength) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaSetup: deviceExtension->MaximumDmaTransferLength > count\n" ));
+        KdPrint3((PRINT_PREFIX "AtapiDmaSetup: deviceExtension->MaximumDmaTransferLength > count\n" ));
         return FALSE;
     }
-    //KdPrint2((PRINT_PREFIX "  checkpoint 3\n" ));
+    //KdPrint3((PRINT_PREFIX "  checkpoint 3\n" ));
     if((ULONG_PTR)data & deviceExtension->AlignmentMask) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaSetup: unaligned data: %#x (%#x)\n", data, deviceExtension->AlignmentMask));
+        KdPrint3((PRINT_PREFIX "AtapiDmaSetup: unaligned data: %#x (%#x)\n", data, deviceExtension->AlignmentMask));
         return FALSE;
     }
 
-    //KdPrint2((PRINT_PREFIX "  checkpoint 4\n" ));
+    //KdPrint3((PRINT_PREFIX "  checkpoint 4\n" ));
     if(use_AHCI) {
-        KdPrint2((PRINT_PREFIX "  get Phys(AHCI_CMD=%x)\n", AtaReq->ahci.ahci_cmd_ptr ));
+        KdPrint3((PRINT_PREFIX "  get Phys(AHCI_CMD=%x)\n", AtaReq->ahci.ahci_cmd_ptr ));
         dma_base = AtapiVirtToPhysAddr(HwDeviceExtension, NULL, (PUCHAR)(AtaReq->ahci.ahci_cmd_ptr), &i, &dma_baseu);
         AtaReq->ahci.ahci_base64 = 0; // clear before setup
     } else {
-        KdPrint2((PRINT_PREFIX "  get Phys(PRD=%x)\n", &(AtaReq->dma_tab) ));
+        KdPrint3((PRINT_PREFIX "  get Phys(PRD=%x)\n", &(AtaReq->dma_tab) ));
         dma_base = AtapiVirtToPhysAddr(HwDeviceExtension, NULL, (PUCHAR)&(AtaReq->dma_tab) /*chan->dma_tab*/, &i, &dma_baseu);
     }
     if(dma_baseu && i) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaSetup: SRB built-in PRD above 4Gb: %8.8x%8.8x\n", dma_baseu, dma_base));
+        KdPrint3((PRINT_PREFIX "AtapiDmaSetup: SRB built-in PRD above 4Gb: %8.8x%8.8x\n", dma_baseu, dma_base));
         if(!deviceExtension->Host64) {
             dma_base = chan->DB_PRD_PhAddr;
             AtaReq->Flags |= REQ_FLAG_DMA_DBUF_PRD;
@@ -316,15 +316,15 @@ AtapiDmaSetup(
         }
     } else
     if(!dma_base || !i || ((LONG)(dma_base) == -1)) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaSetup: No BASE\n" ));
+        KdPrint3((PRINT_PREFIX "AtapiDmaSetup: No BASE\n" ));
         return FALSE;
     }
     AtaReq->ata.dma_base = dma_base; // aliased to AtaReq->ahci.ahci_base64
 
-    KdPrint2((PRINT_PREFIX "  get Phys(data[0]=%x)\n", data ));
+    KdPrint3((PRINT_PREFIX "  get Phys(data[0]=%x)\n", data ));
     dma_base = AtapiVirtToPhysAddr(HwDeviceExtension, Srb, data, &dma_count, &dma_baseu);
     if(dma_baseu && dma_count) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaSetup: 1st block of buffer above 4Gb: %8.8x%8.8x cnt=%x\n", dma_baseu, dma_base, dma_count));
+        KdPrint3((PRINT_PREFIX "AtapiDmaSetup: 1st block of buffer above 4Gb: %8.8x%8.8x cnt=%x\n", dma_baseu, dma_base, dma_count));
         if(!deviceExtension->Host64) {
 retry_DB_IO:
             use_DB_IO = TRUE;
@@ -335,7 +335,7 @@ retry_DB_IO:
         }
     } else
     if(!dma_count || ((LONG)(dma_base) == -1)) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaSetup: No 1st block\n" ));
+        KdPrint3((PRINT_PREFIX "AtapiDmaSetup: No 1st block\n" ));
         //AtaReq->dma_base = NULL;
         AtaReq->ahci.ahci_base64 = NULL;
         return FALSE;
@@ -350,7 +350,7 @@ retry_DB_IO:
     dma_base0 = dma_base;
 
     while (count) {
-/*        KdPrint2((PRINT_PREFIX " segments %#x+%#x == %#x && %#x+%#x <= %#x\n",
+/*        KdPrint3((PRINT_PREFIX " segments %#x+%#x == %#x && %#x+%#x <= %#x\n",
              dma_base0, dma_count0, dma_base,
              dma_count0, dma_count, max_frag));*/
         if(dma_base0+dma_count0 == dma_base &&
@@ -358,7 +358,7 @@ retry_DB_IO:
             // 'i' should be always > 0 here
             // for BM we cannot cross 64k boundary
             if(dma_base & seg_align) {
-                //KdPrint2((PRINT_PREFIX "  merge segments\n" ));
+                //KdPrint3((PRINT_PREFIX "  merge segments\n" ));
                 ASSERT(i);
                 //BrutePoint();
                 i--;
@@ -373,7 +373,7 @@ retry_DB_IO:
             *((PULONG)&(AtaReq->ahci.ahci_cmd_ptr->prd_tab[i].DBC_ULONG)) = ((dma_count-1) & 0x3fffff);
 /*            AtaReq->ahci.ahci_cmd_ptr->prd_tab[i].Reserved2 = 0;
             AtaReq->ahci.ahci_cmd_ptr->prd_tab[i].I = 0;*/
-            KdPrint2((PRINT_PREFIX "  ph data[%d]=%x:%x (%x)\n", i, dma_baseu, dma_base, AtaReq->ahci.ahci_cmd_ptr->prd_tab[i].DBC));
+            KdPrint3((PRINT_PREFIX "  ph data[%d]=%x:%x (%x)\n", i, dma_baseu, dma_base, AtaReq->ahci.ahci_cmd_ptr->prd_tab[i].DBC));
         } else {
             AtaReq->dma_tab[i].base  = dma_base;
             AtaReq->dma_tab[i].count = (dma_count & 0xffff);
@@ -382,18 +382,18 @@ retry_DB_IO:
         dma_base0 = dma_base;
         i++;
         if (i >= max_entries) {
-            KdPrint2((PRINT_PREFIX "too many segments in DMA table\n" ));
+            KdPrint3((PRINT_PREFIX "too many segments in DMA table\n" ));
             //AtaReq->dma_base = NULL;
             AtaReq->ahci.ahci_base64 = NULL;
             return FALSE;
         }
-        KdPrint2((PRINT_PREFIX "  get Phys(data[n=%d+%x]=%x)\n", i, dma_count0, data ));
+        KdPrint3((PRINT_PREFIX "  get Phys(data[n=%d+%x]=%x)\n", i, dma_count0, data ));
         dma_base = AtapiVirtToPhysAddr(HwDeviceExtension, Srb, data, &dma_count, &dma_baseu);
         if(dma_baseu && dma_count) {
-            KdPrint2((PRINT_PREFIX "AtapiDmaSetup: block of buffer above 4Gb: %8.8x%8.8x, cnt=%x\n", dma_baseu, dma_base, dma_count));
+            KdPrint3((PRINT_PREFIX "AtapiDmaSetup: block of buffer above 4Gb: %8.8x%8.8x, cnt=%x\n", dma_baseu, dma_base, dma_count));
             if(!deviceExtension->Host64) {
                 if(use_DB_IO) {
-                    KdPrint2((PRINT_PREFIX "AtapiDmaSetup: *ERROR* special buffer above 4Gb: %8.8x%8.8x\n", dma_baseu, dma_base));
+                    KdPrint3((PRINT_PREFIX "AtapiDmaSetup: *ERROR* special buffer above 4Gb: %8.8x%8.8x\n", dma_baseu, dma_base));
                     return FALSE;
                 }
                 count = orig_count;
@@ -403,7 +403,7 @@ retry_DB_IO:
         if(!dma_count || !dma_base || ((LONG)(dma_base) == -1)) {
             //AtaReq->dma_base = NULL;
             AtaReq->ahci.ahci_base64 = 0;
-            KdPrint2((PRINT_PREFIX "AtapiDmaSetup: No NEXT block\n" ));
+            KdPrint3((PRINT_PREFIX "AtapiDmaSetup: No NEXT block\n" ));
             return FALSE;
         }
 
@@ -411,15 +411,15 @@ retry_DB_IO:
         data += min(count, PAGE_SIZE);
         count -= min(count, PAGE_SIZE);
     }
-    KdPrint2((PRINT_PREFIX "  set TERM\n" ));
-/*    KdPrint2((PRINT_PREFIX " segments %#x+%#x == %#x && #x+%#x <= %#x\n",
+    KdPrint3((PRINT_PREFIX "  set TERM\n" ));
+/*    KdPrint3((PRINT_PREFIX " segments %#x+%#x == %#x && #x+%#x <= %#x\n",
          dma_base0, dma_count0, dma_base,
          dma_count0, dma_count, max_frag));*/
     if(dma_base0+dma_count0 == dma_base &&
        dma_count0+dma_count <= max_frag) {
         // 'i' should be always > 0 here
         if(dma_base & seg_align) {
-            //KdPrint2((PRINT_PREFIX "  merge segments\n" ));
+            //KdPrint3((PRINT_PREFIX "  merge segments\n" ));
             //BrutePoint();
             ASSERT(i);
             i--;
@@ -435,9 +435,9 @@ retry_DB_IO:
         //AtaReq->ahci.ahci_cmd_ptr->prd_tab[i].Reserved2 = 0;
         *((PULONG)&(AtaReq->ahci.ahci_cmd_ptr->prd_tab[i].DBC_ULONG)) = ((dma_count-1) & 0x3fffff);
         //AtaReq->ahci.ahci_cmd_ptr->prd_tab[i].I      = 1; // interrupt when ready
-        KdPrint2((PRINT_PREFIX "  ph data[%d]=%x:%x (%x)\n", i, dma_baseu, dma_base, AtaReq->ahci.ahci_cmd_ptr->prd_tab[i].DBC));
+        KdPrint3((PRINT_PREFIX "  ph data[%d]=%x:%x (%x)\n", i, dma_baseu, dma_base, AtaReq->ahci.ahci_cmd_ptr->prd_tab[i].DBC));
         if(((ULONG_PTR)&(AtaReq->ahci.ahci_cmd_ptr->prd_tab) & ~PAGE_MASK) != ((ULONG_PTR)&(AtaReq->ahci.ahci_cmd_ptr->prd_tab[i]) & ~PAGE_MASK)) {
-            KdPrint2((PRINT_PREFIX "PRD table crosses page boundary! %x vs %x\n",
+            KdPrint3((PRINT_PREFIX "PRD table crosses page boundary! %x vs %x\n",
                 &AtaReq->ahci.ahci_cmd_ptr->prd_tab, &(AtaReq->ahci.ahci_cmd_ptr->prd_tab[i]) ));
             //AtaReq->Flags |= REQ_FLAG_DMA_DBUF_PRD;
         }
@@ -445,7 +445,7 @@ retry_DB_IO:
         AtaReq->dma_tab[i].base = dma_base;
         AtaReq->dma_tab[i].count = (dma_count & 0xffff) | ATA_DMA_EOT;
         if(((ULONG_PTR)&(AtaReq->dma_tab) & ~PAGE_MASK) != ((ULONG_PTR)&(AtaReq->dma_tab[i]) & ~PAGE_MASK)) {
-            KdPrint2((PRINT_PREFIX "DMA table crosses page boundary! %x vs %x\n",
+            KdPrint3((PRINT_PREFIX "DMA table crosses page boundary! %x vs %x\n",
                 &AtaReq->dma_tab, &(AtaReq->dma_tab[i]) ));
             //AtaReq->Flags |= REQ_FLAG_DMA_DBUF_PRD;
         }
@@ -457,7 +457,7 @@ retry_DB_IO:
     }
     AtaReq->Flags |= REQ_FLAG_DMA_OPERATION;
 
-    KdPrint2((PRINT_PREFIX "AtapiDmaSetup: OK\n" ));
+    KdPrint3((PRINT_PREFIX "AtapiDmaSetup: OK\n" ));
     return TRUE;
 
 } // end AtapiDmaSetup()
@@ -480,10 +480,10 @@ AtapiDmaPioSync(
     PATA_REQ AtaReq;
 
     // This must never be called after DMA operation !!!
-    KdPrint2((PRINT_PREFIX "AtapiDmaPioSync: data %#x, len %#x\n", data, count));
+    KdPrint3((PRINT_PREFIX "AtapiDmaPioSync: data %#x, len %#x\n", data, count));
 
     if(!Srb) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaPioSync: !Srb\n" ));
+        KdPrint3((PRINT_PREFIX "AtapiDmaPioSync: !Srb\n" ));
         return FALSE;
     }
 
@@ -501,20 +501,20 @@ AtapiDmaPioSync(
     }
 
     if(!data) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaPioSync: !data\n" ));
+        KdPrint3((PRINT_PREFIX "AtapiDmaPioSync: !data\n" ));
         return FALSE;
     }
 
     while(count) {
         dma_base = AtapiVirtToPhysAddr(HwDeviceExtension, Srb, data, &dma_count);
         if(!dma_base) {
-            KdPrint2((PRINT_PREFIX "AtapiDmaPioSync: !dma_base for data %#x\n", data));
+            KdPrint3((PRINT_PREFIX "AtapiDmaPioSync: !dma_base for data %#x\n", data));
             return FALSE;
         }
         DmaBuffer = (PUCHAR)ScsiPortGetVirtualAddress(HwDeviceExtension,
                                                       ScsiPortConvertUlongToPhysicalAddress(dma_base));
         if(!DmaBuffer) {
-            KdPrint2((PRINT_PREFIX "AtapiDmaPioSync: !DmaBuffer for dma_base %#x\n", dma_base));
+            KdPrint3((PRINT_PREFIX "AtapiDmaPioSync: !DmaBuffer for dma_base %#x\n", dma_base));
             return FALSE;
         }
         len = min(dma_count, count);
@@ -539,9 +539,9 @@ AtapiDmaDBSync(
     AtaReq = (PATA_REQ)(Srb->SrbExtension);
     if((Srb->SrbFlags & SRB_FLAGS_DATA_IN) &&
        (AtaReq->Flags & REQ_FLAG_DMA_DBUF)) {
-        KdPrint2((PRINT_PREFIX "  AtapiDmaDBSync is issued.\n"));
+        KdPrint3((PRINT_PREFIX "  AtapiDmaDBSync is issued.\n"));
         ASSERT(FALSE);
-        KdPrint2((PRINT_PREFIX "  DBUF (Read)\n"));
+        KdPrint3((PRINT_PREFIX "  DBUF (Read)\n"));
         RtlCopyMemory(AtaReq->DataBuffer, chan->DB_IO,
                               Srb->DataTransferLength);
     }
@@ -560,12 +560,12 @@ AtapiDmaDBPreSync(
     PATA_REQ AtaReq = (PATA_REQ)(Srb->SrbExtension);
 
     if(!AtaReq->ata.dma_base) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaDBPreSync: *** !AtaReq->ata.dma_base\n"));
+        KdPrint3((PRINT_PREFIX "AtapiDmaDBPreSync: *** !AtaReq->ata.dma_base\n"));
         return FALSE;
     }
 //    GetStatus(chan, statusByte2);
     if(AtaReq->Flags & REQ_FLAG_DMA_DBUF_PRD) {
-        KdPrint2((PRINT_PREFIX "  DBUF_PRD\n"));
+        KdPrint3((PRINT_PREFIX "  DBUF_PRD\n"));
         ASSERT(FALSE);
         if(deviceExtension->HwFlags & UNIATA_AHCI) {
             RtlCopyMemory(chan->DB_PRD, AtaReq->ahci.ahci_cmd_ptr, sizeof(AtaReq->ahci_cmd0));
@@ -575,7 +575,7 @@ AtapiDmaDBPreSync(
     }
     if(!(Srb->SrbFlags & SRB_FLAGS_DATA_IN) &&
        (AtaReq->Flags & REQ_FLAG_DMA_DBUF)) {
-        KdPrint2((PRINT_PREFIX "  DBUF (Write)\n"));
+        KdPrint3((PRINT_PREFIX "  DBUF (Write)\n"));
         ASSERT(FALSE);
         RtlCopyMemory(chan->DB_IO, AtaReq->DataBuffer,
                               Srb->DataTransferLength);
@@ -602,20 +602,20 @@ AtapiDmaStart(
 //    UCHAR statusByte2;
 /*
     GetStatus(chan, statusByte2);
-    KdPrint2((PRINT_PREFIX "AtapiDmaStart: %s on %#x:%#x\n",
+    KdPrint3((PRINT_PREFIX "AtapiDmaStart: %s on %#x:%#x\n",
         (Srb->SrbFlags & SRB_FLAGS_DATA_IN) ? "read" : "write",
         lChannel, DeviceNumber ));
 */
     if(!AtaReq->ata.dma_base) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaStart: *** !AtaReq->ata.dma_base\n"));
+        KdPrint3((PRINT_PREFIX "AtapiDmaStart: *** !AtaReq->ata.dma_base\n"));
         return;
     }
-    KdPrint2((PRINT_PREFIX "AtapiDmaStart: lchan=%d\n", lChannel));
+    KdPrint3((PRINT_PREFIX "AtapiDmaStart: lchan=%d\n", lChannel));
 
 /*
 //    GetStatus(chan, statusByte2);
     if(AtaReq->Flags & REQ_FLAG_DMA_DBUF_PRD) {
-        KdPrint2((PRINT_PREFIX "  DBUF_PRD\n"));
+        KdPrint3((PRINT_PREFIX "  DBUF_PRD\n"));
         ASSERT(FALSE);
         if(deviceExtension->HwFlags & UNIATA_AHCI) {
             RtlCopyMemory(chan->DB_PRD, AtaReq->ahci.ahci_cmd_ptr, sizeof(AtaReq->ahci_cmd0));
@@ -625,7 +625,7 @@ AtapiDmaStart(
     }
     if(!(Srb->SrbFlags & SRB_FLAGS_DATA_IN) &&
        (AtaReq->Flags & REQ_FLAG_DMA_DBUF)) {
-        KdPrint2((PRINT_PREFIX "  DBUF (Write)\n"));
+        KdPrint3((PRINT_PREFIX "  DBUF (Write)\n"));
         ASSERT(FALSE);
         RtlCopyMemory(chan->DB_IO, AtaReq->DataBuffer,
                               Srb->DataTransferLength);
@@ -697,10 +697,10 @@ AtapiDmaDone(
     ULONG VendorID =  deviceExtension->DevID        & 0xffff;
     ULONG ChipType  = deviceExtension->HwFlags & CHIPTYPE_MASK;
 
-    KdPrint2((PRINT_PREFIX "AtapiDmaDone: dev %d\n", DeviceNumber));
+    KdPrint3((PRINT_PREFIX "AtapiDmaDone: dev %d\n", DeviceNumber));
 
     if(deviceExtension->HwFlags & UNIATA_AHCI) {
-        KdPrint2((PRINT_PREFIX "  ACHTUNG! should not be called for AHCI!\n"));
+        KdPrint3((PRINT_PREFIX "  ACHTUNG! should not be called for AHCI!\n"));
         return IDE_STATUS_WRONG;
     }
 
@@ -762,26 +762,26 @@ AtapiDmaReinit(
     if((deviceExtension->HwFlags & UNIATA_AHCI) &&
       !(LunExt->DeviceFlags & DFLAGS_ATAPI_DEVICE)) {
         // skip unnecessary checks
-        KdPrint2((PRINT_PREFIX "AtapiDmaReinit: ahci, nothing to do for HDD\n"));
+        KdPrint3((PRINT_PREFIX "AtapiDmaReinit: ahci, nothing to do for HDD\n"));
         return;
     }
 
     apiomode = (CHAR)AtaPioMode(&(LunExt->IdentifyData));
 
     if(!(AtaReq->Flags & REQ_FLAG_DMA_OPERATION)) {
-        KdPrint2((PRINT_PREFIX
+        KdPrint3((PRINT_PREFIX
                     "AtapiDmaReinit: !(AtaReq->Flags & REQ_FLAG_DMA_OPERATION), fall to PIO on Device %d\n", LunExt->Lun));
         goto limit_pio;
     }
     if(deviceExtension->HwFlags & UNIATA_AHCI) {
         if(!AtaReq->ahci.ahci_base64) {
-            KdPrint2((PRINT_PREFIX
+            KdPrint3((PRINT_PREFIX
                         "AtapiDmaReinit: no AHCI PRD, fatal on Device %d\n", LunExt->Lun));
             goto exit;
         }
     } else
     if(!AtaReq->ata.dma_base) {
-        KdPrint2((PRINT_PREFIX
+        KdPrint3((PRINT_PREFIX
                     "AtapiDmaReinit: no PRD, fall to PIO on Device %d\n", LunExt->Lun));
         goto limit_pio;
     }
@@ -789,14 +789,14 @@ AtapiDmaReinit(
     if((deviceExtension->HbaCtrlFlags & HBAFLAGS_DMA_DISABLED_LBA48) &&
        (AtaReq->lba >= (LONGLONG)ATA_MAX_LBA28) &&
        (LunExt->TransferMode > ATA_PIO5) ) {
-        KdPrint2((PRINT_PREFIX
+        KdPrint3((PRINT_PREFIX
                     "AtapiDmaReinit: FORCE_DOWNRATE on Device %d for LBA48\n", LunExt->Lun));
         goto limit_lba48;
     }
 
 
     if(AtaReq->Flags & REQ_FLAG_FORCE_DOWNRATE) {
-        KdPrint2((PRINT_PREFIX
+        KdPrint3((PRINT_PREFIX
                     "AtapiDmaReinit: FORCE_DOWNRATE on Device %d\n", LunExt->Lun));
         if(AtaReq->lba >= (LONGLONG)ATA_MAX_LBA28) {
 limit_lba48:
@@ -806,7 +806,7 @@ limit_pio:
             if(/*LunExt->TransferMode >= ATA_DMA*/
                (LunExt->TransferMode > ATA_PIO5) && (LunExt->TransferMode != ATA_PIO0+apiomode)
                ) {
-                KdPrint2((PRINT_PREFIX
+                KdPrint3((PRINT_PREFIX
                             "AtapiDmaReinit: set PIO mode on Device %d (%x -> %x)\n", LunExt->Lun, LunExt->TransferMode, ATA_PIO0+apiomode));
                 AtapiDmaInit(deviceExtension, LunExt->Lun, LunExt->chan->lChannel,
                              apiomode,
@@ -814,7 +814,7 @@ limit_pio:
                              -1 );
             } else
             if(LunExt->LimitedTransferMode < LunExt->TransferMode) {
-                KdPrint2((PRINT_PREFIX
+                KdPrint3((PRINT_PREFIX
                             "AtapiDmaReinit: set PIO mode on Device %d (%x -> %x) (2)\n", LunExt->Lun, LunExt->TransferMode, LunExt->LimitedTransferMode));
                 AtapiDmaInit(deviceExtension, LunExt->Lun, LunExt->chan->lChannel,
                              LunExt->LimitedTransferMode-ATA_PIO0,
@@ -823,7 +823,7 @@ limit_pio:
             }
 
         } else {
-            KdPrint2((PRINT_PREFIX
+            KdPrint3((PRINT_PREFIX
                         "AtapiDmaReinit: set MAX mode on Device %d\n", LunExt->Lun));
             AtapiDmaInit(deviceExtension, LunExt->Lun, LunExt->chan->lChannel,
                          apiomode,
@@ -840,11 +840,11 @@ limit_pio:
          (LunExt->DeviceFlags & DFLAGS_REINIT_DMA) ||
          ((deviceExtension->HwFlags & UNIATA_CHAN_TIMINGS) && ((ULONG)LunExt->Lun != LunExt->chan->last_cdev))) {
         // restore IO mode
-        KdPrint2((PRINT_PREFIX
+        KdPrint3((PRINT_PREFIX
                     "AtapiDmaReinit: restore IO mode on Device %d, last dev %d\n", LunExt->Lun, LunExt->chan->last_cdev));
         AtapiDmaInit__(deviceExtension, LunExt);
     } else {
-        KdPrint2((PRINT_PREFIX
+        KdPrint3((PRINT_PREFIX
                     "AtapiDmaReinit: LimitedTransferMode == TransferMode = %x (%x), Device %d, last dev %d\n", LunExt->TransferMode, LunExt->DeviceFlags, LunExt->Lun, LunExt->chan->last_cdev));
     }
 
@@ -861,7 +861,7 @@ AtapiDmaInit__(
 {
     if(LunExt->IdentifyData.SupportDma ||
        (LunExt->IdentifyData.AtapiDMA.DMASupport && (LunExt->DeviceFlags & DFLAGS_ATAPI_DEVICE))) {
-        KdPrint2((PRINT_PREFIX
+        KdPrint3((PRINT_PREFIX
                     "AtapiDmaInit__: Set (U)DMA on Device %d\n", LunExt->Lun));
 /*        for(i=AtaUmode(&(LunExt->IdentifyData)); i>=0; i--) {
             AtapiDmaInit(deviceExtension, ldev & 1, ldev >> 1,
@@ -880,7 +880,7 @@ AtapiDmaInit__(
                      (CHAR)AtaWmode(&(LunExt->IdentifyData)),
                      (CHAR)AtaUmode(&(LunExt->IdentifyData)) );
     } else {
-        KdPrint2((PRINT_PREFIX
+        KdPrint3((PRINT_PREFIX
                     "AtapiDmaInit__: Set PIO on Device %d\n", LunExt->Lun));
         AtapiDmaInit(deviceExtension, LunExt->Lun, LunExt->chan->lChannel,
                      (CHAR)AtaPioMode(&(LunExt->IdentifyData)), -1, -1);
@@ -1010,50 +1010,50 @@ AtapiDmaInit(
     LunExt->TransferMode = ATA_PIO;
 //    if(!deviceExtension->BaseIoAddressBM[lChannel]) {
     if(!deviceExtension->BusMaster) {
-        KdPrint2((PRINT_PREFIX "  !deviceExtension->BusMaster: NO DMA\n"));
+        KdPrint3((PRINT_PREFIX "  !deviceExtension->BusMaster: NO DMA\n"));
         wdmamode = udmamode = -1;
     }
 
     // Limit transfer mode (controller limitation)
     if((LONG)chan->MaxTransferMode >= ATA_UDMA) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaInit: chan->MaxTransferMode >= ATA_UDMA\n"));
+        KdPrint3((PRINT_PREFIX "AtapiDmaInit: chan->MaxTransferMode >= ATA_UDMA\n"));
         udmamode = min( udmamode, (CHAR)(chan->MaxTransferMode - ATA_UDMA));
     } else
     if((LONG)chan->MaxTransferMode >= ATA_WDMA) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaInit: chan->MaxTransferMode >= ATA_WDMA\n"));
+        KdPrint3((PRINT_PREFIX "AtapiDmaInit: chan->MaxTransferMode >= ATA_WDMA\n"));
         udmamode = -1;
         wdmamode = min( wdmamode, (CHAR)(chan->MaxTransferMode - ATA_WDMA));
     } else
     if((LONG)chan->MaxTransferMode >= ATA_PIO0) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaInit: NO DMA\n"));
+        KdPrint3((PRINT_PREFIX "AtapiDmaInit: NO DMA\n"));
         wdmamode = udmamode = -1;
         apiomode = min( apiomode, (CHAR)(chan->MaxTransferMode - ATA_PIO0));
     } else {
-        KdPrint2((PRINT_PREFIX "AtapiDmaInit: PIO0\n"));
+        KdPrint3((PRINT_PREFIX "AtapiDmaInit: PIO0\n"));
         wdmamode = udmamode = -1;
         apiomode = 0;
     }
     // Limit transfer mode (device limitation)
-    KdPrint2((PRINT_PREFIX "AtapiDmaInit: LunExt->LimitedTransferMode %#x\n", LunExt->LimitedTransferMode));
+    KdPrint3((PRINT_PREFIX "AtapiDmaInit: LunExt->LimitedTransferMode %#x\n", LunExt->LimitedTransferMode));
     if((LONG)LunExt->LimitedTransferMode >= ATA_UDMA) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaInit: LunExt->MaxTransferMode >= ATA_UDMA   =>   %#x\n",
+        KdPrint3((PRINT_PREFIX "AtapiDmaInit: LunExt->MaxTransferMode >= ATA_UDMA   =>   %#x\n",
          min( udmamode, (CHAR)(LunExt->LimitedTransferMode - ATA_UDMA))
                 ));
         udmamode = min( udmamode, (CHAR)(LunExt->LimitedTransferMode - ATA_UDMA));
     } else
     if((LONG)LunExt->LimitedTransferMode >= ATA_WDMA) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaInit: LunExt->MaxTransferMode >= ATA_WDMA   =>   %#x\n",
+        KdPrint3((PRINT_PREFIX "AtapiDmaInit: LunExt->MaxTransferMode >= ATA_WDMA   =>   %#x\n",
          min( wdmamode, (CHAR)(LunExt->LimitedTransferMode - ATA_WDMA))
                 ));
         udmamode = -1;
         wdmamode = min( wdmamode, (CHAR)(LunExt->LimitedTransferMode - ATA_WDMA));
     } else
     if((LONG)LunExt->LimitedTransferMode >= ATA_PIO0) {
-        KdPrint2((PRINT_PREFIX "AtapiDmaInit: lun NO DMA\n"));
+        KdPrint3((PRINT_PREFIX "AtapiDmaInit: lun NO DMA\n"));
         wdmamode = udmamode = -1;
         apiomode = min( apiomode, (CHAR)(LunExt->LimitedTransferMode - ATA_PIO0));
     } else {
-        KdPrint2((PRINT_PREFIX "AtapiDmaInit: lun PIO0\n"));
+        KdPrint3((PRINT_PREFIX "AtapiDmaInit: lun PIO0\n"));
         wdmamode = udmamode = -1;
         apiomode = 0;
     }
@@ -1065,11 +1065,11 @@ AtapiDmaInit(
         GetStatus(chan, statusByte);
         // we can see here IDE_STATUS_ERROR status after previous operation
         if(statusByte & IDE_STATUS_ERROR) {
-            KdPrint2((PRINT_PREFIX "IDE_STATUS_ERROR detected on entry, statusByte = %#x\n", statusByte));
+            KdPrint3((PRINT_PREFIX "IDE_STATUS_ERROR detected on entry, statusByte = %#x\n", statusByte));
             //GetBaseStatus(chan, statusByte);
         }
         if(statusByte && UniataIsIdle(deviceExtension, statusByte & ~IDE_STATUS_ERROR) != IDE_STATUS_IDLE) {
-            KdPrint2((PRINT_PREFIX "Can't setup transfer mode: statusByte = %#x\n", statusByte));
+            KdPrint3((PRINT_PREFIX "Can't setup transfer mode: statusByte = %#x\n", statusByte));
             return;
         }
     //}
@@ -1083,14 +1083,14 @@ AtapiDmaInit(
         /* SATA Generic */
         /****************/
 
-        KdPrint2((PRINT_PREFIX "SATA Generic\n"));
+        KdPrint3((PRINT_PREFIX "SATA Generic\n"));
 
         if((udmamode >= 5) || (ChipFlags & UNIATA_AHCI) || ((udmamode >= 0) && (chan->MaxTransferMode >= ATA_SA150))) {
             /* some drives report UDMA6, some UDMA5 */
             /* ATAPI may not have SataCapabilities set in IDENTIFY DATA */
             if(ata_is_sata(&(LunExt->IdentifyData))) {
                 //udmamode = min(udmamode, 6);
-                KdPrint2((PRINT_PREFIX "LunExt->LimitedTransferMode %x, LunExt->OrigTransferMode %x\n",
+                KdPrint3((PRINT_PREFIX "LunExt->LimitedTransferMode %x, LunExt->OrigTransferMode %x\n",
                     LunExt->LimitedTransferMode, LunExt->OrigTransferMode));
                 if(AtaSetTransferMode(deviceExtension, DeviceNumber, lChannel, LunExt, min(LunExt->LimitedTransferMode, LunExt->OrigTransferMode))) {
                     return;
@@ -1098,9 +1098,9 @@ AtapiDmaInit(
                 udmamode = min(udmamode, 6);
 
             } else {
-                KdPrint2((PRINT_PREFIX "SATA -> PATA adapter ?\n"));
+                KdPrint3((PRINT_PREFIX "SATA -> PATA adapter ?\n"));
                 if (udmamode > 2 && (!LunExt->IdentifyData.HwResCableId && (LunExt->IdentifyData.HwResValid == IDENTIFY_CABLE_ID_VALID) )) {
-                    KdPrint2((PRINT_PREFIX "AtapiDmaInit: DMA limited to UDMA33, non-ATA66 compliant cable\n"));
+                    KdPrint3((PRINT_PREFIX "AtapiDmaInit: DMA limited to UDMA33, non-ATA66 compliant cable\n"));
                     udmamode = 2;
                     apiomode = min( apiomode, (CHAR)(LunExt->LimitedTransferMode - ATA_PIO0));
                 } else {
@@ -1125,21 +1125,21 @@ AtapiDmaInit(
     }
 
     if(deviceExtension->UnknownDev) {
-        KdPrint2((PRINT_PREFIX "Unknown chip, omit Vendor/Dev checks\n"));
+        KdPrint3((PRINT_PREFIX "Unknown chip, omit Vendor/Dev checks\n"));
         goto try_generic_dma;
     }
 
     if(udmamode > 2 && (!LunExt->IdentifyData.HwResCableId && (LunExt->IdentifyData.HwResValid == IDENTIFY_CABLE_ID_VALID)) ) {
         if(ata_is_sata(&(LunExt->IdentifyData))) {
-            KdPrint2((PRINT_PREFIX "AtapiDmaInit: SATA beyond adapter or Controller compat mode\n"));
+            KdPrint3((PRINT_PREFIX "AtapiDmaInit: SATA beyond adapter or Controller compat mode\n"));
         } else {
-            KdPrint2((PRINT_PREFIX "AtapiDmaInit: DMA limited to UDMA33, non-ATA66 compliant cable\n"));
+            KdPrint3((PRINT_PREFIX "AtapiDmaInit: DMA limited to UDMA33, non-ATA66 compliant cable\n"));
             udmamode = 2;
             apiomode = min( apiomode, (CHAR)(LunExt->LimitedTransferMode - ATA_PIO));
         }
     }
 
-    KdPrint2((PRINT_PREFIX "Setup chip a:w:u=%d:%d:%d\n",
+    KdPrint3((PRINT_PREFIX "Setup chip a:w:u=%d:%d:%d\n",
         apiomode,
         wdmamode,
         udmamode));
@@ -1541,7 +1541,7 @@ dma_cs55xx:
         /* Intel */
         /*********/
 
-        KdPrint2((PRINT_PREFIX "Intel %d\n", Channel));
+        KdPrint3((PRINT_PREFIX "Intel %d\n", Channel));
         BOOLEAN udma_ok = FALSE;
         ULONG  idx = 0;
         ULONG  reg40;
@@ -1567,7 +1567,7 @@ dma_cs55xx:
 	};
 
         if(deviceExtension->DevID == ATA_I82371FB) {
-            KdPrint2((PRINT_PREFIX "  I82371FB\n"));
+            KdPrint3((PRINT_PREFIX "  I82371FB\n"));
             USHORT reg4x;
             USHORT control=0;
             for(i=wdmamode; i>=0; i--) {
@@ -1610,7 +1610,7 @@ dma_cs55xx:
 
         if(deviceExtension->DevID == ATA_ISCH) {
             ULONG tim;
-            KdPrint2((PRINT_PREFIX "  ISCH\n"));
+            KdPrint3((PRINT_PREFIX "  ISCH\n"));
             GetPciConfig4(0x80 + dev*4, tim);
 
             for(i=udmamode; i>=0; i--) {
@@ -1694,7 +1694,7 @@ dma_cs55xx:
                 udma_ok = TRUE;
                 idx = i+8;
                 if(ChipFlags & ICH4_FIX) {
-                    KdPrint2((PRINT_PREFIX "  ICH4_FIX udma\n"));
+                    KdPrint3((PRINT_PREFIX "  ICH4_FIX udma\n"));
                     return;
                 }
                 break;
@@ -1712,7 +1712,7 @@ dma_cs55xx:
                     udma_ok = TRUE;
                     idx = i+5;
                     if(ChipFlags & ICH4_FIX) {
-                        KdPrint2((PRINT_PREFIX "  ICH4_FIX wdma\n"));
+                        KdPrint3((PRINT_PREFIX "  ICH4_FIX wdma\n"));
                         return;
                     }
                     break;
@@ -1750,7 +1750,7 @@ dma_cs55xx:
             new44 <<= 4;
         }
 
-        KdPrint2((PRINT_PREFIX "  0x40 %x/%x, 0x44 %x/%x\n", mask40, new40, mask44, new44));
+        KdPrint3((PRINT_PREFIX "  0x40 %x/%x, 0x44 %x/%x\n", mask40, new40, mask44, new44));
         SetPciConfig4(0x40, (reg40 & ~mask40) | new40);
         SetPciConfig1(0x44, (reg44 & ~mask44) | new44);
 
@@ -1805,7 +1805,7 @@ dma_cs55xx:
         break; }
     case ATA_ATI_ID:
 
-        KdPrint2((PRINT_PREFIX "ATI\n"));
+        KdPrint3((PRINT_PREFIX "ATI\n"));
         if(ChipType == SIIMIO) {
             goto l_ATA_SILICON_IMAGE_ID;
         }
@@ -2318,7 +2318,7 @@ try_generic_dma:
 
     /* better not try generic DMA on ATAPI devices it almost never works */
     if (isAtapi) {
-        KdPrint2((PRINT_PREFIX "ATAPI on unknown controller -> PIO\n"));
+        KdPrint3((PRINT_PREFIX "ATAPI on unknown controller -> PIO\n"));
         udmamode =
         wdmamode = -1;
     }
@@ -2332,7 +2332,7 @@ try_generic_dma:
           BM_STATUS_DRIVE_0_DMA : BM_STATUS_DRIVE_1_DMA))) {
 //        LunExt->TransferMode = ATA_DMA;
 //        return;
-        KdPrint2((PRINT_PREFIX "try DMA on unknown controller\n"));
+        KdPrint3((PRINT_PREFIX "try DMA on unknown controller\n"));
         if(AtaSetTransferMode(deviceExtension, DeviceNumber, lChannel, LunExt, ATA_DMA)) {
             return;
         }
@@ -2347,9 +2347,9 @@ try_generic_dma:
     }
 #endif
 
-    KdPrint2((PRINT_PREFIX "try PIO%d on unknown controller\n", apiomode));
+    KdPrint3((PRINT_PREFIX "try PIO%d on unknown controller\n", apiomode));
     if(!AtaSetTransferMode(deviceExtension, DeviceNumber, lChannel, LunExt, ATA_PIO0 + apiomode)) {
-        KdPrint2((PRINT_PREFIX "fall to PIO on unknown controller\n"));
+        KdPrint3((PRINT_PREFIX "fall to PIO on unknown controller\n"));
         LunExt->TransferMode = ATA_PIO;
     }
     return;

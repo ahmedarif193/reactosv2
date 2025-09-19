@@ -48,12 +48,55 @@ KeGetCurrentIrql(VOID);
 
 #define DbgRaiseAssertionFailure() __break(0xf001)
 
+/* PCR version constants for ARM64 */
+#define PCR_MINOR_VERSION 1
+#define PCR_MAJOR_VERSION 1
+
+/* ARM64 IRQL functions */
+/* ARM64 IRQL function declarations */
+NTHALAPI
+VOID
+NTAPI
+KfLowerIrql(
+    _In_ KIRQL NewIrql);
+
+NTHALAPI
+KIRQL
+NTAPI
+KfRaiseIrql(
+    _In_ KIRQL NewIrql);
+
 /* Match other arches: map Ke{Lower,Raise}Irql to Kf* */
 #define KeLowerIrql(a) KfLowerIrql(a)
 #define KeRaiseIrql(a,b) *(b) = KfRaiseIrql(a)
 
 $endif (_WDMDDK_)
 $if (_NTDDK_)
+
+#if (NTDDI_VERSION >= NTDDI_WIN7)
+_CRT_DEPRECATE_TEXT("KeGetCurrentProcessorNumber is deprecated. Use KeGetCurrentProcessorNumberEx or KeGetCurrentProcessorIndex instead.")
+#endif
+FORCEINLINE
+ULONG
+KeGetCurrentProcessorNumber(VOID)
+{
+    /* On ARM64, the current processor number is stored in TPIDR_EL1 */
+    ULONG processorNumber;
+    __asm__ __volatile__("mrs %0, tpidr_el1" : "=r"(processorNumber));
+    /* Extract processor number from PCR (offset 0x8) */
+    return *(ULONG*)((ULONG_PTR)processorNumber + 0x8);
+}
+
+#define KeQueryTickCount(CurrentCount) _KeQueryTickCount(CurrentCount)
+
+FORCEINLINE
+VOID
+_KeQueryTickCount(
+    OUT PLARGE_INTEGER CurrentCount)
+{
+    /* ARM64 implementation - read from shared user data */
+    CurrentCount->QuadPart = *(volatile LONGLONG*)0xFFFFF78000000320ULL;
+}
 
 #define ARM64_MAX_BREAKPOINTS 8
 #define ARM64_MAX_WATCHPOINTS 2
@@ -82,7 +125,7 @@ typedef struct _CONTEXT {
     // Integer registers
     //
 
-    ULONG Cpsr;
+    ULONG Pstate;
     union {
         struct {
             ULONG64 X0;
@@ -141,4 +184,24 @@ typedef struct _CONTEXT {
     ULONG64 Wvr[ARM64_MAX_WATCHPOINTS];
 
 } CONTEXT, *PCONTEXT;
+
+/* ARM64 floating point save area */
+typedef struct _KFLOATING_SAVE
+{
+    ULONG Fpcr;             /* Floating-point Control Register */
+    ULONG Fpsr;             /* Floating-point Status Register */
+    NEON128 V[32];          /* NEON/FPU registers */
+} KFLOATING_SAVE, *PKFLOATING_SAVE;
+
+/* ARM64 floating point functions */
+NTSTATUS
+NTAPI
+KeSaveFloatingPointState(
+    _Out_ PKFLOATING_SAVE FloatSave);
+
+NTSTATUS
+NTAPI
+KeRestoreFloatingPointState(
+    _In_ PKFLOATING_SAVE FloatSave);
+
 $endif

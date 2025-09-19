@@ -544,7 +544,9 @@ MiComputeColorInformation(VOID)
 
     /* Compute the mask and store it */
     MmSecondaryColorMask = MmSecondaryColors - 1;
+#if defined(_M_IX86) || defined(_M_AMD64)
     KeGetCurrentPrcb()->SecondaryColorMask = MmSecondaryColorMask;
+#endif
 }
 
 CODE_SEG("INIT")
@@ -2031,6 +2033,8 @@ MiDbgDumpMemoryDescriptors(VOID)
     DPRINT1("Total: %08lX (%lu MB)\n", (ULONG)TotalPages, (ULONG)(TotalPages * PAGE_SIZE) / 1024 / 1024);
 }
 
+/* ARM64 has specific implementation in mm/ARM3/arm64/init.c */
+#if !defined(_M_ARM64)
 CODE_SEG("INIT")
 BOOLEAN
 NTAPI
@@ -2547,5 +2551,6 @@ MmArmInitSystem(IN ULONG Phase,
     //
     return TRUE;
 }
+#endif /* !_M_ARM64 */
 
 /* EOF */

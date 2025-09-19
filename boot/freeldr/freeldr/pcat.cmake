@@ -257,14 +257,15 @@ if(SARCH STREQUAL "pc98")
         VERBATIM)
 endif()
 
-if(NOT ARCH STREQUAL "arm")
+# Only x86/x64 produce the BIOS-style freeldr.sys and include it on CDs
+if(ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64")
     concatenate_files(
         ${CMAKE_CURRENT_BINARY_DIR}/freeldr.sys
         ${CMAKE_CURRENT_BINARY_DIR}/frldr16.bin
         ${CMAKE_CURRENT_BINARY_DIR}/$<TARGET_FILE_NAME:freeldr_pe>)
     add_custom_target(freeldr ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/freeldr.sys)
+    add_cd_file(TARGET freeldr FILE ${CMAKE_CURRENT_BINARY_DIR}/freeldr.sys DESTINATION loader NO_CAB NOT_IN_HYBRIDCD FOR bootcd livecd hybridcd regtest)
 else()
+    # Non-PC/BIOS architectures should not build or package freeldr.sys
     add_custom_target(freeldr ALL DEPENDS freeldr_pe)
 endif()
-
-add_cd_file(TARGET freeldr FILE ${CMAKE_CURRENT_BINARY_DIR}/freeldr.sys DESTINATION loader NO_CAB NOT_IN_HYBRIDCD FOR bootcd livecd hybridcd regtest)

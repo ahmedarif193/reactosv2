@@ -36,8 +36,8 @@
 #define PAT_INDEX_6     6  /* 110: PCD=1, PWT=0, PAT=1 */
 #define PAT_INDEX_7     7  /* 111: PCD=1, PWT=1, PAT=1 */
 
-/* CR4 bits */
-#define CR4_PGE         (1ULL << 7)   /* Page Global Enable */
+/* CR4_PGE is already defined in sdk/include/ndk/amd64/ketypes.h */
+/* Using the system definition (0x80) instead of redefining */
 
 /* PTE bits for cache control */
 #define PTE_PAT         (1ULL << 7)   /* PAT bit in PTE */

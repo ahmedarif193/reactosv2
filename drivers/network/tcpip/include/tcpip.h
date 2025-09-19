@@ -65,7 +65,7 @@
 #define NDIS_BUFFER_TAG FOURCC('n','b','u','f')
 #define NDIS_PACKET_TAG FOURCC('n','p','k','t')
 
-#if defined(i386) || defined(_AMD64_) || defined(_ARM_)
+#if defined(i386) || defined(_AMD64_) || defined(_ARM_) || defined(_ARM64_)
 
 /* DWORD network to host byte order conversion for i386 */
 #define DN2H(dw) \
@@ -91,7 +91,7 @@
 	((((w) & 0xFF00) >> 8) | \
 	 (((w) & 0x00FF) << 8))
 
-#else /* defined(i386) || defined(_AMD64_) || defined(_ARM_) */
+#else /* defined(i386) || defined(_AMD64_) || defined(_ARM_) || defined(_ARM64_) */
 
 #error Unsupported architecture
 
@@ -111,7 +111,7 @@
 #define WH2N(w) \
     (w)
 
-#endif /* defined(i386) || defined(_AMD64_) || defined(_ARM_) */
+#endif /* defined(i386) || defined(_AMD64_) || defined(_ARM_) || defined(_ARM64_) */
 
 /* AF_INET and other things Arty likes to use ;) */
 #define AF_INET 2
@@ -174,3 +174,75 @@ extern NTSTATUS TiGetProtocolNumber( PUNICODE_STRING FileName,
 				     PULONG Protocol );
 
 /* EOF */
+
+
+
+
+//FIXME: use this instead
+// /* byteorder.h — include this once and only define if not provided by lwIP/winsock */
+// #ifndef TCPIP_BYTEORDER_H
+// #define TCPIP_BYTEORDER_H
+
+// #include <wdm.h> /* or ntddk.h for ReactOS; brings in ULONG/USHORT */
+
+// /* Decide endianness at compile-time. ReactOS only builds LE,
+//    but keep this future-proof for BE ports. */
+// #if defined(__BYTE_ORDER__) && (__BYTE_ORDER__ == __ORDER_BIG_ENDIAN__)
+//   #define HOST_BIG_ENDIAN 1
+// #else
+//   #define HOST_LITTLE_ENDIAN 1
+// #endif
+
+// /* Intrinsics for fast swaps */
+// #if defined(_MSC_VER)
+//   #include <intrin.h>
+//   #define BSWAP16(x) _byteswap_ushort((USHORT)(x))
+//   #define BSWAP32(x) _byteswap_ulong((ULONG)(x))
+//   #define BSWAP64(x) _byteswap_uint64((unsigned __int64)(x))
+// #else
+//   #define BSWAP16(x) __builtin_bswap16((unsigned short)(x))
+//   #define BSWAP32(x) __builtin_bswap32((unsigned int)(x))
+//   #define BSWAP64(x) __builtin_bswap64((unsigned long long)(x))
+// #endif
+
+// /* Standard names: these are what you should use in code */
+// #if defined(HOST_LITTLE_ENDIAN)
+//   #ifndef htons
+//   #define htons(x) ((UINT16)BSWAP16(x))
+//   #endif
+//   #ifndef htonl
+//   #define htonl(x) ((UINT32)BSWAP32(x))
+//   #endif
+//   #ifndef ntohs
+//   #define ntohs(x) ((UINT16)BSWAP16(x))
+//   #endif
+//   #ifndef ntohl
+//   #define ntohl(x) ((UINT32)BSWAP32(x))
+//   #endif
+
+//   /* If needed */
+//   #ifndef htonll
+//   #define htonll(x) ((UINT64)BSWAP64(x))
+//   #define ntohll(x) ((UINT64)BSWAP64(x))
+//   #endif
+
+// #else /* HOST_BIG_ENDIAN */
+//   #ifndef htons
+//   #define htons(x) (x)
+//   #endif
+//   #ifndef htonl
+//   #define htonl(x) (x)
+//   #endif
+//   #ifndef ntohs
+//   #define ntohs(x) (x)
+//   #endif
+//   #ifndef ntohl
+//   #define ntohl(x) (x)
+//   #endif
+//   #ifndef htonll
+//   #define htonll(x) (x)
+//   #define ntohll(x) (x)
+//   #endif
+// #endif /* endianness */
+
+// #endif /* TCPIP_BYTEORDER_H */

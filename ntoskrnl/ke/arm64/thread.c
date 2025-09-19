@@ -40,9 +40,11 @@ KiInitializeContextThread(
     IN PVOID StartContext,
     IN PCONTEXT ContextFrame)
 {
-    PKARM64_KTRAP_FRAME TrapFrame;
-    PKARM64_KEXCEPTION_FRAME ExceptionFrame;
+    PKTRAP_FRAME TrapFrame;
+    PKEXCEPTION_FRAME ExceptionFrame;
     ULONG64 InitialStack;
+
+    UNREFERENCED_PARAMETER(ExceptionFrame);
 
     DPRINT1("KiInitializeContextThread: Thread %p - ARM64 stub\n", Thread);
 
@@ -57,11 +59,11 @@ KiInitializeContextThread(
      * - SPSR_EL1: Saved processor state
      * - V0-V31: NEON/FP registers (optional)
      */
-    InitialStack -= sizeof(KARM64_KTRAP_FRAME);
-    TrapFrame = (PKARM64_KTRAP_FRAME)InitialStack;
+    InitialStack -= sizeof(KTRAP_FRAME);
+    TrapFrame = (PKTRAP_FRAME)InitialStack;
 
     /* TODO: Initialize trap frame */
-    RtlZeroMemory(TrapFrame, sizeof(KARM64_KTRAP_FRAME));
+    RtlZeroMemory(TrapFrame, sizeof(KTRAP_FRAME));
 
     /* Set up initial register values */
     /* X0 = StartContext (first parameter) */
@@ -70,8 +72,8 @@ KiInitializeContextThread(
     /* SP = Stack pointer */
 
     /* TODO: Allocate exception frame for kernel thread state */
-    InitialStack -= sizeof(KARM64_KEXCEPTION_FRAME);
-    ExceptionFrame = (PKARM64_KEXCEPTION_FRAME)InitialStack;
+    InitialStack -= sizeof(KEXCEPTION_FRAME);
+    ExceptionFrame = (PKEXCEPTION_FRAME)InitialStack;
 
     /* TODO: Initialize exception frame */
     /* Saves non-volatile registers X19-X29, SP */
@@ -91,18 +93,20 @@ KiInitializeContextThread(
  * Saves current thread context and loads new thread context.
  * This is the core of the scheduler.
  *
- * @param OldThread - Thread to switch from
- * @param NewThread - Thread to switch to
- * @return VOID
+ * @param WaitIrql - IRQL to wait at
+ * @param CurrentThread - Current thread to save
+ * @return BOOLEAN - TRUE if context switch occurred
  */
-VOID
-NTAPI
+/* KiSwapContext is implemented in ctxswitch.S for ARM64 */
+#if 0
+BOOLEAN
+FASTCALL
 KiSwapContext(
-    IN PKTHREAD OldThread,
-    IN PKTHREAD NewThread)
+    IN KIRQL WaitIrql,
+    IN PKTHREAD CurrentThread)
 {
-    DPRINT1("KiSwapContext: Old %p -> New %p - ARM64 stub\n",
-            OldThread, NewThread);
+    DPRINT1("KiSwapContext: WaitIrql %d, Thread %p - ARM64 stub\n",
+            WaitIrql, CurrentThread);
 
     /* TODO: Save current thread state */
     /* Save non-volatile registers:
@@ -135,29 +139,12 @@ KiSwapContext(
     /* KeGetCurrentPrcb()->CurrentThread = NewThread; */
 
     /* Context switch will return in new thread context */
+    return FALSE; /* For now, return FALSE - TODO: implement actual context switch */
 }
 
-/*
- * @brief Get current thread from processor state
- *
+/* _KeGetCurrentThread is defined as a macro in ketypes.h for ARM64
  * ARM64 typically uses TPIDR_EL1 to store per-CPU data pointer.
- *
- * @return PKTHREAD - Current thread pointer
  */
-PKTHREAD
-NTAPI
-KeGetCurrentThread(VOID)
-{
-    PKPCR Pcr;
-
-    /* TODO: Read PCR from TPIDR_EL1 */
-    /* MRS X0, TPIDR_EL1 */
-    /* Pcr = (PKPCR)__readtpidr_el1(); */
-
-    /* Stub: return NULL for now */
-    DPRINT1("KeGetCurrentThread: ARM64 stub\n");
-    return NULL;
-}
 
 /*
  * @brief Initialize thread-specific processor state
@@ -196,6 +183,7 @@ KiInitializeThreadProcessorState(
     /* TODO: Configure thread's exception level */
     /* Thread runs at EL0 (user) or EL1 (kernel) */
 }
+#endif /* Duplicate KiSwapContext */
 
 /*
  * @brief Save floating-point/NEON state
@@ -205,6 +193,8 @@ KiInitializeThreadProcessorState(
  * @param Thread - Thread whose FP state to save
  * @return VOID
  */
+/* KiSaveFloatingPointState is implemented in ctxswitch.S for ARM64 */
+#if 0
 VOID
 NTAPI
 KiSaveFloatingPointState(
@@ -216,6 +206,7 @@ KiSaveFloatingPointState(
 
     /* Get FPU save area */
     FpuState = Thread->InitialStack; /* TODO: Proper FPU save area */
+    UNREFERENCED_PARAMETER(FpuState);
 
     /* TODO: Save NEON/FP registers */
     /* Save V0-V31: 128-bit NEON registers
@@ -233,6 +224,7 @@ KiSaveFloatingPointState(
     /* TODO: Disable FPU to trap on next use (lazy switching) */
     /* CPACR_EL1: Disable FP/NEON access for EL0/EL1 */
 }
+#endif /* KiSaveFloatingPointState */
 
 /*
  * @brief Restore floating-point/NEON state
@@ -240,6 +232,8 @@ KiSaveFloatingPointState(
  * @param Thread - Thread whose FP state to restore
  * @return VOID
  */
+/* KiRestoreFloatingPointState is implemented in ctxswitch.S for ARM64 */
+#if 0
 VOID
 NTAPI
 KiRestoreFloatingPointState(
@@ -251,6 +245,7 @@ KiRestoreFloatingPointState(
 
     /* Get FPU save area */
     FpuState = Thread->InitialStack; /* TODO: Proper FPU save area */
+    UNREFERENCED_PARAMETER(FpuState);
 
     /* TODO: Restore NEON/FP registers */
     /* LDP Q0, Q1, [FpuState], #32
@@ -267,3 +262,4 @@ KiRestoreFloatingPointState(
     /* TODO: Enable FPU access */
     /* CPACR_EL1: Enable FP/NEON access for EL0/EL1 */
 }
+#endif /* KiRestoreFloatingPointState */

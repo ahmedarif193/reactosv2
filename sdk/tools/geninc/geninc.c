@@ -198,7 +198,17 @@ int main(int argc, char* argv[])
                 }
                 else
                 {
-                    fprintf(output, "%s = 0x%"PRIx64"\n", data.Name, data.Value);
+                    if (Machine == IMAGE_FILE_MACHINE_ARM64)
+                    {
+                        /* For ARM64, use #define with guards to avoid redefinition */
+                        fprintf(output, "#ifndef %s\n", data.Name);
+                        fprintf(output, "#define %s 0x%"PRIx64"\n", data.Name, data.Value);
+                        fprintf(output, "#endif\n");
+                    }
+                    else
+                    {
+                        fprintf(output, "%s = 0x%"PRIx64"\n", data.Name, data.Value);
+                    }
                 }
                 continue;
 

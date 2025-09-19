@@ -40,3 +40,9 @@ else()
         startup/pseudo-reloc-list.c
     )
 endif()
+
+if(ARCH STREQUAL "arm64")
+    list(APPEND CRT_STARTUP_SOURCE
+        startup/arm64_ehandler.c
+    )
+endif()

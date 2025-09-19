@@ -11,6 +11,33 @@
 #define NDEBUG
 #include <debug.h>
 
+/* TYPES *********************************************************************/
+
+/* ARM64 trap frame structure (must match assembly definitions) */
+typedef struct _ARM64_TRAP_FRAME
+{
+    ULONGLONG X0, X1, X2, X3, X4, X5, X6, X7;
+    ULONGLONG X8, X9, X10, X11, X12, X13, X14, X15;
+    ULONGLONG X16, X17, X18, X19, X20, X21, X22, X23;
+    ULONGLONG X24, X25, X26, X27, X28, X29, X30;
+    ULONGLONG Sp;       /* Stack pointer */
+    ULONGLONG Pc;       /* Program counter (ELR_EL1) */
+    ULONGLONG Pstate;   /* Processor state (SPSR_EL1) */
+    ULONGLONG Esr;      /* Exception syndrome register */
+    ULONGLONG Far;      /* Fault address register */
+} ARM64_TRAP_FRAME, *PARM64_TRAP_FRAME;
+
+/* FUNCTION PROTOTYPES *******************************************************/
+
+/* Forward declarations for functions defined later in this file */
+VOID NTAPI KiBreakpointTrapC(IN PARM64_TRAP_FRAME TrapFrame);
+VOID NTAPI KiBugCheck(IN PARM64_TRAP_FRAME TrapFrame);
+VOID NTAPI KiIllegalInstruction(IN PARM64_TRAP_FRAME TrapFrame);
+VOID NTAPI KiKernelDataAbort(IN PARM64_TRAP_FRAME TrapFrame);
+VOID NTAPI KiKernelInstructionAbort(IN PARM64_TRAP_FRAME TrapFrame);
+VOID NTAPI KiAlignmentFault(IN PARM64_TRAP_FRAME TrapFrame);
+VOID NTAPI KiStackAlignmentFault(IN PARM64_TRAP_FRAME TrapFrame);
+
 /* ARM64 Exception Syndrome Register (ESR) definitions */
 #define ESR_ELx_EC_SHIFT        26
 #define ESR_ELx_EC_MASK         (0x3F << ESR_ELx_EC_SHIFT)
@@ -76,20 +103,6 @@
 #define ESR_ELx_DFSC_MASK       0x3F
 
 /* GLOBALS *******************************************************************/
-
-/* ARM64 trap frame structure (must match assembly definitions) */
-typedef struct _ARM64_TRAP_FRAME
-{
-    ULONGLONG X0, X1, X2, X3, X4, X5, X6, X7;
-    ULONGLONG X8, X9, X10, X11, X12, X13, X14, X15;
-    ULONGLONG X16, X17, X18, X19, X20, X21, X22, X23;
-    ULONGLONG X24, X25, X26, X27, X28, X29, X30;
-    ULONGLONG Sp;       /* Stack pointer */
-    ULONGLONG Pc;       /* Program counter (ELR_EL1) */
-    ULONGLONG Pstate;   /* Processor state (SPSR_EL1) */
-    ULONGLONG Esr;      /* Exception syndrome register */
-    ULONGLONG Far;      /* Fault address register */
-} ARM64_TRAP_FRAME, *PARM64_TRAP_FRAME;
 
 /* FUNCTIONS *****************************************************************/
 
@@ -395,5 +408,5 @@ KiBugCheck(
     DPRINT1("ESR=0x%llX, FAR=0x%llX\n", TrapFrame->Esr, TrapFrame->Far);
     
     /* Call system bug check */
-    KeBugCheckWithoutLog(KERNEL_SECURITY_CHECK_FAILURE);
+    KeBugCheck(KERNEL_SECURITY_CHECK_FAILURE);
 }

@@ -11,12 +11,31 @@
 #define NDEBUG
 #include <debug.h>
 
+/* FORWARD DECLARATIONS ******************************************************/
+
+VOID
+NTAPI
+PspGetContext(
+    IN PKTRAP_FRAME TrapFrame,
+    IN PKEXCEPTION_FRAME ExceptionFrame,
+    IN OUT PCONTEXT Context
+);
+
+VOID
+NTAPI
+PspSetContext(
+    OUT PKTRAP_FRAME TrapFrame,
+    OUT PKEXCEPTION_FRAME ExceptionFrame,
+    IN PCONTEXT Context,
+    IN KPROCESSOR_MODE Mode
+);
+
 /* FUNCTIONS *****************************************************************/
 
 /**
  * @brief Get ARM64 processor state for debugger
  */
-NTSTATUS
+VOID
 NTAPI
 KdpGetStateChange(
     IN PDBGKD_MANIPULATE_STATE64 State,
@@ -25,9 +44,9 @@ KdpGetStateChange(
 {
     UNREFERENCED_PARAMETER(State);
     UNREFERENCED_PARAMETER(Context);
-    
+
     /* ARM64 debugger support not yet implemented */
-    return STATUS_NOT_IMPLEMENTED;
+    DPRINT1("KdpGetStateChange: ARM64 stub\n");
 }
 
 /**
@@ -186,19 +205,72 @@ NTAPI
 KdpTrap(
     IN PKTRAP_FRAME TrapFrame,
     IN PKEXCEPTION_FRAME ExceptionFrame,
-    IN ULONG ExceptionCode,
+    IN PEXCEPTION_RECORD ExceptionRecord,
+    IN PCONTEXT Context,
     IN KPROCESSOR_MODE PreviousMode,
     IN BOOLEAN SecondChanceException
 )
 {
     UNREFERENCED_PARAMETER(TrapFrame);
     UNREFERENCED_PARAMETER(ExceptionFrame);
-    UNREFERENCED_PARAMETER(ExceptionCode);
+    UNREFERENCED_PARAMETER(ExceptionRecord);
+    UNREFERENCED_PARAMETER(Context);
     UNREFERENCED_PARAMETER(PreviousMode);
     UNREFERENCED_PARAMETER(SecondChanceException);
-    
+
     DPRINT("ARM64: Kernel debugger trap - not yet implemented\n");
-    
+
     /* For now, don't handle the trap */
     return FALSE;
+}
+
+BOOLEAN
+NTAPI
+KdpStub(IN PKTRAP_FRAME TrapFrame,
+        IN PKEXCEPTION_FRAME ExceptionFrame,
+        IN PEXCEPTION_RECORD ExceptionRecord,
+        IN PCONTEXT ContextRecord,
+        IN KPROCESSOR_MODE PreviousMode,
+        IN BOOLEAN SecondChanceException)
+{
+    ULONG_PTR ExceptionCommand;
+
+    /* Check if this was a breakpoint due to DbgPrint or Load/UnloadSymbols */
+    ExceptionCommand = ExceptionRecord->ExceptionInformation[0];
+    if ((ExceptionRecord->ExceptionCode == STATUS_BREAKPOINT) &&
+        (ExceptionRecord->NumberParameters > 0) &&
+        ((ExceptionCommand == BREAKPOINT_LOAD_SYMBOLS) ||
+         (ExceptionCommand == BREAKPOINT_UNLOAD_SYMBOLS) ||
+         (ExceptionCommand == BREAKPOINT_COMMAND_STRING) ||
+         (ExceptionCommand == BREAKPOINT_PRINT)))
+    {
+        /* This we can handle: simply bump the Program Counter */
+        KeSetContextPc(ContextRecord,
+                       KeGetContextPc(ContextRecord) + KD_BREAKPOINT_SIZE);
+        return TRUE;
+    }
+    else if (KdPitchDebugger)
+    {
+        /* There's no debugger, fail. */
+        return FALSE;
+    }
+    else if ((KdAutoEnableOnEvent) &&
+             (KdPreviouslyEnabled) &&
+             !(KdDebuggerEnabled) &&
+             (NT_SUCCESS(KdEnableDebugger())) &&
+             (KdDebuggerEnabled))
+    {
+        /* Debugging was Auto-Enabled. We can now send this to KD. */
+        return KdpTrap(TrapFrame,
+                       ExceptionFrame,
+                       ExceptionRecord,
+                       ContextRecord,
+                       PreviousMode,
+                       SecondChanceException);
+    }
+    else
+    {
+        /* FIXME: All we can do in this case is trace this exception */
+        return FALSE;
+    }
 }

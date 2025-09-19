@@ -3,9 +3,19 @@
  ******************************************************************************/
 
 $if (_WDMDDK_)
+#if defined(_M_IX86)
 #define ExInterlockedIncrementLong(Addend,Lock) Exfi386InterlockedIncrementLong(Addend)
 #define ExInterlockedDecrementLong(Addend,Lock) Exfi386InterlockedDecrementLong(Addend)
 #define ExInterlockedExchangeUlong(Target, Value, Lock) Exfi386InterlockedExchangeUlong(Target, Value)
+#elif defined(_M_ARM64)
+#define ExInterlockedIncrementLong(Addend,Lock) Exfarm64InterlockedIncrementLong(Addend)
+#define ExInterlockedDecrementLong(Addend,Lock) Exfarm64InterlockedDecrementLong(Addend)
+#define ExInterlockedExchangeUlong(Target, Value, Lock) ExInterlockedExchangeUlong(Target, Value, Lock)
+#else
+#define ExInterlockedIncrementLong(Addend,Lock) ExInterlockedIncrementLong(Addend,Lock)
+#define ExInterlockedDecrementLong(Addend,Lock) ExInterlockedDecrementLong(Addend,Lock)
+#define ExInterlockedExchangeUlong(Target, Value, Lock) ExInterlockedExchangeUlong(Target, Value, Lock)
+#endif
 
 #define ExAcquireSpinLock(Lock, OldIrql) KeAcquireSpinLock((Lock), (OldIrql))
 #define ExReleaseSpinLock(Lock, OldIrql) KeReleaseSpinLock((Lock), (OldIrql))
@@ -381,6 +391,22 @@ FASTCALL
 Exfi386InterlockedExchangeUlong(
   _Inout_ _Interlocked_operand_ PULONG Target,
   _In_ ULONG Value);
+
+#endif
+
+#ifdef _M_ARM64
+
+NTKERNELAPI
+INTERLOCKED_RESULT
+FASTCALL
+Exfarm64InterlockedIncrementLong(
+  _Inout_ _Interlocked_operand_ LONG volatile *Addend);
+
+NTKERNELAPI
+INTERLOCKED_RESULT
+FASTCALL
+Exfarm64InterlockedDecrementLong(
+  _Inout_ _Interlocked_operand_ PLONG Addend);
 
 #endif
 

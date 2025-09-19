@@ -20,6 +20,37 @@
 
 VOID NTAPI PspDumpThreads(BOOLEAN SystemThreads);
 
+#ifdef _M_ARM64
+/* Forward declarations for ARM64-specific implementations */
+NTSTATUS
+NTAPI
+KdpReadControlSpace(
+    IN PDBGKD_MANIPULATE_STATE64 State,
+    IN PSTRING Data,
+    IN PCONTEXT Context);
+
+NTSTATUS
+NTAPI
+KdpWriteControlSpace(
+    IN PDBGKD_MANIPULATE_STATE64 State,
+    IN PSTRING Data,
+    IN PCONTEXT Context);
+
+VOID
+NTAPI
+KdpGetContext(
+    IN PDBGKD_MANIPULATE_STATE64 State,
+    IN PSTRING Data,
+    IN PCONTEXT Context);
+
+VOID
+NTAPI
+KdpSetContext(
+    IN PDBGKD_MANIPULATE_STATE64 State,
+    IN PSTRING Data,
+    IN PCONTEXT Context);
+#endif
+
 /* PRIVATE FUNCTIONS *********************************************************/
 
 VOID
@@ -646,6 +677,8 @@ KdpWritePhysicalMemory(IN PDBGKD_MANIPULATE_STATE64 State,
                  &KdpContext);
 }
 
+/* ARM64 has specific implementation in kd64/arm64/kdarm64.c */
+#if !defined(_M_ARM64)
 VOID
 NTAPI
 KdpReadControlSpace(IN PDBGKD_MANIPULATE_STATE64 State,
@@ -686,7 +719,10 @@ KdpReadControlSpace(IN PDBGKD_MANIPULATE_STATE64 State,
                  Data,
                  &KdpContext);
 }
+#endif /* !_M_ARM64 */
 
+/* ARM64 has specific implementation in kd64/arm64/kdarm64.c */
+#if !defined(_M_ARM64)
 VOID
 NTAPI
 KdpWriteControlSpace(IN PDBGKD_MANIPULATE_STATE64 State,
@@ -713,7 +749,10 @@ KdpWriteControlSpace(IN PDBGKD_MANIPULATE_STATE64 State,
                  Data,
                  &KdpContext);
 }
+#endif /* !_M_ARM64 */
 
+/* ARM64 has specific implementation in kd64/arm64/kdarm64.c */
+#if !defined(_M_ARM64)
 VOID
 NTAPI
 KdpGetContext(IN PDBGKD_MANIPULATE_STATE64 State,
@@ -768,7 +807,10 @@ KdpGetContext(IN PDBGKD_MANIPULATE_STATE64 State,
                  Data,
                  &KdpContext);
 }
+#endif /* !_M_ARM64 */
 
+/* ARM64 has specific implementation in kd64/arm64/kdarm64.c */
+#if !defined(_M_ARM64)
 VOID
 NTAPI
 KdpSetContext(IN PDBGKD_MANIPULATE_STATE64 State,
@@ -820,6 +862,7 @@ KdpSetContext(IN PDBGKD_MANIPULATE_STATE64 State,
                  NULL,
                  &KdpContext);
 }
+#endif /* !_M_ARM64 */
 
 VOID
 NTAPI

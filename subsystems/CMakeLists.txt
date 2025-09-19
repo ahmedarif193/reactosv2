@@ -1,4 +1,6 @@
 
 add_subdirectory(csr)
-add_subdirectory(mvdm)
+if(NOT ARCH STREQUAL "arm64")
+    add_subdirectory(mvdm)
+endif()
 add_subdirectory(win)

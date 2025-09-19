@@ -82,7 +82,7 @@ MiInitSystemMemoryAreas(VOID)
     MiCreateArm3StaticMemoryArea((PVOID)PTE_BASE, PTE_TOP - PTE_BASE + 1, FALSE);
 
     // Hyperspace
-    MiCreateArm3StaticMemoryArea((PVOID)HYPER_SPACE, HYPER_SPACE_END - HYPER_SPACE + 1, FALSE);
+    MiCreateArm3StaticMemoryArea((PVOID)HYPER_SPACE, (ULONG_PTR)HYPER_SPACE_END - (ULONG_PTR)HYPER_SPACE + 1, FALSE);
 
     // Protect the PFN database
     MiCreateArm3StaticMemoryArea(MmPfnDatabase, (MxPfnAllocation << PAGE_SHIFT), FALSE);

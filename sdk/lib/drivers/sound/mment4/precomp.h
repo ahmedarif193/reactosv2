@@ -1,6 +1,13 @@
 #ifndef _MMENT4_PCH_
 #define _MMENT4_PCH_
 
+#ifndef UNICODE
+#define UNICODE
+#endif
+#ifndef _UNICODE
+#define _UNICODE
+#endif
+
 #include <stdarg.h>
 #include <windef.h>
 #include <winbase.h>

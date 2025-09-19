@@ -25,6 +25,58 @@ PVOID KiInterruptHandlerTable[256];
 /* FUNCTIONS *****************************************************************/
 
 /*
+ * @brief Raise the processor's IRQL level
+ *
+ * @param NewIrql - The new IRQL to set
+ * @return Previous IRQL level
+ */
+KIRQL
+NTAPI
+_KfRaiseIrql(IN KIRQL NewIrql)
+{
+    KIRQL OldIrql;
+
+    /* Get current IRQL from PCR */
+    OldIrql = KeGetPcr()->CurrentIrql;
+
+    /* Check for valid raise */
+    ASSERT(OldIrql <= NewIrql);
+
+    /* Set new IRQL */
+    KeGetPcr()->CurrentIrql = NewIrql;
+
+    /* TODO: Configure GIC priority masking for this IRQL */
+
+    return OldIrql;
+}
+
+/*
+ * @brief Lower the processor's IRQL level
+ *
+ * @param NewIrql - The new IRQL to set (must be lower than current)
+ */
+VOID
+NTAPI
+_KfLowerIrql(IN KIRQL NewIrql)
+{
+    KIRQL OldIrql;
+
+    /* Get current IRQL from PCR */
+    OldIrql = KeGetPcr()->CurrentIrql;
+
+    /* Check for valid lower */
+    ASSERT(OldIrql >= NewIrql);
+
+    /* Set new IRQL */
+    KeGetPcr()->CurrentIrql = NewIrql;
+
+    /* TODO: Configure GIC priority masking for this IRQL */
+    /* TODO: Check for pending software interrupts */
+}
+
+/* _KeGetPreviousMode is defined as a macro in ketypes.h for ARM64 */
+
+/*
  * @brief Initialize the ARM64 interrupt controller (GICv3/v4)
  *
  * The Generic Interrupt Controller (GIC) manages interrupts in ARM64 systems.
@@ -87,19 +139,18 @@ BOOLEAN
 NTAPI
 KiEnableInterrupts(VOID)
 {
-    ULONG64 Daif, OldDaif;
-
     DPRINT1("KiEnableInterrupts: ARM64 stub\n");
 
     /* TODO: Read current DAIF state */
     /* MRS X0, DAIF */
-    OldDaif = 0; /* __readdaif(); */
+    /* ULONG64 OldDaif = __readdaif(); */
 
     /* TODO: Clear interrupt mask bits */
     /* MSR DAIFClr, #0x2  ; Clear I bit to enable IRQ */
 
     /* Return whether interrupts were previously enabled */
-    return (OldDaif & 0x80) == 0;
+    /* return (OldDaif & 0x80) == 0; */
+    return FALSE; /* Stub: assume interrupts were disabled */
 }
 
 /*
@@ -111,100 +162,24 @@ BOOLEAN
 NTAPI
 KiDisableInterrupts(VOID)
 {
-    ULONG64 Daif, OldDaif;
-
     DPRINT1("KiDisableInterrupts: ARM64 stub\n");
 
     /* TODO: Read current DAIF state */
     /* MRS X0, DAIF */
-    OldDaif = 0; /* __readdaif(); */
+    /* ULONG64 OldDaif = __readdaif(); */
 
     /* TODO: Set interrupt mask bits */
     /* MSR DAIFSet, #0x2  ; Set I bit to disable IRQ */
 
     /* Return whether interrupts were previously enabled */
-    return (OldDaif & 0x80) == 0;
+    /* return (OldDaif & 0x80) == 0; */
+    return FALSE; /* Stub: assume interrupts were disabled */
 }
 
-/*
- * @brief Connect an interrupt handler to a vector
- *
- * @param Vector - Interrupt vector number (0-255 for ARM64)
- * @param Handler - Pointer to interrupt handler function
- * @param Mode - Interrupt mode (level/edge triggered)
- * @return NTSTATUS - Success or failure status
- */
-NTSTATUS
-NTAPI
-KeConnectInterrupt(
-    IN ULONG Vector,
-    IN PKINTERRUPT_ROUTINE Handler,
-    IN KINTERRUPT_MODE Mode)
-{
-    DPRINT1("KeConnectInterrupt: Vector %u, Handler %p - ARM64 stub\n",
-            Vector, Handler);
+/* KeConnectInterrupt is implemented in irqobj.c */
 
-    /* Validate vector number */
-    if (Vector >= 256)
-    {
-        return STATUS_INVALID_PARAMETER;
-    }
-
-    /* TODO: Configure interrupt in GIC */
-    /* - Set interrupt priority
-     * - Set trigger mode (edge/level)
-     * - Set target CPU(s)
-     * - Enable interrupt
-     */
-
-    /* Store handler in table */
-    KiInterruptHandlerTable[Vector] = Handler;
-
-    return STATUS_SUCCESS;
-}
-
-/*
- * @brief Common interrupt handler entry point
- *
- * Called from low-level interrupt vector with context saved.
- *
- * @param TrapFrame - Saved processor context
- * @param Vector - Interrupt vector number
- * @return VOID
- */
-VOID
-NTAPI
-KiInterruptHandler(
-    IN PKTRAP_FRAME TrapFrame,
-    IN ULONG Vector)
-{
-    PKINTERRUPT_ROUTINE Handler;
-    ULONG64 IntId;
-
-    DPRINT1("KiInterruptHandler: Vector %u - ARM64 stub\n", Vector);
-
-    /* TODO: Acknowledge interrupt in GIC */
-    /* IntId = __readiccreg(ICC_IAR1_EL1); */
-    IntId = Vector;
-
-    /* Check for spurious interrupt */
-    if (IntId >= 1020)
-    {
-        /* Spurious interrupt IDs: 1020-1023 */
-        return;
-    }
-
-    /* Get handler from table */
-    Handler = KiInterruptHandlerTable[IntId & 0xFF];
-    if (Handler)
-    {
-        /* Call registered handler */
-        /* TODO: Handler(TrapFrame); */
-    }
-
-    /* TODO: End of interrupt */
-    /* __writeiccreg(ICC_EOIR1_EL1, IntId); */
-}
+/* KiInterruptHandler is the assembly entry point defined in ke.h
+ * KiInterruptHandlerC is implemented in except.c for ARM64 */
 
 /*
  * @brief Send Inter-Processor Interrupt (IPI)
@@ -221,8 +196,6 @@ KiSendIpi(
     IN KAFFINITY TargetProcessors,
     IN ULONG Vector)
 {
-    ULONG64 SgiValue;
-
     DPRINT1("KiSendIpi: Targets 0x%llx, Vector %u - ARM64 stub\n",
             TargetProcessors, Vector);
 
@@ -244,7 +217,7 @@ KiSendIpi(
      */
 
     /* TODO: Calculate affinity routing from processor mask */
-    /* SgiValue = ...; */
+    /* ULONG64 SgiValue = ...; */
     /* __writeiccreg(ICC_SGI1R_EL1, SgiValue); */
 }
 
@@ -263,18 +236,17 @@ NTAPI
 KiInitializeTimer(
     IN ULONG Frequency)
 {
-    ULONG64 CntkCtl, CntFrq;
-
     DPRINT1("KiInitializeTimer: Frequency %u Hz - ARM64 stub\n", Frequency);
 
     /* TODO: Read timer frequency from system register */
-    /* CntFrq = __readcntreg(CNTFRQ_EL0); */
+    /* ULONG64 CntFrq = __readcntreg(CNTFRQ_EL0); */
 
     /* TODO: Configure timer control register */
     /* CNTKCTL_EL1 controls:
      * - EL0 access to timers
      * - Event stream generation
      */
+    /* ULONG64 CntkCtl = ...; */
 
     /* TODO: Set timer compare value */
     /* CNTP_CVAL_EL0: Physical timer compare value

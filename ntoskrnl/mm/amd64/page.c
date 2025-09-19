@@ -36,7 +36,17 @@
 #define PTE_PFN_MASK        0x000FFFFFFFFFF000ULL
 #define PTE_PFN_SHIFT       12
 
-/* Protection combinations */
+/* Protection combinations - AMD64 specific, undefine any previous definitions */
+#ifdef PTE_READONLY
+#undef PTE_READONLY
+#undef PTE_READWRITE
+#undef PTE_EXECUTE
+#undef PTE_EXECUTE_READ
+#undef PTE_EXECUTE_READWRITE
+#undef PTE_WRITECOPY
+#undef PTE_EXECUTE_WRITECOPY
+#endif
+
 #define PTE_READONLY        (PTE_VALID | PTE_NX)
 #define PTE_READWRITE       (PTE_VALID | PTE_WRITE | PTE_NX)
 #define PTE_EXECUTE         (PTE_VALID)
@@ -45,7 +55,13 @@
 #define PTE_WRITECOPY       (PTE_VALID | PTE_WRITE | PTE_COPY | PTE_NX)
 #define PTE_EXECUTE_WRITECOPY (PTE_VALID | PTE_WRITE | PTE_COPY)
 
-/* Cache control */
+/* Cache control - AMD64 specific, undefine any previous definitions */
+#ifdef PTE_ENABLE_CACHE
+#undef PTE_ENABLE_CACHE
+#undef PTE_DISABLE_CACHE
+#undef PTE_WRITECOMBINED_CACHE
+#endif
+
 #define PTE_ENABLE_CACHE    0
 #define PTE_DISABLE_CACHE   (PTE_CACHEDISABLE | PTE_WRITETHROUGH)
 #define PTE_WRITECOMBINED_CACHE PTE_WRITETHROUGH
@@ -196,7 +212,7 @@ MiGetPdptEntry(PVOID Address)
     if (!(Pml4e->u.Hard.Valid))
         return NULL;
 
-    PMMPTE PdptBase = (PMMPTE)(Pml4e->u.Hard.PageFrameNumber << PAGE_SHIFT);
+    PMMPTE PdptBase = (PMMPTE)((ULONG_PTR)Pml4e->u.Hard.PageFrameNumber << PAGE_SHIFT);
     ULONG_PTR Index = ((ULONG_PTR)Address >> 30) & 0x1FF;
     return &PdptBase[Index];
 }
@@ -213,7 +229,7 @@ MiGetPdeEntry(PVOID Address)
     if (!Pdpte || !(Pdpte->u.Hard.Valid))
         return NULL;
 
-    PMMPTE PdBase = (PMMPTE)(Pdpte->u.Hard.PageFrameNumber << PAGE_SHIFT);
+    PMMPTE PdBase = (PMMPTE)((ULONG_PTR)Pdpte->u.Hard.PageFrameNumber << PAGE_SHIFT);
     ULONG_PTR Index = ((ULONG_PTR)Address >> 21) & 0x1FF;
     return &PdBase[Index];
 }
@@ -234,7 +250,7 @@ MiGetPteEntry(PVOID Address)
     if (Pde->u.Hard.LargePage)
         return Pde;  /* PDE is the final entry for 2MB pages */
 
-    PMMPTE PtBase = (PMMPTE)(Pde->u.Hard.PageFrameNumber << PAGE_SHIFT);
+    PMMPTE PtBase = (PMMPTE)((ULONG_PTR)Pde->u.Hard.PageFrameNumber << PAGE_SHIFT);
     ULONG_PTR Index = ((ULONG_PTR)Address >> 12) & 0x1FF;
     return &PtBase[Index];
 }

@@ -41,6 +41,13 @@
 #define KdpGetParameterThree(Context)  ((Context)->R3)
 #define KdpGetParameterFour(Context)   ((Context)->R4)
 
+#elif defined(_M_ARM64)
+//
+// ARM64 Parameter Passing
+//
+#define KdpGetParameterThree(Context)  ((Context)->X2)
+#define KdpGetParameterFour(Context)   ((Context)->X3)
+
 #else
 #error Unsupported Architecture
 #endif
@@ -130,6 +137,8 @@ KdpReport(IN PKTRAP_FRAME TrapFrame,
     return Handled;
 }
 
+/* ARM64 has specific implementation in kd64/arm64/kdarm64.c */
+#if !defined(_M_ARM64)
 BOOLEAN
 NTAPI
 KdpTrap(IN PKTRAP_FRAME TrapFrame,
@@ -335,3 +344,4 @@ KdIsThisAKdTrap(IN PEXCEPTION_RECORD ExceptionRecord,
         return FALSE;
     }
 }
+#endif /* !_M_ARM64 */

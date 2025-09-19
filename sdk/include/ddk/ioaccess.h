@@ -43,7 +43,7 @@ extern "C" {
 
 #define MEMORY_BARRIER()
 
-#elif defined(_PPC_) || defined(_MIPS_) || defined(_ARM_)
+#elif defined(_PPC_) || defined(_MIPS_) || defined(_ARM_) || defined(_ARM64_)
 
 #define READ_REGISTER_UCHAR(r)      (*(volatile UCHAR * const)(r))
 #define READ_REGISTER_USHORT(r)     (*(volatile USHORT * const)(r))
@@ -57,6 +57,12 @@ extern "C" {
 #define WRITE_PORT_UCHAR(p, v)      WRITE_REGISTER_UCHAR(p, (UCHAR) (v))
 #define WRITE_PORT_USHORT(p, v)     WRITE_REGISTER_USHORT(p, (USHORT) (v))
 #define WRITE_PORT_ULONG(p, v)      WRITE_REGISTER_ULONG(p, (ULONG) (v))
+
+#ifdef _ARM64_
+#define MEMORY_BARRIER() __dsb(_ARM64_BARRIER_SY)
+#else
+#define MEMORY_BARRIER()
+#endif
 
 #else
 

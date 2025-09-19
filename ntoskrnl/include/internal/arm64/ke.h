@@ -1,3 +1,6 @@
+#ifndef _NTOSKRNL_INCLUDE_INTERNAL_ARM64_KE_H
+#define _NTOSKRNL_INCLUDE_INTERNAL_ARM64_KE_H
+
 #pragma once
 
 #include "intrin_i.h"
@@ -78,18 +81,17 @@ typedef KIPCR KPCR, *PKPCR;
 /* Macro to get trap and exception frame from thread stack */
 #define KeGetTrapFrame(Thread) \
     (PKTRAP_FRAME)((ULONG_PTR)((Thread)->InitialStack) - \
-                   ALIGN_UP(sizeof(KTRAP_FRAME), STACK_ALIGN) - \
-                   ALIGN_UP(sizeof(FX_SAVE_AREA), STACK_ALIGN))
+                   ALIGN_UP(sizeof(KTRAP_FRAME), STACK_ALIGN))
 
 #define KeGetExceptionFrame(Thread) \
     (PKEXCEPTION_FRAME)((ULONG_PTR)KeGetTrapFrame(Thread) - \
                         ALIGN_UP(sizeof(KEXCEPTION_FRAME), STACK_ALIGN))
 
 /* ARM64 Thread initialization macro */
-#define KeInitializeThread(Thread, KernelStack, SystemRoutine, StartRoutine, \
-                          StartContext, ContextFrame, Teb, Process) \
-    KiInitializeThread(Thread, KernelStack, SystemRoutine, StartRoutine, \
-                      StartContext, ContextFrame, Teb, Process)
+#define KeInitializeThread(Process, Thread, SystemRoutine, StartRoutine, \
+                          StartContext, ContextFrame, Teb, KernelStack) \
+    KiInitializeThread(Process, Thread, SystemRoutine, StartRoutine, \
+                      StartContext, ContextFrame, Teb, KernelStack)
 
 /* ARM64 specific CPU features */
 #define ARM64_FEATURE_AES           0x00000001
@@ -144,18 +146,7 @@ KiInitializeKernel(
     IN PLOADER_PARAMETER_BLOCK LoaderBlock
 );
 
-VOID
-NTAPI
-KiInitializeGdt(
-    IN PKGDTENTRY64 Gdt
-);
-
-VOID
-NTAPI
-KiInitializeTss(
-    IN PKTSS64 Tss,
-    IN UINT64 Stack
-);
+/* ARM64 doesn't have GDT/TSS - these are x86/x64 specific */
 
 VOID
 NTAPI 
@@ -169,11 +160,7 @@ KiSetCacheInformation(
     VOID
 );
 
-BOOLEAN
-NTAPI
-KiInitMachineDependent(
-    VOID
-);
+/* KiInitMachineDependent - declared in generic headers */
 
 VOID
 NTAPI
@@ -190,30 +177,24 @@ VOID KiSystemCallHandler64(VOID);
 VOID KiSystemCallHandler32(VOID);
 VOID KiUnexpectedInterrupt(VOID);
 
-/* ARM64 Context switching */
-VOID
-FASTCALL
-KiSwapContext(
-    IN PKTHREAD OldThread,
-    IN PKTHREAD NewThread
-);
-
-VOID
-KiThreadStartup(
-    VOID
-);
-
-/* ARM64 User mode support */
-NTSTATUS
-NTAPI
-KiCallUserMode(
-    IN OUT PVOID *OutputBuffer,
-    IN OUT PULONG OutputLength
-);
+/* ARM64 Context switching functions - declared in generic headers */
 
 /* ARM64 specific PCR access */
 #define KeGetPcr() PCR
 #define KeGetCurrentPrcb() (&(PCR->Prcb))
+
+/* ARM64 IRQL function declarations */
+VOID
+NTAPI
+_KfLowerIrql(
+    IN KIRQL NewIrql
+);
+
+KIRQL
+NTAPI
+_KfRaiseIrql(
+    IN KIRQL NewIrql
+);
 
 /* ARM64 IRQL manipulation (using GIC priority) */
 #define KfLowerIrql(NewIrql) \
@@ -223,27 +204,47 @@ KiCallUserMode(
     _KfRaiseIrql(NewIrql)
 
 /* ARM64 specific memory management helpers */
-#define MmIsRecursiveIoFault() FALSE
+/* MmIsRecursiveIoFault is implemented as a function in mmsup.c */
 
-/* ARM64 spinlock operations */
-#define KiAcquireSpinLock(SpinLock) \
+/* ARM64 Memory Layout - MM_SYSTEM_RANGE_START defined in mm.h */
+extern PVOID MmHighestUserAddress;
+extern PVOID MmSystemRangeStart;
+
+/* KeTickCount external declaration */
+extern volatile KSYSTEM_TIME KeTickCount;
+
+/* ARM64 Performance Measurement (stub for x86 compatibility) */
+#define Ki386PerfEnd()
+
+/* ARM64 spinlock operations - use Arm64 prefix to avoid name conflict */
+#define Arm64AcquireSpinLock(SpinLock) do { \
     while (__sync_lock_test_and_set(SpinLock, 1)) { \
         while (*(volatile LONG*)(SpinLock)) \
             __asm__ volatile("yield"); \
-    }
+    } \
+} while(0)
 
-#define KiReleaseSpinLock(SpinLock) \
+#define Arm64ReleaseSpinLock(SpinLock) \
     __sync_lock_release(SpinLock)
 
-/* ARM64 atomic operations */
-#define InterlockedIncrement64(ptr) __sync_add_and_fetch(ptr, 1)
-#define InterlockedDecrement64(ptr) __sync_sub_and_fetch(ptr, 1)
-#define InterlockedExchangeAdd64(ptr, val) __sync_fetch_and_add(ptr, val)
-#define InterlockedCompareExchange64(ptr, new_val, old_val) \
-    __sync_val_compare_and_swap(ptr, old_val, new_val)
+/* ARM64 atomic operations - use system provided intrinsics */
+/* InterlockedXX functions are already defined in wdm.h */
+
+/* ARM64 CPU yield for spin loops */
+#define YieldProcessor() __yield()
 
 /* ARM64 Generic Timer definitions */
 #define ARM64_TIMER_FREQ_DEFAULT    62500000ULL  /* 62.5 MHz typical */
+
+/* win64 uses DMA macros, this one is not defined (following AMD64 pattern) */
+NTHALAPI
+NTSTATUS
+NTAPI
+HalAllocateAdapterChannel(
+    IN PADAPTER_OBJECT AdapterObject,
+    IN PWAIT_CONTEXT_BLOCK Wcb,
+    IN ULONG NumberOfMapRegisters,
+    IN PDRIVER_CONTROL ExecutionRoutine);
 
 /* ARM64 specific debugging */
 #define ARM64_BRK()                 __asm__ volatile("brk #0")
@@ -251,5 +252,190 @@ KiCallUserMode(
 #define ARM64_WFE()                 __asm__ volatile("wfe")
 #define ARM64_SEV()                 __asm__ volatile("sev")
 #define ARM64_SEVL()                __asm__ volatile("sevl")
+
+/* Missing function declarations for ARM64 */
+#ifndef _NTDDK_
+FORCEINLINE
+VOID
+KeQueryTickCount(OUT PLARGE_INTEGER TickCount)
+{
+    *TickCount = *(PLARGE_INTEGER)&KeTickCount;
+}
+
+FORCEINLINE
+ULONG
+KeGetCurrentProcessorNumber(VOID)
+{
+    return KeGetCurrentPrcb()->Number;
+}
+#endif
+
+FORCEINLINE
+KIRQL
+KeRaiseIrqlToSynchLevel(VOID)
+{
+    return KfRaiseIrql(SYNCH_LEVEL);
+}
+
+FORCEINLINE
+KIRQL
+KeRaiseIrqlToDpcLevel(VOID)
+{
+    return KfRaiseIrql(DISPATCH_LEVEL);
+}
+
+FORCEINLINE
+ULONG
+KeGetContextSwitches(
+    IN PKPRCB Prcb)
+{
+    return Prcb->KeContextSwitches;
+}
+
+/* KPROCESSOR_STATE structure accessors for ARM64 */
+/* ARM64 processor state functions - use generic implementations */
+
+/* Missing constants for ARM64 - KPCR field offsets */
+#define KPCR_SELF_PCR_OFFSET        0x018   /* Offset of Self field in KPCR */
+#define KPCR_CURRENT_PRCB_OFFSET    0x008   /* Offset of CurrentPrcb (not used on ARM64) */
+#define KPCR_CONTAINED_PRCB_OFFSET  0x180   /* Offset of PRCB in KPCR structure */
+#define KPCR_INITIAL_STACK_OFFSET   0x028   /* Initial stack offset */
+#define KPCR_STACK_LIMIT_OFFSET     0x030   /* Stack limit offset */
+#define KPRCB_PCR_PAGE_OFFSET       0x000   /* PCR page offset in PRCB */
+
+/* ARM64 doesn't have V86 mode, so define EFLAGS_V86_MASK as 0 */
+#define EFLAGS_V86_MASK 0
+
+/* ARM64 MM helpers - temporary stubs */
+#define MiPdeToPte(PDE) ((PMMPTE)(((ULONG_PTR)(PDE) & ~0xFFF) + 0x8000))  /* TODO: Implement proper ARM64 page table mapping */
+
+/* ARM64 specific kernel functions */
+FORCEINLINE
+VOID
+KiRundownThread(
+    IN PKTHREAD Thread)
+{
+    /* TODO: Implement ARM64 thread rundown */
+}
+
+FORCEINLINE
+PKTRAP_FRAME
+KiGetLinkedTrapFrame(
+    IN PKTRAP_FRAME TrapFrame)
+{
+    /* Return the linked trap frame */
+    return (PKTRAP_FRAME)TrapFrame->TrapFrame;
+}
+
+FORCEINLINE
+VOID
+DECLSPEC_NORETURN
+KiExceptionExit(
+    IN PKTRAP_FRAME TrapFrame,
+    IN PKEXCEPTION_FRAME ExceptionFrame)
+{
+    /* TODO: Implement proper ARM64 exception exit */
+    /* This function should restore context and return to the trap point */
+    /* For now, enter infinite loop as we can't properly return */
+    for(;;) {
+        __asm__ volatile("wfi");
+    }
+}
+
+FORCEINLINE
+BOOLEAN
+KiUserTrap(
+    IN PKTRAP_FRAME TrapFrame)
+{
+    /* Check if the trap came from user mode */
+    return (TrapFrame->PreviousMode == UserMode);
+}
+
+/* ARM64 cache management */
+FORCEINLINE
+VOID
+KeSweepICache(
+    IN PVOID BaseAddress,
+    IN SIZE_T FlushSize)
+{
+    /* ARM64 instruction cache invalidation */
+    __asm__ volatile("ic iallu");
+    __asm__ volatile("dsb ish");
+    __asm__ volatile("isb");
+}
+
+/* ARM64 trap frame state */
+FORCEINLINE
+BOOLEAN
+KeGetTrapFrameInterruptState(
+    IN PKTRAP_FRAME TrapFrame)
+{
+    /* Check if interrupts were enabled in the trap frame */
+    return (TrapFrame->Spsr & 0x80) == 0;
+}
+
+/* ARM64 frame register access functions */
+FORCEINLINE
+ULONG_PTR
+KeGetContextFrameRegister(
+    IN PCONTEXT Context)
+{
+    /* Return frame pointer (X29/Fp) from context */
+    return Context->Fp;
+}
+
+FORCEINLINE
+VOID
+KeSetContextFrameRegister(
+    IN PCONTEXT Context,
+    IN ULONG_PTR Frame)
+{
+    /* Set frame pointer (X29/Fp) in context */
+    Context->Fp = Frame;
+}
+
+FORCEINLINE
+ULONG_PTR
+KeGetTrapFrameStackRegister(
+    IN PKTRAP_FRAME TrapFrame)
+{
+    /* Return stack pointer from trap frame */
+    return TrapFrame->Sp;
+}
+
+FORCEINLINE
+ULONG_PTR
+KeGetTrapFrameFrameRegister(
+    IN PKTRAP_FRAME TrapFrame)
+{
+    /* Return frame pointer from trap frame */
+    return TrapFrame->Fp;
+}
+
+/* ARM64 interrupt management functions */
+FORCEINLINE
+BOOLEAN
+KeDisableInterrupts(VOID)
+{
+    ULONG64 daif;
+    __asm__ volatile("mrs %0, daif" : "=r" (daif));
+    __asm__ volatile("msr daifset, #2");  /* Disable IRQ */
+    return (daif & 0x80) == 0;  /* Return TRUE if interrupts were enabled */
+}
+
+FORCEINLINE
+VOID
+KeRestoreInterrupts(
+    IN BOOLEAN Enable)
+{
+    if (Enable)
+    {
+        __asm__ volatile("msr daifclr, #2");  /* Enable IRQ */
+    }
+    else
+    {
+        __asm__ volatile("msr daifset, #2");  /* Disable IRQ */
+    }
+}
 
 #endif /* _NTOSKRNL_INCLUDE_INTERNAL_ARM64_KE_H */

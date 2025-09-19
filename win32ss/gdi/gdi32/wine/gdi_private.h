@@ -234,6 +234,8 @@ BOOL WINAPI SetWorldTransformForMetafile(HDC hdc, const XFORM *pxform);
 #endif
 #ifdef _M_ARM
 #define DbgRaiseAssertionFailure() __emit(0xdefc)
+#elif defined(_M_ARM64)
+#define DbgRaiseAssertionFailure() __asm__ volatile("brk #0")  /* BRK #0 instruction for ARM64 */
 #else
 #define DbgRaiseAssertionFailure() __int2c()
 #endif // _M_ARM

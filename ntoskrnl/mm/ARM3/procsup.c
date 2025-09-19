@@ -1025,7 +1025,7 @@ MmInitializeProcessAddressSpace(IN PEPROCESS Process,
 
     /* This should be in hyper space, but not in the mapping range */
     Process->Vm.VmWorkingSetList = MmWorkingSetList;
-    ASSERT(((ULONG_PTR)MmWorkingSetList >= MI_MAPPING_RANGE_END) && ((ULONG_PTR)MmWorkingSetList <= HYPER_SPACE_END));
+    ASSERT(((ULONG_PTR)MmWorkingSetList >= MI_MAPPING_RANGE_END) && ((ULONG_PTR)MmWorkingSetList <= (ULONG_PTR)HYPER_SPACE_END));
 
     /* Now initialize the working set list */
     MiInitializeWorkingSetList(&Process->Vm);
@@ -1352,6 +1352,8 @@ MmCleanProcessAddressSpace(IN PEPROCESS Process)
     MmUnlockAddressSpace(&Process->Vm);
 }
 
+/* ARM64 has specific implementation in mm/arm64/procsup.c */
+#if !defined(_M_ARM64)
 VOID
 NTAPI
 MmDeleteProcessAddressSpace(IN PEPROCESS Process)
@@ -1427,6 +1429,7 @@ MmDeleteProcessAddressSpace(IN PEPROCESS Process)
     Process->Pcb.DirectoryTableBase[0] = 0;
     Process->Pcb.DirectoryTableBase[1] = 0;
 }
+#endif /* !_M_ARM64 */
 
 
 /* SYSTEM CALLS ***************************************************************/

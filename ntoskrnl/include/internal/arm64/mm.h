@@ -1,13 +1,44 @@
+#ifndef _NTOSKRNL_INCLUDE_INTERNAL_ARM64_MM_H
+#define _NTOSKRNL_INCLUDE_INTERNAL_ARM64_MM_H
+
 #pragma once
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /* ARM64 Memory Management Definitions for ReactOS Kernel */
 
 /* ARM64 Page Sizes */
 #define PAGE_SIZE               0x1000      /* 4KB */
+/* PAGE_SHIFT already defined in mmtypes.h, don't redefine */
+#ifndef PAGE_SHIFT
 #define PAGE_SHIFT              12
+#endif
 #define PAGES_PER_LARGE_PAGE    512         /* 2MB / 4KB */
 #define LARGE_PAGE_SIZE         0x200000    /* 2MB */
 #define LARGE_PAGE_SHIFT        21
+
+/* MM Pool and Zero constants - similar to ARM */
+#define MI_ZERO_PTES                           32
+#define MI_MAX_ZERO_BITS                       21
+#define SESSION_POOL_LOOKASIDES                 26
+
+/* ARM64 page table constants */
+#define PPE_PER_PAGE                           512  /* Page table entries per page */
+#define PTE_PER_PAGE                           512  /* Page table entries per page */
+#define PDE_PER_PAGE                           512  /* Page directory entries per page */
+#define PDE_TOP                                0x1FFULL  /* Top-level PDE mask */
+
+/* MM Macros for ARM64 */
+#define MiAddressToPde(x)                      ((PMMPDE)(((ULONG_PTR)(x) >> 21) & ~0xFFF))
+#define MI_MAKE_ACCESSED_PAGE(x)               do { (x)->u.Long |= 0x20; } while(0)  /* Set accessed bit */
+#define MI_MAKE_OWNER_PAGE(x)                  do { (x)->u.Long |= 0x40; } while(0)  /* Set owner bit */
+
+/* ARM64 compatibility macros for MMPTE_PROTOTYPE */
+/* On ARM64, ProtoAddress is a single 48-bit field, not split into Low/High */
+#define ProtoAddressLow ProtoAddress   /* Map ProtoAddressLow to ProtoAddress */
+#define ProtoAddressHigh ProtoAddress  /* Map ProtoAddressHigh to ProtoAddress */
 
 /* ARM64 Virtual Address Space Layout */
 #define KERNEL_BASE             0xFFFF800000000000ULL
@@ -137,185 +168,39 @@ MiInitializeProcessAddressSpace(
     IN HANDLE ProcessHandle
 );
 
-BOOLEAN
-NTAPI
-MmCreateProcessAddressSpace(
-    IN ULONG MinWs,
-    IN PEPROCESS Process,
-    IN PFN_NUMBER DirectoryTableBase
-);
+/* MmCreateProcessAddressSpace - declared in generic headers */
 
-VOID
-NTAPI
-MmDeleteProcessAddressSpace(
-    IN PEPROCESS Process
-);
-
-/* ARM64 Specific MMU Functions */
-VOID
-NTAPI
-MiInitializeMemoryManager(
-    IN PLOADER_PARAMETER_BLOCK LoaderBlock
-);
-
-BOOLEAN
-NTAPI
-MmInitializeMemoryManager(
-    IN PLOADER_PARAMETER_BLOCK LoaderBlock,
-    IN PFN_NUMBER MxFreeDescriptor,
-    IN PFN_NUMBER HighestPhysicalPage
-);
-
-VOID
-NTAPI
-MiEnableVirtualMemory(
-    VOID
-);
-
-VOID
-NTAPI
-MiSetupIdentityMapping(
-    IN PULONG64 PageDirectory,
-    IN PHYSICAL_ADDRESS StartAddress,
-    IN PHYSICAL_ADDRESS EndAddress
-);
-
-VOID
-NTAPI
-MiInitializeSystemPageTables(
-    IN PLOADER_PARAMETER_BLOCK LoaderBlock
-);
-
-/* ARM64 Cache Management */
-VOID
-NTAPI
-MiFlushTlb(
-    VOID
-);
-
-VOID
-NTAPI
-MiFlushTlbRange(
-    IN PVOID StartVa,
-    IN SIZE_T Size
-);
-
-VOID
-NTAPI
-MiInvalidateSystemCaches(
-    IN PVOID StartVa,
-    IN SIZE_T Size
-);
-
-/* ARM64 Physical Memory Management */
-PFN_NUMBER
-NTAPI
-MmGetPhysicalAddress(
-    IN PVOID BaseAddress
-);
-
-PVOID
-NTAPI
-MmMapIoSpace(
-    IN PHYSICAL_ADDRESS PhysicalAddress,
-    IN SIZE_T NumberOfBytes,
-    IN MEMORY_CACHING_TYPE CacheType
-);
-
-VOID
-NTAPI
-MmUnmapIoSpace(
-    IN PVOID BaseAddress,
-    IN SIZE_T NumberOfBytes
-);
-
-/* ARM64 Page Fault Handling */
-NTSTATUS
-NTAPI
-MmAccessFault(
-    IN ULONG FaultCode,
-    IN PVOID VirtualAddress,
-    IN KPROCESSOR_MODE PreviousMode,
-    IN PVOID TrapInformation
-);
-
-/* ARM64 Working Set Management */
-VOID
-NTAPI
-MiInitializeWorkingSetManager(
-    VOID
-);
-
-/* ARM64 Pool Management */
-VOID
-NTAPI
-MiInitializePool(
-    IN PLOADER_PARAMETER_BLOCK LoaderBlock
-);
-
-/* ARM64 Section Object Support */
-NTSTATUS
-NTAPI
-MmCreateSection(
-    OUT PVOID *SectionObject,
-    IN ACCESS_MASK DesiredAccess,
-    IN POBJECT_ATTRIBUTES ObjectAttributes OPTIONAL,
-    IN PLARGE_INTEGER MaximumSize,
-    IN ULONG SectionPageProtection,
-    IN ULONG AllocationAttributes,
-    IN HANDLE FileHandle OPTIONAL,
-    IN PFILE_OBJECT File OPTIONAL
-);
-
-/* ARM64 Memory Descriptor Lists */
-VOID
-NTAPI
-MmInitializeMdl(
-    IN PMDL MemoryDescriptorList,
-    IN PVOID BaseVa,
-    IN SIZE_T Length
-);
-
-/* ARM64 Hyperspace Management */
-VOID
-NTAPI
-MiInitializeHyperspace(
-    IN PLOADER_PARAMETER_BLOCK LoaderBlock
-);
-
-PVOID
-NTAPI
-MiMapPageInHyperSpace(
-    IN PEPROCESS Process,
-    IN PFN_NUMBER PageFrameIndex,
-    IN PKIRQL OldIrql
-);
-
-VOID
-NTAPI
-MiUnmapPageInHyperSpace(
-    IN PEPROCESS Process,
-    IN PVOID Address,
-    IN KIRQL OldIrql
-);
+/* ARM64 MM function declarations - many are declared in generic headers */
 
 /* ARM64 Constants */
 #define BYTES_TO_PAGES(Size)    (((Size) >> PAGE_SHIFT) + (((Size) & (PAGE_SIZE - 1)) != 0))
 #define PAGES_TO_BYTES(Pages)   ((Pages) << PAGE_SHIFT)
+/* ROUND_TO_PAGES already defined in wdm.h, use conditional */
+#ifndef ROUND_TO_PAGES
 #define ROUND_TO_PAGES(Size)    (((Size) + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1))
+#endif
 
 /* ARM64 Memory Layout Constants */
-#define MM_SYSTEM_RANGE_START           (PVOID)KERNEL_BASE
-#define MM_HAL_VA_START                 (PVOID)HAL_BASE
+/* MM_SYSTEM_RANGE_START already defined in DDK headers */
+#ifndef MM_HAL_VA_START
+#define MM_HAL_VA_START                 ((PVOID)0xFFFFFFFFFFC00000ULL)
+#endif
 #define MM_HYPERSPACE_START             (PVOID)HYPERSPACE_BASE
+#ifndef KSEG0_BASE
+#define KSEG0_BASE                      0xFFFF800000000000ULL  /* Kernel segment 0 base */
+#endif
+#ifndef MM_KSEG0_BASE
+#define MM_KSEG0_BASE                   KSEG0_BASE
+#endif
 
-#define MM_USER_PROBE_ADDRESS           ((ULONG_PTR)USER_SPACE_END)
-#define MM_HIGHEST_USER_ADDRESS         (PVOID)(USER_SPACE_END)
+/* MM_USER_PROBE_ADDRESS and MM_HIGHEST_USER_ADDRESS already defined in DDK headers */
 #define MM_SYSTEM_SPACE_START           (PVOID)SYSTEM_SPACE_BASE
 
 /* ARM64 Paging Macros */
 #define MiGetPteAddress(va) \
     ((PMMPTE)(PTE_BASE + (((ULONG_PTR)(va) >> 12) << 3)))
+
+#define MiAddressToPte(va) MiGetPteAddress(va)  /* Alias for compatibility */
 
 #define MiGetPdeAddress(va) \
     ((PMMPTE)(PDE_BASE + (((ULONG_PTR)(va) >> 21) << 3)))
@@ -326,10 +211,133 @@ MiUnmapPageInHyperSpace(
 #define MiGetPxeAddress(va) \
     ((PMMPTE)(PXE_BASE + (((ULONG_PTR)(va) >> 39) << 3)))
 
+/* Convert PTE to address */
+#define MiPteToAddress(pte) \
+    ((PVOID)((ULONG_PTR)(((ULONG_PTR)(pte) - PTE_BASE) >> 3) << 12))
+
 /* ARM64 PTE Base Addresses */
 #define PTE_BASE    0xFFFF000000000000ULL
 #define PDE_BASE    0xFFFF000080000000ULL
 #define PPE_BASE    0xFFFF000080400000ULL
 #define PXE_BASE    0xFFFF000080404000ULL
+#define PXE_SELFMAP 0xFFFF000080404000ULL  /* Self-mapping address for PXE */
+
+/* PFN extraction macros */
+#define PFN_FROM_PTE(v) ((v)->u.Hard.PageFrameNumber)
+#define PFN_FROM_PDE(v) ((v)->u.Hard.PageFrameNumber)
+#define PFN_FROM_PPE(v) ((v)->u.Hard.PageFrameNumber)
+#define PFN_FROM_PXE(v) ((v)->u.Hard.PageFrameNumber)
+
+/* Cache control macros for ARM64 */
+#define MI_PAGE_DISABLE_CACHE(pte) ((pte)->u.Hard.CacheType = 1)  /* Device memory */
+#define MI_PAGE_WRITE_THROUGH(pte) ((pte)->u.Hard.CacheType = 2)  /* Write-through cache */
+#define MI_PAGE_WRITE_COMBINED(pte) ((pte)->u.Hard.CacheType = 3) /* Write-combined */
+
+/* MmIsRecursiveIoFault is implemented as a function in mmsup.c */
+
+/* ARM64 Hyperspace constants */
+#define MI_HYPERSPACE_PTES              256  /* Number of hyperspace PTEs */
+#define MI_HYPERSPACE_END               (MM_HYPERSPACE_START + (MI_HYPERSPACE_PTES * PAGE_SIZE))
+#ifndef HYPER_SPACE_END
+#define HYPER_SPACE_END                 ((ULONG_PTR)0xFFFF97FFFFFFFFFFULL)
+#endif
+
+/* ARM64 additional missing constants and macros */
+#define PTE_TOP                         0x1FFULL  /* Top-level PTE mask */
+#define MI_DEBUG_MAPPING                0         /* Debug mapping flag */
+#define MM_HIGHEST_VAD_ADDRESS          ((PVOID)0x000007FFFFFFFFFFULL)  /* Highest VAD address */
+#define PDE_MAPPED_VA                   0xFFFF000080000000ULL  /* PDE mapped VA */
+#define MM_EMPTY_PTE_LIST               ((ULONG)-1)  /* Empty PTE list marker */
+#define MI_SYSTEM_PTE_BASE              ((PVOID)0xFFFF800000000000ULL)  /* System PTE base */
+#ifndef MM_SYSTEM_PTE_BASE
+#define MM_SYSTEM_PTE_BASE              MI_SYSTEM_PTE_BASE
+#endif
+
+/* ARM64 additional PTE/PDE manipulation macros */
+#define MI_MAKE_DIRTY_PAGE(pte)         do { (pte)->u.Hard.NotDirty = 0; } while(0)  /* Clear NotDirty bit */
+
+/* ARM64 function declarations */
+VOID NTAPI KeFlushProcessTb(VOID);
+VOID NTAPI KeInvalidateTlbEntry(IN PVOID VirtualAddress);
+
+/* ARM64 additional missing constants */
+/* MM_SHARED_USER_DATA_VA already defined in SDK headers as 0x7FFE0000ULL */
+#define MI_MAX_FREE_PAGE_LISTS          4   /* Maximum free page lists */
+#define MM_PTE_SOFTWARE_PROTECTION_BITS 5   /* Software protection bits */
+
+/* ARM64 PTE/PDE relationship macros */
+#define MiPteToPde(pte)                 ((PMMPDE)(((ULONG_PTR)(pte) & ~0xFFF) | 0x800))
+#define MiPdeToPpe(pde)                 ((PMMPTE)(((ULONG_PTR)(pde) & ~0xFFF) | 0x400))
+
+/* ARM64 PTE boundary checking */
+#define MiIsPteOnPdeBoundary(pte)       (((ULONG_PTR)(pte) & 0xFFF) == 0)
+
+/* ARM64 fault type checking macros */
+#define MI_IS_INSTRUCTION_FETCH(addr)   FALSE  /* TODO: Implement instruction fetch detection */
+#define MI_IS_NOT_PRESENT_FAULT(code)   ((code) & 0x1)  /* Check present bit */
+#define MI_IS_PAGE_WRITEABLE(pte)       ((pte)->u.Hard.Writable)
+#define MI_IS_PAGE_COPY_ON_WRITE(pte)   ((pte)->u.Hard.CopyOnWrite)
+#define MI_IS_PAGE_DIRTY(pte)           (!(pte)->u.Hard.NotDirty)  /* Check dirty bit (inverted) */
+
+/* ARM64 prototype PTE macros */
+#define MiProtoPteToPte(proto)          ((PMMPTE)((ULONG_PTR)(proto)))
+
+/* ARM64 mapping range constants */
+#define MI_MAPPING_RANGE_START          MM_HYPERSPACE_START
+#define MI_MAPPING_RANGE_END            ((ULONG_PTR)MI_MAPPING_RANGE_START + (MI_HYPERSPACE_PTES * PAGE_SIZE))
+
+/* ARM64 additional PTE manipulation macros */
+#define MI_MAKE_CLEAN_PAGE(pte)         do { (pte)->u.Hard.NotDirty = 1; } while(0)  /* Set NotDirty bit */
+#define MiPdeToAddress(pde)             ((PVOID)((ULONG_PTR)(((ULONG_PTR)(pde) - PDE_BASE) >> 3) << 21))
+
+/* ARM64 page fault type macros */
+#define MI_IS_PAGE_LARGE(pte)           (!(pte)->u.Hard.NotLargePage)  /* Check large page bit (inverted) */
+#define MI_IS_WRITE_ACCESS(code)        ((code) & 0x2)  /* Check write access bit */
+#define MI_IS_PAGE_EXECUTABLE(pte)      (!(pte)->u.Hard.UserNoExecute && !(pte)->u.Hard.PrivilegedNoExecute)
+
+/* ARM64 additional constants */
+#define MI_NONPAGED_POOL_END            ((PVOID)0xFFFF900000000000ULL)  /* Non-paged pool end */
+
+/* Missing constants from mminit.c for ARM64 */
+#define MI_DEFAULT_SYSTEM_RANGE_START   (PVOID)0xFFFF800000000000ULL
+#define MI_USER_PROBE_ADDRESS           (PVOID)0x00007FFFFFFFFFFF0ULL
+/* MI_HIGHEST_USER_ADDRESS already defined in SDK headers as (PVOID)0x00007FFFFFFFFFFFULL */
+#define MI_HIGHEST_SYSTEM_ADDRESS       (PVOID)0xFFFFFFFFFFFFFFFFULL
+#define MM_EMPTY_LIST                   ((ULONG_PTR)-1)
+
+/* System PTE tuning constants for ARM64 */
+#define MI_MIN_PAGES_FOR_SYSPTE_TUNING          ((19 * 1024 * 1024) >> PAGE_SHIFT)
+#define MI_MIN_PAGES_FOR_SYSPTE_BOOST           ((32 * 1024 * 1024) >> PAGE_SHIFT)
+#define MI_MIN_PAGES_FOR_SYSPTE_BOOST_BOOST     ((256 * 1024 * 1024) >> PAGE_SHIFT)
+
+/* Memory allocation fragment constants for ARM64 */
+#define MI_ALLOCATION_FRAGMENT                  (64 * 1024)
+#define MI_MIN_ALLOCATION_FRAGMENT              (4 * 1024)
+#define MI_MAX_ALLOCATION_FRAGMENT              (2 * 1024 * 1024)
+
+/* Subsection PTE macro for ARM64 */
+#define MiSubsectionPteToSubsection(x)          \
+    (PMMPTE)((LONG64)(x)->u.Subsect.SubsectionAddress)
+
+/* Additional missing constants for ARM64 MM initialization */
+#define MI_PAGED_POOL_START             (PVOID)0xFFFF900000000000ULL
+#define MI_MIN_INIT_PAGED_POOLSIZE      (32 * 1024 * 1024)  /* 32MB */
+#define MI_SYSTEM_CACHE_WS_START        0xFFFFA00000001000ULL
+#define MI_SYSTEM_CACHE_START           0xFFFFA00000000000ULL
+
+/* Cache coloring constants for ARM64 */
+#define MI_SECONDARY_COLORS             8    /* Number of secondary colors */
+#define MI_MAX_SECONDARY_COLORS         16   /* Maximum secondary colors */
+#define MI_MIN_SECONDARY_COLORS         2    /* Minimum secondary colors */
+
+/* Address-to-PTE offset macro for ARM64 */
+#define MiAddressToPteOffset(va)        (((ULONG_PTR)(va) >> 12) & 0x1FF)
+
+/* ARM64 function stubs */
+BOOLEAN NTAPI MiSynchronizeSystemPde(IN PMMPDE PointerPde);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif /* _NTOSKRNL_INCLUDE_INTERNAL_ARM64_MM_H */

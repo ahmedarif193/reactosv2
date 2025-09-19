@@ -107,6 +107,8 @@
 @ stdcall -arch=i386 ExInterlockedExchangeUlong(ptr long ptr)
 @ stdcall ExInterlockedExtendZone(ptr ptr long ptr)
 @ fastcall -arch=i386 ExInterlockedFlushSList(ptr)
+@ stdcall -arch=arm64 ExInterlockedFlushSList(ptr)
+@ stdcall -arch=arm64 ExInitializeSListHead(ptr)
 @ stdcall -arch=i386 ExInterlockedIncrementLong(ptr ptr)
 @ stdcall ExInterlockedInsertHeadList(ptr ptr ptr)
 @ stdcall ExInterlockedInsertTailList(ptr ptr ptr)
@@ -120,7 +122,7 @@
 @ stdcall ExIsResourceAcquiredSharedLite(ptr)
 @ stdcall ExLocalTimeToSystemTime(ptr ptr)
 @ stdcall ExNotifyCallback(ptr ptr ptr)
-@ stdcall -arch=x86_64,arm ExQueryDepthSList(ptr) RtlQueryDepthSList
+@ stdcall -arch=x86_64,arm64 ExQueryDepthSList(ptr) RtlQueryDepthSList
 @ stdcall ExQueryPoolBlockSize(ptr ptr)
 @ stdcall ExQueueWorkItem(ptr long)
 @ stdcall ExRaiseAccessViolation()
@@ -171,9 +173,15 @@
 @ fastcall ExfReleasePushLockShared(ptr)
 @ fastcall ExfTryToWakePushLock(ptr)
 @ fastcall ExfUnblockPushLock(ptr ptr)
-@ stdcall -arch=x86_64,arm ExpInterlockedFlushSList(ptr) RtlInterlockedFlushSList
-@ stdcall -arch=x86_64,arm ExpInterlockedPopEntrySList(ptr ptr) RtlInterlockedPopEntrySList
-@ stdcall -arch=x86_64,arm ExpInterlockedPushEntrySList(ptr ptr) RtlInterlockedPushEntrySList
+@ stdcall -arch=x86_64 ExpInterlockedFlushSList(ptr) RtlInterlockedFlushSList
+@ stdcall -arch=x86_64 ExpInterlockedPopEntrySList(ptr) RtlInterlockedPopEntrySList
+@ stdcall -arch=x86_64 ExpInterlockedPushEntrySList(ptr ptr) RtlInterlockedPushEntrySList
+@ stdcall -arch=arm64 ExpInterlockedFlushSList(ptr) RtlInterlockedFlushSList
+@ stdcall -arch=arm64 ExpInterlockedPopEntrySList(ptr) RtlInterlockedPopEntrySList
+@ stdcall -arch=arm64 ExpInterlockedPushEntrySList(ptr ptr) RtlInterlockedPushEntrySList
+@ stdcall -arch=arm64 ExInterlockedPopEntrySListResume()
+@ stdcall -arch=arm64 ExInterlockedPopEntrySListEnd()
+@ stdcall -arch=arm64 ExInterlockedPopEntrySListFault()
 @ fastcall -arch=i386 Exfi386InterlockedDecrementLong(ptr)
 @ fastcall -arch=i386 Exfi386InterlockedExchangeUlong(ptr long)
 @ fastcall -arch=i386 Exfi386InterlockedIncrementLong(ptr)
@@ -329,6 +337,7 @@
 @ stdcall -arch=arm InterlockedPopEntrySList(ptr) RtlInterlockedPopEntrySList
 @ stdcall -arch=arm InterlockedPushEntrySList(ptr ptr) RtlInterlockedPushEntrySList
 @ stdcall -arch=x86_64 InitializeSListHead(ptr) RtlInitializeSListHead
+@ stdcall -arch=arm64 InitializeSListHead(ptr) ExInitializeSListHead
 @ stdcall IoAcquireCancelSpinLock(ptr)
 @ stdcall IoAcquireRemoveLockEx(ptr ptr str long long)
 @ stdcall IoAcquireVpbSpinLock(ptr)
@@ -1039,12 +1048,12 @@
 @ stdcall PsTerminateSystemThread(long)
 @ extern PsThreadType
 @ stdcall PsWrapApcWow64Thread(ptr ptr)
-@ stdcall -arch=i386,arm READ_REGISTER_BUFFER_UCHAR(ptr ptr long)
-@ stdcall -arch=i386,arm READ_REGISTER_BUFFER_ULONG(ptr ptr long)
-@ stdcall -arch=i386,arm READ_REGISTER_BUFFER_USHORT(ptr ptr long)
-@ stdcall -arch=i386,arm READ_REGISTER_UCHAR(ptr)
-@ stdcall -arch=i386,arm READ_REGISTER_ULONG(ptr)
-@ stdcall -arch=i386,arm READ_REGISTER_USHORT(ptr)
+@ stdcall -arch=i386,arm,arm64 READ_REGISTER_BUFFER_UCHAR(ptr ptr long)
+@ stdcall -arch=i386,arm,arm64 READ_REGISTER_BUFFER_ULONG(ptr ptr long)
+@ stdcall -arch=i386,arm,arm64 READ_REGISTER_BUFFER_USHORT(ptr ptr long)
+@ stdcall -arch=i386,arm,arm64 READ_REGISTER_UCHAR(ptr)
+@ stdcall -arch=i386,arm,arm64 READ_REGISTER_ULONG(ptr)
+@ stdcall -arch=i386,arm,arm64 READ_REGISTER_USHORT(ptr)
 @ stdcall RtlAbsoluteToSelfRelativeSD(ptr ptr ptr)
 @ stdcall RtlAddAccessAllowedAce(ptr long long ptr)
 @ stdcall RtlAddAccessAllowedAceEx(ptr long long long ptr)
@@ -1393,12 +1402,12 @@
 @ cdecl VfFailDriver(long long long ptr ptr ptr)
 @ cdecl VfFailSystemBIOS(long long long ptr ptr ptr)
 @ stdcall VfIsVerificationEnabled(long ptr)
-@ stdcall -arch=i386,arm WRITE_REGISTER_BUFFER_UCHAR(ptr ptr long)
-@ stdcall -arch=i386,arm WRITE_REGISTER_BUFFER_ULONG(ptr ptr long)
-@ stdcall -arch=i386,arm WRITE_REGISTER_BUFFER_USHORT(ptr ptr long)
-@ stdcall -arch=i386,arm WRITE_REGISTER_UCHAR(ptr long)
-@ stdcall -arch=i386,arm WRITE_REGISTER_ULONG(ptr long)
-@ stdcall -arch=i386,arm WRITE_REGISTER_USHORT(ptr long)
+@ stdcall -arch=i386,arm,arm64 WRITE_REGISTER_BUFFER_UCHAR(ptr ptr long)
+@ stdcall -arch=i386,arm,arm64 WRITE_REGISTER_BUFFER_ULONG(ptr ptr long)
+@ stdcall -arch=i386,arm,arm64 WRITE_REGISTER_BUFFER_USHORT(ptr ptr long)
+@ stdcall -arch=i386,arm,arm64 WRITE_REGISTER_UCHAR(ptr long)
+@ stdcall -arch=i386,arm,arm64 WRITE_REGISTER_ULONG(ptr long)
+@ stdcall -arch=i386,arm,arm64 WRITE_REGISTER_USHORT(ptr long)
 @ stdcall WmiFlushTrace(ptr)
 @ fastcall WmiGetClock(long ptr)
 @ stdcall WmiQueryTrace(ptr)

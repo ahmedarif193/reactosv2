@@ -15,6 +15,34 @@
 
 #include <ntoskrnl.h>
 
+#ifdef _M_ARM64
+/* ARM64 doesn't have PS/2 ports - provide stubs */
+
+VOID
+NTAPI
+KbdEnableMouse(VOID)
+{
+    /* No PS/2 on ARM64 */
+}
+
+VOID
+NTAPI
+KbdDisableMouse(VOID)
+{
+    /* No PS/2 on ARM64 */
+}
+
+CHAR
+NTAPI
+KdbpTryGetCharKeyboard(UINT32 Retry)
+{
+    UNREFERENCED_PARAMETER(Retry);
+    /* No PS/2 on ARM64 */
+    return -1;
+}
+
+#else /* !_M_ARM64 */
+
 #define KBD_STATUS_REG          0x64
 #define KBD_CNTL_REG            0x64
 #define KBD_DATA_REG            0x60
@@ -143,5 +171,7 @@ KdbpTryGetCharKeyboard(PULONG ScanCode, ULONG Retry)
 
     return -1;
 }
+
+#endif /* !_M_ARM64 */
 
 /* EOF */

@@ -14,12 +14,20 @@
 
 /* GLOBALS ******************************************************************/
 
-/* System call table */
-PVOID KeServiceDescriptorTable[4];
-ULONG KeServiceDescriptorTableShadow[4];
+/* System call table - defined in ke/procobj.c and ke/krnlinit.c */
+extern KSERVICE_TABLE_DESCRIPTOR KeServiceDescriptorTable[SSDT_MAX_ENTRIES];
+extern KSERVICE_TABLE_DESCRIPTOR KeServiceDescriptorTableShadow[SSDT_MAX_ENTRIES];
 
-/* Maximum system call number */
-ULONG KiServiceLimit = 0;
+/* Maximum system call number - defined in ke/krnlinit.c */
+extern ULONG KiServiceLimit;
+
+/* ARM64 System Call Service Table */
+PVOID KiServiceTable[] = {
+    /* TODO: This should be auto-generated from ntoskrnl.spec */
+    /* For now, provide minimal stubs to unblock the build */
+    NULL, /* Entry 0 - placeholder */
+    /* Add actual service functions as they are implemented */
+};
 
 /* FUNCTIONS *****************************************************************/
 
@@ -35,8 +43,6 @@ VOID
 NTAPI
 KiInitializeSystemCall(VOID)
 {
-    ULONG64 Vbar;
-
     DPRINT1("KiInitializeSystemCall: ARM64 syscall init stub\n");
 
     /* TODO: Set up exception vector table */
@@ -85,11 +91,9 @@ KiSystemService(
     IN PKTRAP_FRAME TrapFrame)
 {
     ULONG SystemCallNumber;
-    PVOID *SystemCallTable;
+    PULONG_PTR SystemCallTable;
     PVOID SystemCallFunction;
     ULONG NumberOfParameters;
-    ULONG64 ReturnValue;
-
     DPRINT1("KiSystemService: ARM64 syscall dispatcher stub\n");
 
     /* TODO: Get system call number from trap frame */
@@ -108,13 +112,14 @@ KiSystemService(
     /* Bits 31:12 = table index
      * Bits 11:0 = service number
      */
-    SystemCallTable = KeServiceDescriptorTable[0];
+    SystemCallTable = KeServiceDescriptorTable[0].Base;
 
     /* TODO: Get function pointer from table */
-    SystemCallFunction = SystemCallTable[SystemCallNumber];
+    SystemCallFunction = (PVOID)SystemCallTable[SystemCallNumber];
 
     /* TODO: Get parameter count (encoded in table) */
-    NumberOfParameters = 0; /* From service table */
+    UNREFERENCED_PARAMETER(NumberOfParameters); /* TODO: Get from service table */
+    UNREFERENCED_PARAMETER(SystemCallFunction); /* TODO: Call the function */
 
     /* TODO: Copy parameters from registers/stack if needed */
     /* First 8 parameters in X0-X7
@@ -125,8 +130,8 @@ KiSystemService(
     /* User-mode pointers must be validated */
 
     /* TODO: Call the system service */
-    /* ReturnValue = SystemCallFunction(...); */
-    ReturnValue = STATUS_NOT_IMPLEMENTED;
+    /* ULONG64 ReturnValue = SystemCallFunction(...); */
+    /* ReturnValue = STATUS_NOT_IMPLEMENTED; */
 
     /* TODO: Set return value in trap frame */
     /* TrapFrame->X0 = ReturnValue; */
@@ -181,38 +186,46 @@ KiSvcHandler(
  * @param ServiceLimit - Number of services in table
  * @param ArgumentTable - Pointer to argument count table
  * @return BOOLEAN - Success or failure
+ *
+ * NOTE: The real implementation is in ke/procobj.c
+ * This is disabled to avoid duplicate symbols
  */
+#if 0
 BOOLEAN
 NTAPI
 KeAddSystemServiceTable(
-    IN ULONG TableIndex,
-    IN PVOID ServiceTable,
-    IN PVOID CounterTable,
-    IN ULONG ServiceLimit,
-    IN PVOID ArgumentTable)
+    IN PULONG_PTR Base,
+    IN PULONG Count,
+    IN ULONG Limit,
+    IN PUCHAR Number,
+    IN ULONG Index)
 {
     DPRINT1("KeAddSystemServiceTable: Index %u, Limit %u - ARM64 stub\n",
-            TableIndex, ServiceLimit);
+            Index, Limit);
 
     /* Validate table index */
-    if (TableIndex >= 4)
+    if (Index >= 4)
     {
         return FALSE;
     }
 
     /* TODO: Store service table information */
-    KeServiceDescriptorTable[TableIndex] = ServiceTable;
+    KeServiceDescriptorTable[Index].Base = Base;
+    KeServiceDescriptorTable[Index].Count = Count;
+    KeServiceDescriptorTable[Index].Limit = Limit;
+    KeServiceDescriptorTable[Index].Number = Number;
     /* TODO: Store counter table if provided */
     /* TODO: Store argument table */
 
     /* Update global service limit */
-    if (TableIndex == 0 && ServiceLimit > KiServiceLimit)
+    if (Index == 0 && Limit > KiServiceLimit)
     {
-        KiServiceLimit = ServiceLimit;
+        KiServiceLimit = Limit;
     }
 
     return TRUE;
 }
+#endif /* Duplicate KeAddSystemServiceTable */
 
 /*
  * @brief Fast user-mode callback mechanism
@@ -261,17 +274,17 @@ KiUserModeCallback(
  * @brief Return from user-mode callback
  *
  * @param Result - Result from callback
- * @param ResultLength - Length of result data
+ * @param Status - Status code from callback
  * @return VOID
  */
 VOID
 NTAPI
 KiCallbackReturn(
     IN PVOID Result,
-    IN ULONG ResultLength)
+    IN NTSTATUS Status)
 {
-    DPRINT1("KiCallbackReturn: Result %p, Length %u - ARM64 stub\n",
-            Result, ResultLength);
+    DPRINT1("KiCallbackReturn: Result %p, Status %lx - ARM64 stub\n",
+            Result, Status);
 
     /* TODO: Restore saved kernel state */
     /* Restore kernel stack, registers, etc. */
@@ -280,4 +293,9 @@ KiCallbackReturn(
 
     /* TODO: Resume kernel execution after callback */
     /* Continue from where callback was initiated */
+
+    /* This function should never return - halt if we somehow get here */
+    for (;;) {
+        /* Spin forever */
+    }
 }

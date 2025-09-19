@@ -69,7 +69,9 @@ static BOOLEAN KdbpCmdThread(ULONG Argc, PCHAR Argv[]);
 static BOOLEAN KdbpCmdProc(ULONG Argc, PCHAR Argv[]);
 
 static BOOLEAN KdbpCmdMod(ULONG Argc, PCHAR Argv[]);
+#if defined(_M_IX86) || defined(_M_AMD64)
 static BOOLEAN KdbpCmdGdtLdtIdt(ULONG Argc, PCHAR Argv[]);
+#endif
 static BOOLEAN KdbpCmdPcr(ULONG Argc, PCHAR Argv[]);
 #ifdef _M_IX86
 static BOOLEAN KdbpCmdTss(ULONG Argc, PCHAR Argv[]);
@@ -380,9 +382,11 @@ static const struct
     /* System information */
     { NULL, NULL, "System info", NULL },
     { "mod", "mod [address]", "List all modules or the one containing address.", KdbpCmdMod },
+#if defined(_M_IX86) || defined(_M_AMD64)
     { "gdt", "gdt", "Display the global descriptor table.", KdbpCmdGdtLdtIdt },
     { "ldt", "ldt", "Display the local descriptor table.", KdbpCmdGdtLdtIdt },
     { "idt", "idt", "Display the interrupt descriptor table.", KdbpCmdGdtLdtIdt },
+#endif
     { "pcr", "pcr", "Display the processor control region.", KdbpCmdPcr },
 #ifdef _M_IX86
     { "tss", "tss [selector|*descaddr]", "Display the current task state segment, or the one specified by its selector number or descriptor address.", KdbpCmdTss },
@@ -924,6 +928,7 @@ KdbpCmdRegs(
     PCHAR Argv[])
 {
     PCONTEXT Context = KdbCurrentTrapFrame;
+#if defined(_M_IX86) || defined(_M_AMD64)
     INT i;
     static const PCHAR EflagsBits[32] = { " CF", NULL, " PF", " BIT3", " AF", " BIT5",
                                           " ZF", " SF", " TF", " IF", " DF", " OF",
@@ -932,6 +937,7 @@ KdbpCmdRegs(
                                           " BIT23", " BIT24", " BIT25", " BIT26",
                                           " BIT27", " BIT28", " BIT29", " BIT30",
                                           " BIT31" };
+#endif
 
     if (Argv[0][0] == 'r') /* regs */
     {
@@ -948,7 +954,7 @@ KdbpCmdRegs(
                   Context->Ecx, Context->Edx,
                   Context->Esi, Context->Edi,
                   Context->Ebp);
-#else
+#elif defined(_M_AMD64)
         KdbpPrint("CS:RIP  0x%04x:0x%p\n"
                   "SS:RSP  0x%04x:0x%p\n"
                   "   RAX  0x%p     RBX  0x%p\n"
@@ -961,7 +967,45 @@ KdbpCmdRegs(
                   Context->Rcx, Context->Rdx,
                   Context->Rsi, Context->Rdi,
                   Context->Rbp);
+#elif defined(_M_ARM64)
+        KdbpPrint("PSTATE  0x%08x  PC   0x%p\n"
+                  "SP      0x%p     LR   0x%p\n"
+                  "   X0   0x%p     X1   0x%p\n"
+                  "   X2   0x%p     X3   0x%p\n"
+                  "   X4   0x%p     X5   0x%p\n"
+                  "   X6   0x%p     X7   0x%p\n"
+                  "   X8   0x%p     X9   0x%p\n"
+                  "   X10  0x%p     X11  0x%p\n"
+                  "   X12  0x%p     X13  0x%p\n"
+                  "   X14  0x%p     X15  0x%p\n"
+                  "   X16  0x%p     X17  0x%p\n"
+                  "   X18  0x%p     X19  0x%p\n"
+                  "   X20  0x%p     X21  0x%p\n"
+                  "   X22  0x%p     X23  0x%p\n"
+                  "   X24  0x%p     X25  0x%p\n"
+                  "   X26  0x%p     X27  0x%p\n"
+                  "   X28  0x%p     FP   0x%p\n",
+                  Context->Cpsr, Context->Pc,
+                  Context->Sp, Context->Lr,
+                  Context->X0, Context->X1,
+                  Context->X2, Context->X3,
+                  Context->X4, Context->X5,
+                  Context->X6, Context->X7,
+                  Context->X8, Context->X9,
+                  Context->X10, Context->X11,
+                  Context->X12, Context->X13,
+                  Context->X14, Context->X15,
+                  Context->X16, Context->X17,
+                  Context->X18, Context->X19,
+                  Context->X20, Context->X21,
+                  Context->X22, Context->X23,
+                  Context->X24, Context->X25,
+                  Context->X26, Context->X27,
+                  Context->X28, Context->Fp);
+#else
+#error Unsupported architecture
 #endif
+#ifndef _M_ARM64
         /* Display the EFlags */
         KdbpPrint("EFLAGS  0x%08x ", Context->EFlags);
         for (i = 0; i < 32; i++)
@@ -984,9 +1028,24 @@ KdbpCmdRegs(
             }
         }
         KdbpPrint("\n");
+#else
+        /* Display ARM64 CPSR/PSTATE bits */
+        KdbpPrint("PSTATE  0x%08x ", Context->Cpsr);
+        if (Context->Cpsr & 0x80000000) KdbpPrint(" N");
+        if (Context->Cpsr & 0x40000000) KdbpPrint(" Z");
+        if (Context->Cpsr & 0x20000000) KdbpPrint(" C");
+        if (Context->Cpsr & 0x10000000) KdbpPrint(" V");
+        KdbpPrint(" [EL%d]", (Context->Cpsr >> 2) & 3);
+        if (Context->Cpsr & 0x200) KdbpPrint(" D");
+        if (Context->Cpsr & 0x100) KdbpPrint(" A");
+        if (Context->Cpsr & 0x80) KdbpPrint(" I");
+        if (Context->Cpsr & 0x40) KdbpPrint(" F");
+        KdbpPrint("\n");
+#endif
     }
     else if (Argv[0][0] == 'c') /* cregs */
     {
+#if defined(_M_IX86) || defined(_M_AMD64)
         ULONG Cr0, Cr2, Cr3, Cr4;
         KDESCRIPTOR Gdtr = {0}, Idtr = {0};
         USHORT Ldtr, Tr;
@@ -1062,9 +1121,15 @@ KdbpCmdRegs(
         KdbpPrint("LDTR 0x%04x\n", Ldtr);
         KdbpPrint("IDTR Base 0x%08x  Size 0x%04x\n", Idtr.Base, Idtr.Limit);
         KdbpPrint("TR   0x%04x\n", Tr);
+#elif defined(_M_ARM64)
+        KdbpPrint("ARM64 does not have x86-style control registers\n");
+        KdbpPrint("System registers would be accessed through MSR/MRS instructions\n");
+        KdbpPrint("Use 'sregs' to see processor state\n");
+#endif
     }
     else if (Argv[0][0] == 's') /* sregs */
     {
+#if defined(_M_IX86) || defined(_M_AMD64)
         KdbpPrint("CS  0x%04x  Index 0x%04x  %cDT RPL%d\n",
                   Context->SegCs & 0xffff, (Context->SegCs & 0xffff) >> 3,
                   (Context->SegCs & (1 << 2)) ? 'L' : 'G', Context->SegCs & 3);
@@ -1078,10 +1143,18 @@ KdbpCmdRegs(
                   Context->SegGs, Context->SegGs >> 3, (Context->SegGs & (1 << 2)) ? 'L' : 'G', Context->SegGs & 3);
         KdbpPrint("SS  0x%04x  Index 0x%04x  %cDT RPL%d\n",
                   Context->SegSs, Context->SegSs >> 3, (Context->SegSs & (1 << 2)) ? 'L' : 'G', Context->SegSs & 3);
+#elif defined(_M_ARM64)
+        KdbpPrint("ARM64 does not have segment registers\n");
+        KdbpPrint("PSTATE: 0x%08x\n", Context->Cpsr);
+        KdbpPrint("Use 'regs' to see general purpose registers\n");
+#else
+        KdbpPrint("Segment registers not supported on this architecture\n");
+#endif
     }
     else /* dregs */
     {
         ASSERT(Argv[0][0] == 'd');
+#if defined(_M_IX86) || defined(_M_AMD64)
         KdbpPrint("DR0  0x%08x\n"
                   "DR1  0x%08x\n"
                   "DR2  0x%08x\n"
@@ -1090,6 +1163,23 @@ KdbpCmdRegs(
                   "DR7  0x%08x\n",
                   Context->Dr0, Context->Dr1, Context->Dr2, Context->Dr3,
                   Context->Dr6, Context->Dr7);
+#elif defined(_M_ARM64)
+        /* ARM64 breakpoint and watchpoint registers */
+        KdbpPrint("Breakpoint Control Registers:\n");
+        for (int i = 0; i < ARM64_MAX_BREAKPOINTS; i++)
+        {
+            KdbpPrint("BCR%d 0x%08x  BVR%d 0x%016llx\n",
+                      i, Context->Bcr[i], i, Context->Bvr[i]);
+        }
+        KdbpPrint("Watchpoint Control Registers:\n");
+        for (int i = 0; i < ARM64_MAX_WATCHPOINTS; i++)
+        {
+            KdbpPrint("WCR%d 0x%08x  WVR%d 0x%016llx\n",
+                      i, Context->Wcr[i], i, Context->Wvr[i]);
+        }
+#else
+        KdbpPrint("Debug registers not supported on this architecture\n");
+#endif
     }
 
     return TRUE;
@@ -1959,7 +2049,7 @@ KdbpCmdThread(
                   "  Stack Base:     0x%08x\n"
                   "  Kernel Stack:   0x%08x\n"
                   "  Trap Frame:     0x%08x\n"
-#ifndef _M_AMD64
+#if !defined(_M_AMD64) && !defined(_M_ARM64)
                   "  NPX State:      %s (0x%x)\n"
 #endif
                   , (Argc < 2) ? "Current Thread:\n" : ""
@@ -1972,7 +2062,7 @@ KdbpCmdThread(
                   , Thread->Tcb.StackBase
                   , Thread->Tcb.KernelStack
                   , Thread->Tcb.TrapFrame
-#ifndef _M_AMD64
+#if !defined(_M_AMD64) && !defined(_M_ARM64)
                   , NPX_STATE_TO_STRING(Thread->Tcb.NpxState), Thread->Tcb.NpxState
 #endif
             );
@@ -2169,6 +2259,7 @@ KdbpCmdMod(
     return TRUE;
 }
 
+#if defined(_M_IX86) || defined(_M_AMD64)
 /*!\brief Displays GDT, LDT or IDT.
  */
 static BOOLEAN
@@ -2387,6 +2478,7 @@ KdbpCmdGdtLdtIdt(
 
     return TRUE;
 }
+#endif /* _M_IX86 || _M_AMD64 */
 
 /*!\brief Displays the KPCR
  */
@@ -2441,6 +2533,12 @@ KdbpCmdPcr(
               , Pcr->VdmAlert
               , Pcr->SecondLevelCacheSize
               , Pcr->InterruptMode);
+#elif defined(_M_ARM64)
+    KdbpPrint("  Self:                          0x%p\n", Pcr->Self);
+    KdbpPrint("  CurrentIrql:                   %u\n", Pcr->CurrentIrql);
+    KdbpPrint("  MajorVersion:                  0x%x\n", Pcr->MajorVersion);
+    KdbpPrint("  MinorVersion:                  0x%x\n", Pcr->MinorVersion);
+    KdbpPrint("  KdVersionBlock:                0x%p\n", Pcr->KdVersionBlock);
 #else
     KdbpPrint("  GdtBase:                       0x%p\n", Pcr->GdtBase);
     KdbpPrint("  TssBase:                       0x%p\n", Pcr->TssBase);

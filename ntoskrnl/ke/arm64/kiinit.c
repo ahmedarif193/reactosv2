@@ -11,10 +11,14 @@
 #define NDEBUG
 #include <debug.h>
 
+/* ARM64 Specific Constants */
+#define PCR_MAJOR_VERSION       1
+#define PCR_MINOR_VERSION       1
+
 /* GLOBALS *******************************************************************/
 
 /* ARM64 processor information */
-ULONG KiProcessorArchitecture = PROCESSOR_ARCHITECTURE_ARM64;
+ULONG KiProcessorArchitecture = PROCESSOR_ARCHITECTURE_ARM;
 ULONG KiProcessorLevel = 8;  /* ARMv8 */
 ULONG KiProcessorRevision = 0;
 
@@ -27,6 +31,9 @@ ULONG KiIcacheLineSize = 64;
 
 /* ARM64 Timer frequency */
 ULONG64 KiTimerFrequency = 0;
+
+/* Process counter for performance monitoring */
+ULONG ProcessCount;
 
 /* PCR and PRCB */
 KIPCR KiInitialPcr;
@@ -222,27 +229,27 @@ KiInitializeArm64Pcr(
     /* Set up basic PCR fields */
     Pcr->MajorVersion = PCR_MAJOR_VERSION;
     Pcr->MinorVersion = PCR_MINOR_VERSION;
-    Pcr->PrcbData.MajorVersion = PRCB_MAJOR_VERSION;
-    Pcr->PrcbData.MinorVersion = PRCB_MINOR_VERSION;
-    Pcr->PrcbData.BuildType = 0;
+    Pcr->Prcb.MajorVersion = PRCB_MAJOR_VERSION;
+    Pcr->Prcb.MinorVersion = PRCB_MINOR_VERSION;
+    Pcr->Prcb.BuildType = 0;
     
     /* Set processor number */
-    Pcr->PrcbData.Number = (UCHAR)ProcessorNumber;
-    Pcr->PrcbData.SetMember = 1ULL << ProcessorNumber;
+    Pcr->Prcb.Number = (UCHAR)ProcessorNumber;
+    Pcr->Prcb.SetMember = 1ULL << ProcessorNumber;
     
     /* Initialize PRCB */
-    Pcr->PrcbData.CurrentThread = IdleThread;
-    Pcr->PrcbData.NextThread = NULL;
-    Pcr->PrcbData.IdleThread = IdleThread;
+    Pcr->Prcb.CurrentThread = IdleThread;
+    Pcr->Prcb.NextThread = NULL;
+    Pcr->Prcb.IdleThread = IdleThread;
     
     /* Set DPC stack */
-    Pcr->PrcbData.DpcStack = DpcStack;
+    Pcr->Prcb.DpcStack = DpcStack;
     
     /* Initialize processor features */
-    Pcr->PrcbData.FeatureBits = (ULONG)KiArm64Features;
+    Pcr->Prcb.FeatureBits = (ULONG)KiArm64Features;
     
     /* Initialize cache information */
-    Pcr->PrcbData.CacheLineSize = KiDcacheLineSize;
+    Pcr->Prcb.CacheLineSize = KiDcacheLineSize;
     
     DPRINT("ARM64: PCR initialized for processor %u\n", ProcessorNumber);
 }
@@ -304,11 +311,11 @@ KiInitializeKernel(
     KiInitializeArm64Pcr((PKIPCR)&KiInitialPcr, Number, InitThread, IdleStack);
     
     /* Initialize PRCB */
-    RtlCopyMemory(&KiInitialPrcb, &KiInitialPcr.PrcbData, sizeof(KPRCB));
+    RtlCopyMemory(&KiInitialPrcb, &KiInitialPcr.Prcb, sizeof(KPRCB));
     
     /* Set up initial thread */
     InitThread->ApcState.Process = InitProcess;
-    InitProcess->Pcb.DirectoryTableBase = __readttbr1_el1();
+    InitProcess->DirectoryTableBase[0] = __readttbr1_el1();
     
     DPRINT("ARM64: Kernel initialization completed\n");
     
@@ -336,5 +343,46 @@ KiSystemStartupBootStack(
     KiSystemStartup(LoaderBlock);
     
     /* Should never reach here */
-    KeBugCheck(KERNEL_INITIALIZATION_FAILURE);
+    KeBugCheck(PHASE0_INITIALIZATION_FAILED);
+}
+
+/**
+ * @brief Main system startup routine for ARM64
+ */
+CODE_SEG("INIT")
+DECLSPEC_NORETURN
+VOID
+NTAPI
+KiSystemStartup(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
+{
+    CCHAR Cpu;
+
+    DPRINT("ARM64: KiSystemStartup - LoaderBlock at 0x%p\n", LoaderBlock);
+
+    /* TODO: Get the current CPU number - for now assume CPU 0 */
+    Cpu = 0;
+    KeNumberProcessors = 1; // Start with 1 processor
+
+    /* LoaderBlock initialization for Cpu 0 */
+    if (Cpu == 0)
+    {
+        /* Set the initial LoaderBlock pointer */
+        KeLoaderBlock = LoaderBlock;
+
+        /* TODO: Initialize PCR for ARM64 */
+        /* TODO: Initialize IDT/Exception vectors */
+        /* TODO: Initialize memory management */
+        /* TODO: Initialize scheduler */
+    }
+
+    /* TODO: For now, just loop to prevent returning */
+    /* Real implementation would initialize the system and start the scheduler */
+    DPRINT1("ARM64: KiSystemStartup completed - entering infinite loop\n");
+
+    /* Disable interrupts and halt */
+    _disable();
+    for (;;)
+    {
+        __asm__ volatile("wfe"); /* Wait for event - low power mode */
+    }
 }
