@@ -162,3 +162,12 @@ extern "C" long double __cdecl _wcstold_l(
 {
     return common_strtod_l<double>(string, end_ptr, locale);
 }
+
+/* MinGW compatibility wrapper */
+extern "C" long double __cdecl __mingw_strtold(
+    char const* const string,
+    char**      const end_ptr
+    )
+{
+    return strtold(string, end_ptr);
+}

@@ -1,0 +1,32 @@
+Uefinity Authors and Contributors
+==================================
+
+Project Maintainer:
+-------------------
+Ahmed ARIF <Arif193@gmail.com>
+  - Project creator and lead developer
+  - ARM64 architecture implementation
+  - Multi-architecture framework design
+
+Based on ReactOS FreeLoader:
+-----------------------------
+ReactOS Team
+  - Original FreeLoader UEFI components
+  - Filesystem drivers (FAT, NTFS, ext, Btrfs)
+  - PE/COFF loader implementation
+  - NT/Windows boot support
+
+Contributors:
+-------------
+(Contributors will be listed here as the project grows)
+
+Special Thanks:
+---------------
+- ReactOS Project for the original FreeLoader code base
+- UEFI Forum for the UEFI specification
+- Open source community for testing and feedback
+
+How to Contribute:
+------------------
+See docs/CONTRIBUTING.md for contribution guidelines.
+All contributors will be acknowledged in this file.

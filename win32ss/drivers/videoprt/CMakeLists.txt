@@ -16,7 +16,6 @@ list(APPEND SOURCE
     dma.c
     event.c
     funclist.c
-    int10.c
     interrupt.c
     registry.c
     resource.c
@@ -25,6 +24,11 @@ list(APPEND SOURCE
     stubs.c
     timer.c
     videoprt.c)
+
+# int10.c is x86 BIOS-specific, not needed for ARM64 UEFI systems
+if(NOT ARCH STREQUAL "arm64")
+    list(APPEND SOURCE int10.c)
+endif()
 
 list(APPEND PCH_SKIP_SOURCE
     guid.c)

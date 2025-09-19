@@ -228,13 +228,29 @@ elseif(ARCH STREQUAL "arm64")
         math/cos.c
         math/ceilf.c
         math/fabs.c
-        math/fabsf.c
         math/floorf.c
         math/sin.c
         math/sqrt.c
         math/sqrtf.c
+        math/arm64/mathfuncs.c
+        math/libm_sse2/fma3_available.c
+        math/acosf.c
+        math/asinf.c
+        math/atan2f.c
+        math/atanf.c
+        math/coshf.c
+        math/cosf.c
+        math/expf.c
+        math/fmodf.c
+        math/modff.c
+        math/sinf.c
+        math/sinhf.c
+        math/tanf.c
+        math/tanhf.c
+        math/_hypotf.c
     )
     list(APPEND LIBCNTPR_MATH_ASM_SOURCE
+        math/arm64/atan2.s
         math/arm64/floor.s
         math/arm64/log10.s
         math/arm64/pow.s

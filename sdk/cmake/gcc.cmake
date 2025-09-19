@@ -268,6 +268,20 @@ elseif(ARCH STREQUAL "arm64")
     add_definitions(-D_M_ARM64)
     # ARM64 specific optimizations
     add_compile_options(-mstrict-align) # Enforce strict alignment
+    # Use small code model (default for Windows PE/COFF)
+    # Large model is not supported with COFF format
+    # add_compile_options(-mcmodel=small) # This is default
+
+    # ARM64-specific exception handling configuration
+    # Enable proper unwind tables for ARM64 exception handling
+    # This is essential for proper exception propagation and debugging
+    add_compile_options(-funwind-tables)           # Enable basic unwind tables
+    add_compile_options(-fasynchronous-unwind-tables) # Enable async unwind for signal safety
+
+    # Use DWARF exception handling model for ARM64
+    # This is the standard for ARM64 on Windows
+    add_compile_options(-fexceptions)              # Enable C++ exceptions
+    add_compile_options(-fdwarf2-cfi-asm)          # Generate DWARF2 CFI in assembly
 endif()
 
 # Fix build with GLIBCXX + our c++ headers
@@ -735,14 +749,25 @@ execute_process(COMMAND ${GXX_EXECUTABLE} -print-file-name=libsupc++.a OUTPUT_VA
 string(STRIP ${LIBSUPCXX_LOCATION} LIBSUPCXX_LOCATION)
 set_target_properties(libsupc++ PROPERTIES IMPORTED_LOCATION ${LIBSUPCXX_LOCATION})
 
-# Add libgcc_eh for exception handling on amd64
-if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "i386")
+# Add libgcc_eh for exception handling on architectures that support it
+if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "i386" OR ARCH STREQUAL "arm64")
     add_library(libgcc_eh STATIC IMPORTED GLOBAL)
     execute_process(COMMAND ${GXX_EXECUTABLE} -print-file-name=libgcc_eh.a OUTPUT_VARIABLE LIBGCCEH_LOCATION)
     string(STRIP ${LIBGCCEH_LOCATION} LIBGCCEH_LOCATION)
-    set_target_properties(libgcc_eh PROPERTIES IMPORTED_LOCATION ${LIBGCCEH_LOCATION})
-    # libsupc++ requires libgcc_eh, libgcc and stdc++compat
-    target_link_libraries(libsupc++ INTERFACE libgcc_eh libgcc stdc++compat)
+    # Check if libgcc_eh actually exists for this architecture
+    if(EXISTS "${LIBGCCEH_LOCATION}" AND NOT "${LIBGCCEH_LOCATION}" STREQUAL "libgcc_eh.a")
+        set_target_properties(libgcc_eh PROPERTIES IMPORTED_LOCATION ${LIBGCCEH_LOCATION})
+        # libsupc++ requires libgcc_eh, libgcc and stdc++compat
+        target_link_libraries(libsupc++ INTERFACE libgcc_eh libgcc stdc++compat)
+        message(STATUS "Using libgcc_eh from ${LIBGCCEH_LOCATION} for ${ARCH}")
+    else()
+        # libgcc_eh not available for this architecture/toolchain
+        message(STATUS "libgcc_eh not available for ${ARCH}, using libgcc only")
+        # Remove the imported library since it doesn't exist
+        unset(libgcc_eh)
+        # libsupc++ requires libgcc and stdc++compat
+        target_link_libraries(libsupc++ INTERFACE libgcc stdc++compat)
+    endif()
 else()
     # libsupc++ requires libgcc and stdc++compat
     target_link_libraries(libsupc++ INTERFACE libgcc stdc++compat)

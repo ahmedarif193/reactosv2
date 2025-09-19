@@ -1855,6 +1855,7 @@
 @ cdecl _o_strtol(str ptr long) strtol
 @ cdecl _o_strtold(str ptr) strtod
 @ cdecl -ret64 _o_strtoll(str ptr long) _strtoi64
+@ cdecl __mingw_strtold(str ptr) __mingw_strtold
 @ cdecl _o_strtoul(str ptr long) strtoul
 @ cdecl -ret64 _o_strtoull(str ptr long) _strtoui64
 @ cdecl _o_system(str) system

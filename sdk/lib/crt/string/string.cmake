@@ -23,6 +23,7 @@ list(APPEND LIBCNTPR_STRING_SOURCE
     string/itow.c
     string/strtoi64.c
     string/strtol.c
+    string/strtoll.c
     string/strtoul.c
     string/strtoull.c
     string/wcs.c
@@ -100,6 +101,7 @@ list(APPEND CRT_STRING_SOURCE
     string/strtod.c
     string/strtok.c
     string/strtok_s.c
+    string/strtold.c
     string/strtoul.c
     string/strxfrm.c
     string/wcstombs_s.c
@@ -121,6 +123,7 @@ add_library(strtol
     string/iswctype.c
     string/strtoi64.c
     string/strtol.c
+    string/strtoll.c
     string/strtoul.c
     string/strtoull.c
     string/wctype.c)

@@ -108,7 +108,8 @@
 @ thiscall -arch=win64 ?Format@CHString@@QEAAXPEBGZZ(long wstr long) _ZN8CHString6FormatEPKtz # public: void __cdecl CHString::Format(unsigned short const *,...)
 @ thiscall -arch=win64 ?FormatMessageW@CHString@@QEAAXIZZ(long long long) _ZN8CHString14FormatMessageWEjz # public: void __cdecl CHString::FormatMessageW(unsigned int,...)
 @ thiscall -arch=win64 ?FormatMessageW@CHString@@QEAAXPEBGZZ(long ptr long) _ZN8CHString14FormatMessageWEPKtz # public: void __cdecl CHString::FormatMessageW(unsigned short const *,...)
-@ thiscall -arch=win64 ?FormatV@CHString@@QEAAXPEBGPEAD@Z(wstr long) _ZN8CHString7FormatVEPKtPc # public: void __thiscall CHString::FormatV(unsigned short const *,char *)
+@ thiscall -arch=amd64 ?FormatV@CHString@@QEAAXPEBGPEAD@Z(wstr ptr) _ZN8CHString7FormatVEPKtPc # public: void __thiscall CHString::FormatV(unsigned short const *,char *)
+@ thiscall -arch=arm64 ?FormatV@CHString@@QEAAXPEBGPEAD@Z(wstr ptr) _ZN8CHString7FormatVEPKtSt9__va_list # public: void __thiscall CHString::FormatV(unsigned short const *,va_list)
 @ thiscall -arch=win64 ?FreeExtra@CHString@@QEAAXXZ() _ZN8CHString9FreeExtraEv # public: void __thiscall CHString::FreeExtra(void)
 @ thiscall -arch=win64 ?GetAllocLength@CHString@@QEBAHXZ() _ZNK8CHString14GetAllocLengthEv # public: int __thiscall CHString::GetAllocLength(void)const
 @ thiscall -arch=win64 ?GetAt@CHString@@QEBAGH@Z(long) _ZNK8CHString5GetAtEi # public: unsigned short __thiscall CHString::GetAt(int)const

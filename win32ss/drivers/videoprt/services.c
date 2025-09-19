@@ -47,6 +47,11 @@ VideoPortQueryServices(
    switch (ServicesType)
    {
       case VideoPortServicesInt10:
+#ifdef _M_ARM64
+         /* Int10 BIOS services are not available on ARM64/UEFI systems */
+         WARN_(VIDEOPRT, "Int10 services not available on ARM64\n");
+         return ERROR_INVALID_FUNCTION;
+#else
          if (Interface->Version >= VIDEO_PORT_INT10_INTERFACE_VERSION_1 ||
              Interface->Size >= sizeof(VIDEO_PORT_INT10_INTERFACE))
          {
@@ -62,6 +67,7 @@ VideoPortQueryServices(
             Int10Interface->Int10CallBios = IntInt10CallBios;
             return NO_ERROR;
          }
+#endif
          break;
 
       case VideoPortServicesAGP:

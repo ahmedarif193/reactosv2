@@ -73,9 +73,8 @@ NtProcessStartup(PPEB Peb)
     ULONG Length;
     ASSERT(Peb);
 
-#ifdef _M_ARM // Huge achievement
+#ifdef _M_ARM // Huge achievement - remove the debug loop, let it continue normally
     DPRINT1("%s(%08lx) called\n", __FUNCTION__, Peb);
-    while (TRUE);
 #endif
 
     /* Normalize and get the Process Parameters */

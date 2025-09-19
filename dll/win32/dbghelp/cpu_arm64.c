@@ -70,7 +70,7 @@ static BOOL fetch_next_frame(struct cpu_stack_walk* csw, union ctx *pcontext,
 {
     DWORD64 xframe;
     CONTEXT *context = &pcontext->ctx;
-    DWORD_PTR               oldReturn = context->Lr;
+    DWORD_PTR               oldReturn = context->DUMMYUNIONNAME.DUMMYSTRUCTNAME.Lr;
 
     if (dwarf2_virtual_unwind(csw, curr_pc, pcontext, &xframe))
     {
@@ -79,7 +79,7 @@ static BOOL fetch_next_frame(struct cpu_stack_walk* csw, union ctx *pcontext,
         return TRUE;
     }
 
-    if (context->Pc == context->Lr) return FALSE;
+    if (context->Pc == context->DUMMYUNIONNAME.DUMMYSTRUCTNAME.Lr) return FALSE;
     context->Pc = oldReturn;
 
     return TRUE;
@@ -125,8 +125,8 @@ static BOOL arm64_stack_walk(struct cpu_stack_walk *csw, STACKFRAME64 *frame,
 
     /* set frame information */
     frame->AddrStack.Offset = context->ctx.Sp;
-    frame->AddrReturn.Offset = context->ctx.Lr;
-    frame->AddrFrame.Offset = context->ctx.Fp;
+    frame->AddrReturn.Offset = context->ctx.DUMMYUNIONNAME.DUMMYSTRUCTNAME.Lr;
+    frame->AddrFrame.Offset = context->ctx.DUMMYUNIONNAME.DUMMYSTRUCTNAME.Fp;
     frame->AddrPC.Offset = context->ctx.Pc;
 
     frame->Far = TRUE;
@@ -170,7 +170,7 @@ static unsigned arm64_map_dwarf_register(unsigned regno, const struct module* mo
 static void *arm64_fetch_context_reg(union ctx *pctx, unsigned regno, unsigned *size)
 {
 #ifdef __aarch64__
-    CONTEXT *ctx = pctx;
+    CONTEXT *ctx = &pctx->ctx;
 
     switch (regno)
     {
@@ -203,7 +203,7 @@ static void *arm64_fetch_context_reg(union ctx *pctx, unsigned regno, unsigned *
     case CV_ARM64_X0 + 26:
     case CV_ARM64_X0 + 27:
     case CV_ARM64_X0 + 28: *size = sizeof(ctx->DUMMYUNIONNAME.X[0]); return &ctx->DUMMYUNIONNAME.X[regno - CV_ARM64_X0];
-    case CV_ARM64_PSTATE:  *size = sizeof(ctx->Pstate);   return &ctx->Pstate;
+    case CV_ARM64_PSTATE:  *size = sizeof(ctx->Pstate); return &ctx->Pstate;
     case CV_ARM64_FP:      *size = sizeof(ctx->DUMMYUNIONNAME.DUMMYSTRUCTNAME.Fp); return &ctx->DUMMYUNIONNAME.DUMMYSTRUCTNAME.Fp;
     case CV_ARM64_LR:      *size = sizeof(ctx->DUMMYUNIONNAME.DUMMYSTRUCTNAME.Lr); return &ctx->DUMMYUNIONNAME.DUMMYSTRUCTNAME.Lr;
     case CV_ARM64_SP:      *size = sizeof(ctx->Sp);     return &ctx->Sp;

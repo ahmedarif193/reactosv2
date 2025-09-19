@@ -241,6 +241,21 @@ unsigned long mbedtls_timing_hardclock( void )
 }
 #endif /* !HAVE_HARDCLOCK && _MSC_VER && !EFIX64 && !EFI32 */
 
+#if !defined(HAVE_HARDCLOCK) && defined(__MINGW32__) && \
+    !defined(EFIX64) && !defined(EFI32)
+
+#define HAVE_HARDCLOCK
+
+unsigned long mbedtls_timing_hardclock( void )
+{
+    LARGE_INTEGER offset;
+
+    QueryPerformanceCounter( &offset );
+
+    return( (unsigned long)( offset.QuadPart ) );
+}
+#endif /* !HAVE_HARDCLOCK && __MINGW32__ && !EFIX64 && !EFI32 */
+
 #if !defined(HAVE_HARDCLOCK)
 
 #define HAVE_HARDCLOCK

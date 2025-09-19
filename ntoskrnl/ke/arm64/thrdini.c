@@ -97,21 +97,8 @@ KiInitializeThread(
         TrapFrame->Lr = ContextFrame->Lr;    /* X30 */
         TrapFrame->Sp = ContextFrame->Sp;
         TrapFrame->Pc = ContextFrame->Pc;
-#ifdef _ARM64_
-        /* ARM64 uses Pstate, but some headers may still use Cpsr name */
-        #if defined(__has_member)
-            #if __has_member(CONTEXT, Pstate)
-                TrapFrame->Pstate = ContextFrame->Pstate;
-            #else
-                TrapFrame->Pstate = ContextFrame->Cpsr;
-            #endif
-        #else
-            /* Fallback - try Cpsr field name for compatibility */
-            TrapFrame->Pstate = ContextFrame->Cpsr;
-        #endif
-#else
+        /* Copy processor state register */
         TrapFrame->Pstate = ContextFrame->Pstate;
-#endif
 
         /* Set up user mode */
         TrapFrame->PreviousMode = UserMode;

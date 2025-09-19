@@ -29,6 +29,9 @@
 #include <intrin.h>
 #endif
 #endif // __REACTOS__
+#if defined(_ARM_) || defined(_ARM64_)
+#include <arm_neon.h>
+#endif
 #include <ntddscsi.h>
 #include "btrfs.h"
 #include <ata.h>
@@ -288,6 +291,7 @@ static void __stdcall do_xor_basic(uint8_t* buf1, uint8_t* buf2, uint32_t len) {
     uint32_t j;
 
 #if defined(_ARM_) || defined(_ARM64_)
+    /* NEON intrinsics for ARM32 and ARM64 */
     uint64x2_t x1, x2;
 
     if (((uintptr_t)buf1 & 0xf) == 0 && ((uintptr_t)buf2 & 0xf) == 0) {
@@ -304,7 +308,8 @@ static void __stdcall do_xor_basic(uint8_t* buf1, uint8_t* buf2, uint32_t len) {
     }
 #endif
 
-#if defined(_AMD64_) || defined(_ARM64_)
+#if defined(_AMD64_)
+    /* 64-bit operations for AMD64 when NEON not available */
     while (len > 8) {
         *(uint64_t*)buf1 ^= *(uint64_t*)buf2;
         buf1 += 8;

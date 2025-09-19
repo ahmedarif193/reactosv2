@@ -58,6 +58,21 @@ elseif(ARCH STREQUAL "arm")
             except/arm/cpp.s
             except/arm/cpp_alias.s)
     endif()
+elseif(ARCH STREQUAL "arm64")
+    list(APPEND LIBCNTPR_EXCEPT_SOURCE
+        except/arm64/ehandler.c
+    )
+    list(APPEND LIBCNTPR_EXCEPT_ASM_SOURCE
+        except/arm64/stubs.s
+    )
+    list(APPEND CRT_EXCEPT_ASM_SOURCE
+        except/arm64/stubs.s
+    )
+    if(MSVC)
+        list(APPEND CRT_EXCEPT_ASM_SOURCE
+            except/arm64/cpp.s
+            except/arm64/cpp_alias.s)
+    endif()
 endif()
 
 list(APPEND CRT_EXCEPT_SOURCE

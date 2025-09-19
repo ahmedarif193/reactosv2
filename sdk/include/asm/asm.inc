@@ -50,6 +50,9 @@ rip = 0
 __current_function_name EQU %name
 #ifdef _M_IX86
     %name PROC
+#elif defined(_M_ARM64)
+    /* ARM64: Use simple PROC without FRAME to avoid .pdata generation */
+    %name PROC
 #else
     %name PROC FRAME
 #endif
@@ -285,6 +288,8 @@ ENDM
     \name:
 #ifdef _X86_
     .cfi_startproc
+#elif defined(_ARM64_) || defined(__aarch64__)
+    /* ARM64: Don't use .seh_proc to avoid .pdata generation and relocation issues */
 #else
     .seh_proc \name
 #endif
@@ -295,6 +300,8 @@ ENDM
 .macro .ENDP
 #ifdef _X86_
     .cfi_endproc
+#elif defined(_ARM64_) || defined(__aarch64__)
+    /* ARM64: Don't use .seh_endproc to avoid .pdata generation and relocation issues */
 #else
     .seh_endproc
 #endif

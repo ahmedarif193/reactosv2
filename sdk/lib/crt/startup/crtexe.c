@@ -65,9 +65,13 @@ extern void __main(void);
 #ifdef WPRFLAG
 static wchar_t **argv;
 static wchar_t **envp;
+extern int __stdcall wWinMain(HINSTANCE, HINSTANCE, wchar_t *, int) __attribute__((weak));
+extern int wmain(int, wchar_t **, wchar_t **) __attribute__((weak));
 #else
 static char **argv;
 static char **envp;
+extern int __stdcall WinMain(HINSTANCE, HINSTANCE, char *, int) __attribute__((weak));
+extern int main(int, char **, char **) __attribute__((weak));
 #endif
 
 static int argret;
@@ -297,19 +301,44 @@ __tmainCRTStartup (void)
       }
     duplicate_ppstrings (argc, &argv);
     __main ();
+    if (mingw_app_type)
+      {
+        /* GUI application - call WinMain */
+#ifdef WPRFLAG
+        if (wWinMain)
+          mainret = wWinMain (__mingw_winmain_hInstance, NULL, __mingw_winmain_lpCmdLine, __mingw_winmain_nShowCmd);
+        else
+          mainret = 0; /* No WinMain found */
+#else
+        if (WinMain)
+          mainret = WinMain (__mingw_winmain_hInstance, NULL, __mingw_winmain_lpCmdLine, __mingw_winmain_nShowCmd);
+        else
+          mainret = 0; /* No WinMain found */
+#endif
+      }
+    else
+      {
+        /* Console application - call main */
 #ifdef WPRFLAG
 #if !defined(__arm__) && !defined(__aarch64__)
-    __winitenv = envp;
+        __winitenv = envp;
 #endif
-    /* C++ initialization.
-       gcc inserts this call automatically for a function called main, but not for wmain.  */
-    mainret = wmain (argc, argv, envp);
+        /* C++ initialization.
+           gcc inserts this call automatically for a function called main, but not for wmain.  */
+        if (wmain)
+          mainret = wmain (argc, argv, envp);
+        else
+          mainret = 0; /* No wmain found */
 #else
 #if !defined(__arm__) && !defined(__aarch64__)
-    __initenv = envp;
+        __initenv = envp;
 #endif
-    mainret = main (argc, argv, envp);
+        if (main)
+          mainret = main (argc, argv, envp);
+        else
+          mainret = 0; /* No main found */
 #endif
+      }
 
 #ifdef __GNUC__
     __do_global_dtors();

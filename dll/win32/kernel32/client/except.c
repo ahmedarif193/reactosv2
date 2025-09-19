@@ -95,7 +95,7 @@ _dump_context(PCONTEXT pc)
     DbgPrint("X20: %I64x   X21: %I64x   X22: %I64x   X23: %I64x\n", pc->X[20], pc->X[21], pc->X[22], pc->X[23]);
     DbgPrint("X24: %I64x   X25: %I64x   X26: %I64x   X27: %I64x\n", pc->X[24], pc->X[25], pc->X[26], pc->X[27]);
     DbgPrint("X28: %I64x   FP:  %I64x   LR:  %I64x\n", pc->X[28], pc->Fp, pc->Lr);
-    DbgPrint("CPSR: %.8x  FPSR: %.8x  FPCR: %.8x\n", pc->Cpsr, pc->Fpsr, pc->Fpcr);
+    DbgPrint("PSTATE: %.8x  FPSR: %.8x  FPCR: %.8x\n", pc->Pstate, pc->Fpsr, pc->Fpcr);
 #else
     #error "Unknown architecture"
 #endif

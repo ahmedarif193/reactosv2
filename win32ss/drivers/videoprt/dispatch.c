@@ -387,6 +387,8 @@ IntVideoPortDispatchOpen(
         ObReferenceObject(CsrProcess);
         INFO_(VIDEOPRT, "CsrProcess 0x%p\n", CsrProcess);
 
+#ifndef _M_ARM64
+        /* Initialize video address space for x86 BIOS/VGA memory access */
         Status = IntInitializeVideoAddressSpace();
         if (!NT_SUCCESS(Status))
         {
@@ -395,6 +397,7 @@ IntVideoPortDispatchOpen(
             CsrProcess = NULL;
             return Status;
         }
+#endif
     }
 
     DeviceExtension = (PVIDEO_PORT_DEVICE_EXTENSION)DeviceObject->DeviceExtension;

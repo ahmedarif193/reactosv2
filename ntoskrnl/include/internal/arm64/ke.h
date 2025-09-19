@@ -12,7 +12,9 @@ typedef KIPCR KPCR, *PKPCR;
 
 #define KiServiceExit2 KiExceptionExit
 
+#ifndef SYNCH_LEVEL
 #define SYNCH_LEVEL DISPATCH_LEVEL
+#endif
 
 /* ARM64 PCR (Processor Control Region) */
 #define PCR ((KPCR *)(ARM64_PCR_ADDRESS))

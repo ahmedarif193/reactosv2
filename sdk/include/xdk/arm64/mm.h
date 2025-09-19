@@ -12,6 +12,11 @@
 #define MM_HIGHEST_USER_ADDRESS             (PVOID)0x00007FFFFFFFFFFFULL
 #define MM_SYSTEM_RANGE_START               (PVOID)0xFFFF800000000000ULL
 
+/* Internal Memory Manager Constants */
+#define MI_HIGHEST_USER_ADDRESS             (PVOID)0x00007FFFFFFFFFFFULL
+#define MI_DEFAULT_SYSTEM_RANGE_START       (PVOID)0xFFFF800000000000ULL
+#define MI_USER_PROBE_ADDRESS               (PVOID)0x00007FFFFFFEF000ULL
+
 #define MM_KSEG0_BASE                       MM_SYSTEM_RANGE_START
 #define MM_KSEG2_BASE                       MM_SYSTEM_RANGE_START
 
@@ -24,8 +29,11 @@
 #define PAGE_SHIFT                          12L
 #endif
 
-/* MmUserProbeAddress declaration for ARM64 */
+/* Memory Management Variables for ARM64 */
+extern NTKERNELAPI PVOID MmHighestUserAddress;
+extern NTKERNELAPI PVOID MmSystemRangeStart;
 extern NTKERNELAPI ULONG64 MmUserProbeAddress;
+
 #define MM_USER_PROBE_ADDRESS               MmUserProbeAddress
 
 /* Memory Allocation Alignment */

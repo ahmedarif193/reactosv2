@@ -208,6 +208,7 @@ RtlpCheckLogException(IN PEXCEPTION_RECORD ExceptionRecord,
     /* Exception logging is not done in user-mode */
 }
 
+#if !defined(_M_ARM64)
 BOOLEAN
 NTAPI
 RtlpCaptureStackLimits(IN ULONG_PTR Ebp,
@@ -219,8 +220,9 @@ RtlpCaptureStackLimits(IN ULONG_PTR Ebp,
     *StackEnd = (ULONG_PTR)NtCurrentTeb()->NtTib.StackBase;
     return TRUE;
 }
+#endif
 
-#ifndef _M_AMD64
+#if !defined(_M_AMD64) && !defined(_M_ARM64)
 /*
  * @implemented
  */

@@ -3,9 +3,9 @@
 #define NDEBUG
 #include <debug.h>
 
-#if defined(_M_AMD64) || defined(__i386__)
-/* 
- * GCC 13 compatibility implementations for AMD64 and i386 builds
+#if defined(_M_AMD64) || defined(__i386__) || defined(_M_ARM64) || defined(_M_ARM64)
+/*
+ * GCC 13 compatibility implementations for AMD64, i386, and ARM64 builds
  * These use critical sections as a fallback since the RTL functions
  * are not available in ReactOS for these architectures when targeting XP
  */
@@ -129,7 +129,7 @@ ReleaseSRWLockShared(PSRWLOCK Lock)
     RtlReleaseSRWLockShared((PRTL_SRWLOCK)Lock);
 }
 
-#endif /* _M_AMD64 || __i386__ */
+#endif /* _M_AMD64 || __i386__ || _M_ARM64 */
 
 FORCEINLINE
 PLARGE_INTEGER
@@ -144,7 +144,7 @@ BOOL
 WINAPI
 SleepConditionVariableCS(PCONDITION_VARIABLE ConditionVariable, PCRITICAL_SECTION CriticalSection, DWORD Timeout)
 {
-#if defined(_M_AMD64) || defined(__i386__)
+#if defined(_M_AMD64) || defined(__i386__) || defined(_M_ARM64)
     /* 
      * Simplified implementation for GCC 13 compatibility
      * Release the critical section, sleep, then re-acquire
@@ -173,7 +173,7 @@ BOOL
 WINAPI
 SleepConditionVariableSRW(PCONDITION_VARIABLE ConditionVariable, PSRWLOCK Lock, DWORD Timeout, ULONG Flags)
 {
-#if defined(_M_AMD64) || defined(__i386__)
+#if defined(_M_AMD64) || defined(__i386__) || defined(_M_ARM64)
     /* 
      * Simplified implementation for GCC 13 compatibility
      * Release the lock, sleep, then re-acquire based on flags
@@ -211,7 +211,7 @@ VOID
 WINAPI
 WakeAllConditionVariable(PCONDITION_VARIABLE ConditionVariable)
 {
-#if defined(_M_AMD64) || defined(__i386__)
+#if defined(_M_AMD64) || defined(__i386__) || defined(_M_ARM64)
     /* Stub - condition variables not fully implemented for AMD64/i386 */
     UNREFERENCED_PARAMETER(ConditionVariable);
 #else
@@ -223,7 +223,7 @@ VOID
 WINAPI
 WakeConditionVariable(PCONDITION_VARIABLE ConditionVariable)
 {
-#if defined(_M_AMD64) || defined(__i386__)
+#if defined(_M_AMD64) || defined(__i386__) || defined(_M_ARM64)
     /* Stub - condition variables not fully implemented for AMD64/i386 */
     UNREFERENCED_PARAMETER(ConditionVariable);
 #else

@@ -62,6 +62,11 @@ add_cd_file(TARGET ntoskrnl DESTINATION reactos/system32 NO_CAB FOR all)
 add_subdirectory(ntkrnlmp)
 
 add_asm_files(ntdllsys_asm ntdll.S)
+if(ARCH STREQUAL "arm64")
+    # ARM64: Compile assembly stubs without generating .pdata to avoid relocation truncation
+    set_source_files_properties(ntdll.S PROPERTIES
+        COMPILE_FLAGS "-fno-asynchronous-unwind-tables -fno-unwind-tables -fno-exceptions")
+endif()
 add_library(ntdllsys ${ntdllsys_asm})
 set_target_properties(ntdllsys PROPERTIES LINKER_LANGUAGE "C")
 add_dependencies(ntdllsys asm)

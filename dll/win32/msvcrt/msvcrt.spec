@@ -1319,9 +1319,9 @@
 @ cdecl div(long long)
 @ cdecl exit(long)
 @ cdecl exp(double)
-@ cdecl -arch=x86_64,arm expf(long)
+@ cdecl -arch=x86_64,arm,arm64 expf(long)
 @ cdecl fabs(double)
-@ cdecl -arch=arm fabsf(double)
+@ cdecl -arch=arm,arm64 fabsf(double)
 @ cdecl fclose(ptr)
 @ cdecl feof(ptr)
 @ cdecl ferror(ptr)
@@ -1338,6 +1338,8 @@
 @ cdecl fopen(str str)
 @ cdecl -version=0x600+ fopen_s(ptr str str)
 @ varargs fprintf(ptr str)
+@ varargs __mingw_fprintf(ptr str) fprintf
+@ varargs __mingw_vfprintf(ptr str ptr) vfprintf
 @ stub -version=0x600+ fprintf_s
 @ cdecl fputc(long ptr)
 @ cdecl fputs(str ptr)
@@ -1404,7 +1406,7 @@
 @ cdecl longjmp(ptr long)
 @ cdecl malloc(long)
 @ cdecl mblen(ptr long)
-@ cdecl -version=0x600+ mbrlen(str long ptr)
+@ cdecl mbrlen(str long ptr)
 @ cdecl -version=0x600+ mbrtowc(ptr str long ptr)
 @ stub -version=0x600+ mbsdup_dbg
 @ cdecl mbsrtowcs(ptr ptr long ptr)
@@ -1482,10 +1484,14 @@
 @ cdecl strspn(str str)
 @ cdecl strstr(str str)
 @ cdecl strtod(str ptr)
+@ cdecl strtold(str ptr)
+@ cdecl __mingw_strtold(str ptr) strtold
 @ cdecl strtok(str str)
 @ cdecl -version=0x600+ strtok_s(str str ptr)
 @ cdecl strtol(str ptr long)
+@ cdecl strtoll(str ptr long)
 @ cdecl strtoul(str ptr long)
+@ cdecl strtoull(str ptr long)
 @ cdecl strxfrm(ptr str long)
 @ varargs swprintf(ptr wstr)
 @ stub -version=0x600+ swprintf_s

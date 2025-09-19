@@ -1,11 +1,11 @@
 /* Copyright (C) 1994 DJ Delorie, see COPYING.DJ for details */
 #include <stdlib.h>
-#include <msvcrt/ctype.h>
+#include <ctype.h>
 
 static double powten[] =
 {
   1e1L, 1e2L, 1e4L, 1e8L, 1e16L, 1e32L, 1e64L, 1e128L, 1e256L,
-#ifdef __GNUC__
+#if defined(__GNUC__) && (defined(__x86_64__) || defined(__aarch64__) || defined(__arm64__))
   1e512L, 1e512L*1e512L, 1e2048L, 1e4096L
 #else
   1e256L, 1e256L, 1e256L, 1e256L
@@ -91,8 +91,13 @@ _strtold(const char *s, char **sret)
   if (e < -4096)
   {
     /* possibly subnormal number, 10^e would overflow */
+#if defined(__x86_64__) || defined(__aarch64__) || defined(__arm64__)
     r *= 1.0e-2048L;
     e += 2048;
+#else
+    r *= 1.0e-256L;
+    e += 256;
+#endif
   }
   if (e < 0)
   {
@@ -122,4 +127,10 @@ _strtold(const char *s, char **sret)
   return r * sign;
 
   return 0;
+}
+
+/* Mingw compatibility wrapper */
+long double __mingw_strtold(const char *s, char **endptr)
+{
+    return _strtold(s, endptr);
 }

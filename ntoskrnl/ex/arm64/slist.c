@@ -12,6 +12,10 @@
 #define NDEBUG
 #include <debug.h>
 
+/* Undefine the macros to implement the actual functions */
+#undef ExInitializeSListHead
+#undef ExInterlockedFlushSList
+
 /* GLOBALS *****************************************************************/
 
 /* On ARM64, we use simple 16-byte aligned headers for SLists */
@@ -44,13 +48,25 @@ RtlQueryDepthSList(
     _In_ PSLIST_HEADER SListHead);
 
 /* RtlInitializeSListHead is provided by RTL library */
+NTSYSAPI
+VOID
+NTAPI
+RtlInitializeSListHead(
+    _Out_ PSLIST_HEADER SListHead);
 
 /* FUNCTIONS *****************************************************************/
 
 /*
- * ExInitializeSListHead is provided by RTL as RtlInitializeSListHead
- * and mapped through macros in the headers
+ * @implemented
  */
+VOID
+NTAPI
+ExInitializeSListHead(
+    _Out_ PSLIST_HEADER SListHead)
+{
+    /* Forward to RTL implementation */
+    RtlInitializeSListHead(SListHead);
+}
 
 /*
  * @implemented

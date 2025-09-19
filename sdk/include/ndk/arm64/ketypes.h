@@ -21,6 +21,15 @@ extern "C" {
 #define HIGH_LEVEL              15
 
 //
+// Synchronization-level IRQL
+//
+#ifndef CONFIG_SMP
+#define SYNCH_LEVEL             DISPATCH_LEVEL
+#else
+#define SYNCH_LEVEL             (IPI_LEVEL - 2)
+#endif
+
+//
 // IPI Types
 //
 #define IPI_APC                 1
@@ -318,6 +327,12 @@ typedef struct _KPRCB
     PP_LOOKASIDE_LIST PPNPagedLookasideList[NUMBER_POOL_LOOKASIDE_LISTS];
     PP_LOOKASIDE_LIST PPPagedLookasideList[NUMBER_POOL_LOOKASIDE_LISTS];
     KPROCESSOR_STATE ProcessorState;    /* Processor state for debugging */
+    struct _KNODE* ParentNode;          /* Parent NUMA node */
+    volatile struct _KPRCB *SignalDone; /* IPI signal done pointer */
+    volatile ULONG TargetSet;           /* IPI target set */
+    volatile PVOID CurrentPacket[3];    /* IPI current packet array */
+    volatile PVOID WorkerRoutine;       /* IPI worker routine */
+    volatile ULONG IpiFrozen;           /* IPI frozen state */
 } KPRCB, *PKPRCB;
 
 //
@@ -377,7 +392,12 @@ typedef struct _KIPCR
 // PCR/PRCB accessors (bring-up shim)
 //
 #ifndef NTOS_MODE_USER
+/* Import KiInitialPcr from ntoskrnl */
+#ifdef _NTOSKRNL_
 extern struct _KIPCR KiInitialPcr;
+#else
+__declspec(dllimport) extern struct _KIPCR KiInitialPcr;
+#endif
 FORCEINLINE
 struct _KIPCR * KeGetPcr(VOID)
 {

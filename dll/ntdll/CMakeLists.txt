@@ -43,6 +43,11 @@ elseif(ARCH STREQUAL "amd64")
     list(APPEND ASM_SOURCE dispatch/amd64/dispatch.S)
 elseif(ARCH STREQUAL "arm")
     list(APPEND ASM_SOURCE dispatch/arm/stubs_asm.s)
+elseif(ARCH STREQUAL "arm64")
+    list(APPEND ASM_SOURCE dispatch/arm64/stubs_asm.S)
+    # ARM64: Compile assembly stubs without generating .pdata to avoid relocation truncation
+    set_source_files_properties(dispatch/arm64/stubs_asm.S PROPERTIES
+        COMPILE_FLAGS "-fno-asynchronous-unwind-tables -fno-unwind-tables -fno-exceptions")
 else()
     list(APPEND SOURCE dispatch/dispatch.c)
 endif()

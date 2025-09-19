@@ -665,11 +665,43 @@ void CHString::FormatMessageW(CHSTRING_LPCWSTR lpszFormat, ...)
 }
 
 /*
- * @unimplemented
+ * @implemented
  */
 void CHString::FormatV(CHSTRING_LPCWSTR lpszFormat, va_list argList)
 {
-    UNIMPLEMENTED;
+    const int DEFAULT_SIZE = 256;
+    int nLength;
+    CHSTRING_LPWSTR pszBuffer;
+
+    // Start with a reasonable buffer size
+    pszBuffer = GetBuffer(DEFAULT_SIZE);
+    if (!pszBuffer)
+        return;
+
+    // Try to format the string using wvsprintfW (which handles wide strings)
+    // Note: wvsprintfW doesn't support buffer size checking, so we use a simpler approach
+    nLength = wvsprintfW(reinterpret_cast<LPWSTR>(pszBuffer), reinterpret_cast<LPCWSTR>(lpszFormat), argList);
+
+    // wvsprintfW returns the number of characters written (excluding null terminator)
+    if (nLength >= 0)
+    {
+        // Check if we might have overflowed (wvsprintfW doesn't prevent overflow)
+        if (nLength >= DEFAULT_SIZE - 1)
+        {
+            // Try with a larger buffer
+            ReleaseBuffer(0);
+            pszBuffer = GetBuffer(nLength + 1);
+            if (pszBuffer)
+            {
+                nLength = wvsprintfW(reinterpret_cast<LPWSTR>(pszBuffer), reinterpret_cast<LPCWSTR>(lpszFormat), argList);
+            }
+        }
+        ReleaseBuffer(nLength);
+    }
+    else
+    {
+        ReleaseBuffer(0);
+    }
 }
 
 /*

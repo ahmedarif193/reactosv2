@@ -3,6 +3,10 @@
  * This file is part of the w64 mingw-runtime package.
  * No warranty is given; refer to the file DISCLAIMER.PD within this package.
  */
+#ifdef __aarch64__
+/* Skip this file for ARM64 to avoid conflicts */
+#else
+
 #include <stdarg.h>
 #include <windef.h>
 
@@ -24,3 +28,5 @@ int __cdecl wmain (int        __UNUSED_PARAM(flags),
   return (int) wWinMain (__mingw_winmain_hInstance, NULL,
 			__mingw_winmain_lpCmdLine, __mingw_winmain_nShowCmd);
 }
+
+#endif /* __aarch64__ */

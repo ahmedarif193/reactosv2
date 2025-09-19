@@ -146,8 +146,16 @@ __report_error (const char *msg, ...)
   va_list argp;
   va_start (argp, msg);
 # ifdef __MINGW64_VERSION_MAJOR
+#  ifdef _M_ARM64
+  /* ARM64: Avoid direct _iob reference, use function call instead */
+  extern FILE* __cdecl __iob_func(void);
+  FILE* err = __iob_func() + 2;
+  __mingw_fprintf (err, "Mingw-w64 runtime failure:\n");
+  __mingw_vfprintf (err, msg, argp);
+#  else
   __mingw_fprintf (stderr, "Mingw-w64 runtime failure:\n");
   __mingw_vfprintf (stderr, msg, argp);
+#  endif
 # else
   fprintf (stderr, "Mingw runtime failure:\n");
   vfprintf (stderr, msg, argp);

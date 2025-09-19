@@ -125,6 +125,24 @@ MACRO(STUBCODE_K, Name, SyscallId, ArgCount)
     mov x9, #ArgCount * 8
     b KiZwSystemService
 ENDM
+// ARM64-specific macros to avoid .pdata generation for syscall stubs
+#ifdef _M_ARM64
+MACRO(ARM64_MAKE_LABEL, Name, StackBytes)
+    PUBLIC &Name
+    &Name:
+ENDM
+MACRO(ARM64_STUB_U, Name, ArgCount)
+    ARM64_MAKE_LABEL Zw&Name, %ArgCount * 8
+    ARM64_MAKE_LABEL Nt&Name, %ArgCount * 8
+    STUBCODE_U Name, SyscallId, %ArgCount
+    SyscallId = SyscallId + 1
+ENDM
+MACRO(ARM64_STUB_K, Name, ArgCount)
+    ARM64_MAKE_LABEL Zw&Name, %ArgCount * 8
+    STUBCODE_K Name, SyscallId, %ArgCount
+    SyscallId = SyscallId + 1
+ENDM
+#endif
 #else
 #error unsupported architecture
 #endif
@@ -149,6 +167,11 @@ MACRO(START_PROC, Name, StackBytes)
 ENDM
 #endif
 
+#ifdef _M_ARM64
+// Use ARM64-specific stubs that don't generate .pdata
+#define STUB_U ARM64_STUB_U
+#define STUB_K ARM64_STUB_K
+#else
 MACRO(STUB_U, Name, ArgCount)
     MAKE_LABEL Zw&Name, %ArgCount * 4
     START_PROC Nt&Name, %ArgCount * 4
@@ -163,5 +186,6 @@ MACRO(STUB_K, Name, ArgCount)
     .ENDP
     SyscallId = SyscallId + 1
 ENDM
+#endif
 
 #endif

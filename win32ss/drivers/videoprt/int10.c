@@ -34,6 +34,7 @@
 
 /* Those two functions below are there so that CSRSS can't access low mem.
  * Expecially, MAKE IT CRASH ON NULL ACCESS */
+#if defined(_M_IX86) || defined(_M_AMD64)
 static
 VOID
 ProtectLowV86Mem(VOID)
@@ -79,6 +80,7 @@ UnprotectLowV86Mem(VOID)
                                      PAGE_READWRITE);
     ASSERT(NT_SUCCESS(Status));
 }
+#endif /* _M_IX86 || _M_AMD64 */
 
 #if defined(_M_IX86) || defined(_M_AMD64)
 NTSTATUS
@@ -409,6 +411,7 @@ IntInt10CallBios(
     IN PVOID Context,
     IN OUT PINT10_BIOS_ARGUMENTS BiosArguments)
 {
+#if defined(_M_IX86) || defined(_M_AMD64)
 #ifdef _M_AMD64
     X86_BIOS_REGISTERS BiosContext;
 #else
@@ -479,6 +482,13 @@ IntInt10CallBios(
     }
 
     return ERROR_INVALID_PARAMETER;
+#else
+    /* ARM64 and other non-x86 architectures don't support BIOS calls */
+    UNREFERENCED_PARAMETER(Context);
+    UNREFERENCED_PARAMETER(BiosArguments);
+    DPRINT1("IntInt10CallBios: BIOS calls not supported on this architecture\n");
+    return ERROR_INVALID_PARAMETER;
+#endif
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/

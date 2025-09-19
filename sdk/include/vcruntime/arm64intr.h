@@ -37,6 +37,9 @@ void _ReadBarrier(void);
 void _WriteBarrier(void);
 
 /* Bit rotation intrinsics */
+unsigned char _rotl8(unsigned char value, unsigned char shift);
+unsigned char _rotr8(unsigned char value, unsigned char shift);
+unsigned short _rotr16(unsigned short value, unsigned char shift);
 unsigned int _rotl(unsigned int value, int shift);
 unsigned int _rotr(unsigned int value, int shift);
 
@@ -71,7 +74,26 @@ void* _ReturnAddress(void);
 void __debugbreak(void);
 
 #ifdef __GNUC__
-/* GCC/MinGW implementation using built-in atomics */
+/* GCC/MinGW implementation using built-in atomics and inline functions */
+
+/* Bit rotation inline implementations */
+__forceinline unsigned char _rotl8(unsigned char value, unsigned char shift)
+{
+    shift &= 7;
+    return (value << shift) | (value >> (8 - shift));
+}
+
+__forceinline unsigned char _rotr8(unsigned char value, unsigned char shift)
+{
+    shift &= 7;
+    return (value >> shift) | (value << (8 - shift));
+}
+
+__forceinline unsigned short _rotr16(unsigned short value, unsigned char shift)
+{
+    shift &= 15;
+    return (value >> shift) | (value << (16 - shift));
+}
 __forceinline long _InterlockedIncrement(long volatile * _Addend)
 {
     return __atomic_add_fetch(_Addend, 1, __ATOMIC_SEQ_CST);

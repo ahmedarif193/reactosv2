@@ -70,8 +70,8 @@ PspGetContext(
         /* Copy stack pointer, program counter, and processor state */
         Context->Sp = TrapFrame->Sp;
         Context->Pc = TrapFrame->Pc;
-        /* ARM64 uses Pstate, but some headers may still use Cpsr name */
-        Context->Cpsr = TrapFrame->Pstate;
+        /* Copy processor state register */
+        Context->Pstate = TrapFrame->Pstate;
     }
     
     /* TODO: Exception frame is not yet implemented for ARM64 */
@@ -136,12 +136,12 @@ PspSetContext(
         if (PreviousMode == UserMode)
         {
             /* Ensure user mode processor state */
-            TrapFrame->Pstate = (Context->Cpsr & ~0xF) | 0x0;  /* EL0 */
+            TrapFrame->Pstate = (Context->Pstate & ~0xF) | 0x0;  /* EL0 */
         }
         else
         {
             /* Keep kernel mode processor state */
-            TrapFrame->Pstate = (Context->Cpsr & ~0xF) | 0x4;  /* EL1h */
+            TrapFrame->Pstate = (Context->Pstate & ~0xF) | 0x4;  /* EL1h */
         }
     }
     

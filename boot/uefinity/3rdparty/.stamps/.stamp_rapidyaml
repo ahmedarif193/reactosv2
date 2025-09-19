@@ -1,0 +1,7 @@
+# Uefinity Dependency Stamp File
+# Generated on 2025-09-19T19:02:26.668345
+#
+repository_url=https://github.com/biojppm/rapidyaml.git
+checkout_ref=master
+git_hash=833786111c5ec1e7fc5b8f10ac175362a8070b31
+checkout_date=2025-09-19T19:02:26.668363

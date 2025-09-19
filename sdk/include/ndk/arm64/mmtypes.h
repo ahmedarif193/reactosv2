@@ -23,7 +23,9 @@ extern "C" {
 // User space: 0x0000_0000_0000_0000 to 0x0000_7FFF_FFFF_FFFF (128TB)
 // Kernel space: 0xFFFF_8000_0000_0000 to 0xFFFF_FFFF_FFFF_FFFF (128TB)
 //
+#ifndef MI_HIGHEST_USER_ADDRESS
 #define MI_HIGHEST_USER_ADDRESS         (PVOID)0x00007FFFFFFFFFFFULL
+#endif
 
 //
 // Address of the shared user page (ARM64)

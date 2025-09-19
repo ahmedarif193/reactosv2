@@ -49,12 +49,24 @@ int __cdecl _set_FMA3_enable(int flag)
     return __use_fma3_lib;
 }
 
+/* Forward declaration for the init function */
+#ifdef __fma3_lib_init
+/* When __fma3_lib_init is defined as a macro, use the macro value */
+int __cdecl __acrt_initialize_fma3(void);
+_CRTALLOC(".CRT$XIC") static _PIFV __attribute__((used)) init_fma3 = __acrt_initialize_fma3;
+#else
+/* When not defined as a macro, use the actual function */
 int __fma3_lib_init(void);
+_CRTALLOC(".CRT$XIC") static _PIFV __attribute__((used)) init_fma3 = __fma3_lib_init;
+#endif
 
-_CRTALLOC(".CRT$XIC") static _PIFV init_fma3 = __fma3_lib_init;
-
+#ifndef __fma3_lib_init
 int __fma3_lib_init(void)
+#else
+int __acrt_initialize_fma3(void)
+#endif
 {
+#if defined(_M_IX86) || defined(_M_X64)
     int CPUID[4]; // CPUID[2] is ECX;
 
     __fma3_is_available = 0;
@@ -64,5 +76,22 @@ int __fma3_lib_init(void)
     }
 
     __use_fma3_lib = __fma3_is_available;
+#elif defined(_M_ARM64) || defined(_ARM64_) || defined(__aarch64__)
+    /* ARM64 has NEON FMA instructions but not x86 FMA3, set to 0 */
+    __fma3_is_available = 0;
+    __use_fma3_lib = 0;
+#else
+    /* Other architectures don't have FMA3, set to 0 */
+    __fma3_is_available = 0;
+    __use_fma3_lib = 0;
+#endif
     return 0;
 }
+
+/* Additional compatibility function for UCRT - only if not already defined via macro */
+#ifndef __fma3_lib_init
+int __cdecl __acrt_initialize_fma3(void)
+{
+    return __fma3_lib_init();
+}
+#endif

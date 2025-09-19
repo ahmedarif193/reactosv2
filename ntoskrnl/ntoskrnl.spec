@@ -53,7 +53,7 @@
 @ stdcall DbgPrompt(str ptr long)
 @ stdcall DbgQueryDebugFilterState(long long)
 @ stdcall DbgSetDebugFilterState(long long long)
-@ stdcall -arch=x86_64 ExAcquireFastMutex(ptr)
+@ stdcall -arch=x86_64,arm64 ExAcquireFastMutex(ptr)
 @ fastcall ExAcquireFastMutexUnsafe(ptr)
 @ stdcall ExAcquireResourceExclusiveLite(ptr long)
 @ stdcall ExAcquireResourceSharedLite(ptr long)
@@ -134,7 +134,7 @@
 @ fastcall ExReInitializeRundownProtectionCacheAware(ptr) ExfReInitializeRundownProtectionCacheAware
 @ stdcall ExRegisterCallback(ptr ptr ptr)
 @ stdcall ExReinitializeResourceLite(ptr)
-@ stdcall -arch=x86_64 ExReleaseFastMutex(ptr)
+@ stdcall -arch=x86_64,arm64 ExReleaseFastMutex(ptr)
 @ fastcall ExReleaseFastMutexUnsafe(ptr)
 @ fastcall ExReleaseFastMutexUnsafeAndLeaveCriticalRegion(ptr)
 @ fastcall ExReleaseResourceAndLeaveCriticalRegion(ptr)
@@ -152,7 +152,7 @@
 @ stdcall ExSizeOfRundownProtectionCacheAware()
 @ stdcall ExSystemExceptionFilter()
 @ stdcall ExSystemTimeToLocalTime(ptr ptr)
-@ stdcall -arch=x86_64 ExTryToAcquireFastMutex(ptr)
+@ stdcall -arch=x86_64,arm64 ExTryToAcquireFastMutex(ptr)
 @ stdcall ExUnregisterCallback(ptr)
 @ stdcall ExUuidCreate(ptr)
 @ stdcall ExVerifySuite(long)
@@ -444,7 +444,7 @@
 @ stdcall IoInitializeTimer(ptr ptr ptr)
 @ stdcall IoInvalidateDeviceRelations(ptr long)
 @ stdcall IoInvalidateDeviceState(ptr)
-@ stdcall -arch=x86_64 IoIs32bitProcess(ptr)
+@ stdcall -arch=x86_64,arm64 IoIs32bitProcess(ptr)
 @ stdcall IoIsFileOriginRemote(ptr)
 @ stdcall IoIsOperationSynchronous(ptr)
 @ stdcall IoIsSystemThread(ptr)
@@ -524,7 +524,7 @@
 @ stdcall IoVolumeDeviceToDosName(ptr ptr)
 @ stdcall IoWMIAllocateInstanceIds(ptr long ptr)
 @ stdcall IoWMIDeviceObjectToInstanceName(ptr ptr ptr)
-@ stdcall -arch=x86_64 IoWMIDeviceObjectToProviderId(ptr)
+@ stdcall -arch=x86_64,arm64 IoWMIDeviceObjectToProviderId(ptr)
 @ stdcall IoWMIExecuteMethod(ptr ptr long long ptr ptr)
 @ stdcall IoWMIHandleToInstanceName(ptr ptr ptr)
 @ stdcall IoWMIOpenBlock(ptr long ptr)
@@ -561,17 +561,17 @@
 @ stdcall -arch=i386 Ke386SetIoAccessMap(long ptr)
 @ fastcall KeAcquireGuardedMutex(ptr)
 @ fastcall KeAcquireGuardedMutexUnsafe(ptr)
-@ cdecl -arch=x86_64 KeAcquireInStackQueuedSpinLock(ptr ptr)
+@ cdecl -arch=x86_64,arm64 KeAcquireInStackQueuedSpinLock(ptr ptr)
 @ fastcall KeAcquireInStackQueuedSpinLockAtDpcLevel(ptr ptr)
 @ fastcall KeAcquireInStackQueuedSpinLockForDpc(ptr ptr)
-@ cdecl -arch=x86_64 KeAcquireInStackQueuedSpinLockRaiseToSynch(ptr ptr)
+@ cdecl -arch=x86_64,arm64 KeAcquireInStackQueuedSpinLockRaiseToSynch(ptr ptr)
 @ stdcall KeAcquireInterruptSpinLock(ptr)
 @ cdecl -arch=x86_64 KeAcquireQueuedSpinLock(long)
 @ cdecl -arch=x86_64 KeAcquireQueuedSpinLockRaiseToSynch(long)
 @ stdcall KeAcquireSpinLockAtDpcLevel(ptr)
 @ fastcall KeAcquireSpinLockForDpc(ptr)
-@ stdcall -arch=x86_64 KeAcquireSpinLockRaiseToDpc(ptr)
-@ stdcall -arch=x86_64 KeAcquireSpinLockRaiseToSynch(ptr)
+@ stdcall -arch=x86_64,arm64 KeAcquireSpinLockRaiseToDpc(ptr)
+@ stdcall -arch=x86_64,arm64 KeAcquireSpinLockRaiseToSynch(ptr)
 @ stdcall KeAddSystemServiceTable(ptr ptr long ptr long)
 @ stdcall KeAreAllApcsDisabled()
 @ stdcall KeAreApcsDisabled()
@@ -599,6 +599,7 @@
 @ stdcall KeFlushQueuedDpcs()
 @ stdcall KeGenericCallDpc(ptr ptr)
 @ stdcall KeGetCurrentThread()
+@ stdcall -arch=arm64 KeGetCurrentProcessorIndex()
 @ stdcall KeGetPreviousMode()
 @ stdcall KeGetRecommendedSharedDataAlignment()
 @ stdcall -arch=i386 KeI386AbiosCall(long ptr ptr long)
@@ -647,13 +648,13 @@
 @ stdcall KeProfileInterruptWithSource(ptr long)
 @ stdcall KePulseEvent(ptr long long)
 @ stdcall KeQueryActiveProcessors()
-@ stdcall -arch=i386,arm KeQueryInterruptTime()
+@ stdcall -arch=i386,arm,arm64 KeQueryInterruptTime()
 ;@ cdecl -arch=x86_64 KeQueryMultiThreadProcessorSet
 ;@ cdecl -arch=x86_64 KeQueryPrcbAddress
 @ stdcall KeQueryPriorityThread(ptr)
 @ stdcall KeQueryRuntimeThread(ptr ptr)
-@ stdcall -arch=i386,arm KeQuerySystemTime(ptr)
-@ stdcall -arch=i386,arm KeQueryTickCount(ptr)
+@ stdcall -arch=i386,arm,arm64 KeQuerySystemTime(ptr)
+@ stdcall -arch=i386,arm,arm64 KeQueryTickCount(ptr)
 @ stdcall KeQueryTimeIncrement()
 @ cdecl -arch=x86_64 -private KeRaiseIrqlToDpcLevel() KxRaiseIrqlToDpcLevel
 @ stdcall KeRaiseUserException(long)
@@ -689,10 +690,12 @@
 @ stdcall KeResetEvent(ptr)
 @ stdcall -arch=i386 KeRestoreFloatingPointState(ptr)
 @ stdcall -arch=x86_64 KeRestoreFloatingPointState(ptr) KxRestoreFloatingPointState
+@ stdcall -arch=arm64 KeRestoreFloatingPointState(ptr)
 @ stdcall KeRevertToUserAffinityThread()
 @ stdcall KeRundownQueue(ptr)
 @ stdcall -arch=i386 KeSaveFloatingPointState(ptr)
 @ stdcall -arch=x86_64 KeSaveFloatingPointState(ptr) KxSaveFloatingPointState
+@ stdcall -arch=arm64 KeSaveFloatingPointState(ptr)
 @ cdecl KeSaveStateForHibernate(ptr)
 @ extern KeServiceDescriptorTable
 @ stdcall KeSetAffinityThread(ptr long)
@@ -1134,10 +1137,10 @@
 @ stdcall RtlEqualString(ptr ptr long)
 @ stdcall RtlEqualUnicodeString(ptr ptr long)
 @ stdcall -arch=win32 RtlExtendedIntegerMultiply(long long long)
-@ stdcall -arch=win32 RtlExtendedLargeIntegerDivide(long long long ptr)
+@ stdcall -arch=win32,arm64 RtlExtendedLargeIntegerDivide(long long long ptr)
 @ stdcall -arch=win32 RtlExtendedMagicDivide(long long long long long)
 @ stdcall RtlFillMemory(ptr long long)
-@ stdcall -arch=i386,arm RtlFillMemoryUlong(ptr long long)
+@ stdcall -arch=i386,arm,arm64 RtlFillMemoryUlong(ptr long long)
 @ stdcall RtlFindClearBits(ptr long long)
 @ stdcall RtlFindClearBitsAndSet(ptr long long)
 @ stdcall RtlFindClearRuns(ptr ptr long long)
@@ -1653,3 +1656,13 @@
 @ stdcall -arch=arm __rt_udiv()
 @ stdcall -arch=arm __rt_udiv64()
 @ stdcall -arch=arm __rt_srsh()
+
+# ARM64 specific exports
+@ extern -arch=arm64 KiInitialPcr
+
+# Framebuffer variables for bootvid driver (ARM64 UEFI GOP support)
+@ extern -arch=arm64 VidpFrameBufferBase
+@ extern -arch=arm64 VidpFrameBufferSize
+@ extern -arch=arm64 VidpScreenWidth
+@ extern -arch=arm64 VidpScreenHeight
+@ extern -arch=arm64 VidpPixelsPerScanLine

@@ -114,6 +114,12 @@ elseif(ARCH STREQUAL "arm")
     list(APPEND ASM_SOURCE
         client/arm/fiber.S
         client/arm/thread.S)
+elseif(ARCH STREQUAL "arm64")
+    list(APPEND ASM_SOURCE
+        client/arm64/fiber.S)
+    # ARM64: Compile assembly stubs without generating .pdata to avoid relocation truncation
+    set_source_files_properties(client/arm64/fiber.S PROPERTIES
+        COMPILE_FLAGS "-fno-asynchronous-unwind-tables -fno-unwind-tables -fno-exceptions")
 endif()
 
 add_asm_files(kernel32_asm ${ASM_SOURCE})

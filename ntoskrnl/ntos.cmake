@@ -125,6 +125,7 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/inbv/gopvid.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/inbv/inbv.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/inbv/inbvport.c
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/inbv/viddata.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/adapter.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/arcname.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/io/iomgr/bootlog.c
