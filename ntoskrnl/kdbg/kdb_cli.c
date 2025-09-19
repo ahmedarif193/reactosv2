@@ -985,7 +985,7 @@ KdbpCmdRegs(
                   "   X24  0x%p     X25  0x%p\n"
                   "   X26  0x%p     X27  0x%p\n"
                   "   X28  0x%p     FP   0x%p\n",
-                  Context->Cpsr, Context->Pc,
+                  Context->Pstate, Context->Pc,
                   Context->Sp, Context->Lr,
                   Context->X0, Context->X1,
                   Context->X2, Context->X3,
@@ -1030,16 +1030,16 @@ KdbpCmdRegs(
         KdbpPrint("\n");
 #else
         /* Display ARM64 CPSR/PSTATE bits */
-        KdbpPrint("PSTATE  0x%08x ", Context->Cpsr);
-        if (Context->Cpsr & 0x80000000) KdbpPrint(" N");
-        if (Context->Cpsr & 0x40000000) KdbpPrint(" Z");
-        if (Context->Cpsr & 0x20000000) KdbpPrint(" C");
-        if (Context->Cpsr & 0x10000000) KdbpPrint(" V");
-        KdbpPrint(" [EL%d]", (Context->Cpsr >> 2) & 3);
-        if (Context->Cpsr & 0x200) KdbpPrint(" D");
-        if (Context->Cpsr & 0x100) KdbpPrint(" A");
-        if (Context->Cpsr & 0x80) KdbpPrint(" I");
-        if (Context->Cpsr & 0x40) KdbpPrint(" F");
+        KdbpPrint("PSTATE  0x%08x ", Context->Pstate);
+        if (Context->Pstate & 0x80000000) KdbpPrint(" N");
+        if (Context->Pstate & 0x40000000) KdbpPrint(" Z");
+        if (Context->Pstate & 0x20000000) KdbpPrint(" C");
+        if (Context->Pstate & 0x10000000) KdbpPrint(" V");
+        KdbpPrint(" [EL%d]", (Context->Pstate >> 2) & 3);
+        if (Context->Pstate & 0x200) KdbpPrint(" D");
+        if (Context->Pstate & 0x100) KdbpPrint(" A");
+        if (Context->Pstate & 0x80) KdbpPrint(" I");
+        if (Context->Pstate & 0x40) KdbpPrint(" F");
         KdbpPrint("\n");
 #endif
     }
@@ -1145,7 +1145,7 @@ KdbpCmdRegs(
                   Context->SegSs, Context->SegSs >> 3, (Context->SegSs & (1 << 2)) ? 'L' : 'G', Context->SegSs & 3);
 #elif defined(_M_ARM64)
         KdbpPrint("ARM64 does not have segment registers\n");
-        KdbpPrint("PSTATE: 0x%08x\n", Context->Cpsr);
+        KdbpPrint("PSTATE: 0x%08x\n", Context->Pstate);
         KdbpPrint("Use 'regs' to see general purpose registers\n");
 #else
         KdbpPrint("Segment registers not supported on this architecture\n");

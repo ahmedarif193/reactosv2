@@ -33,9 +33,30 @@ add_compile_definitions(
     CRTDLL
 )
 
-if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR
-   CMAKE_C_COMPILER_ID STREQUAL "Clang")
-    # Silence GCC/Clang warnings
+if(CMAKE_C_COMPILER_ID STREQUAL "GNU")
+    # Silence GCC warnings - only use flags that GCC recognizes
+    add_compile_options(
+        -Wno-unused-function
+        -Wno-unknown-pragmas
+        -Wno-builtin-declaration-mismatch
+        -Wno-parentheses
+        -Wno-unused-variable
+        -Wno-sign-compare
+        -Wno-enum-compare
+        -Wno-switch
+        -Wno-write-strings
+        -Wno-comment
+        -Wno-narrowing
+        -Wno-misleading-indentation
+        -Wno-missing-braces
+        -Wno-unused-value
+        -Wno-empty-body
+        -Wno-ignored-attributes
+        -Wno-uninitialized
+    )
+    add_compile_options($<$<COMPILE_LANGUAGE:CXX>:-Wno-reorder>)
+elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
+    # Clang-specific warnings
     add_compile_options(
         -Wno-unused-function
         -Wno-unknown-pragmas
@@ -52,10 +73,8 @@ if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR
         -Wno-missing-braces
         -Wno-unused-value
         -Wno-unused-local-typedef
-        -Wno-unused-function
         -Wno-writable-strings
         -Wno-microsoft-template
-        -Wno-switch
         -Wno-ignored-pragmas
         -Wno-empty-body
         -Wno-tautological-constant-out-of-range-compare

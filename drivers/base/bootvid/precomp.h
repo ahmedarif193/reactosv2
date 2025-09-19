@@ -24,7 +24,7 @@
 #include "i386/pc/vga.h"
 #include "i386/pc/pc.h"
 #endif
-#elif defined(_M_ARM)
+#elif defined(_M_ARM) || defined(_M_ARM64)
 #include "arm/arm.h"
 #else
 #error Unknown architecture

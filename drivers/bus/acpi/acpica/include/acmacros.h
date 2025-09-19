@@ -262,7 +262,7 @@
 
 #define ACPI_ROUND_UP_TO(value, boundary)   (((value) + ((boundary)-1)) / (boundary))
 
-#define ACPI_IS_MISALIGNED(value)           (((ACPI_SIZE) value) & (sizeof(ACPI_SIZE)-1))
+#define ACPI_IS_MISALIGNED(value)           (((ACPI_SIZE)(ULONG_PTR) value) & (sizeof(ACPI_SIZE)-1))
 
 /* Generic bit manipulation */
 

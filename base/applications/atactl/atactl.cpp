@@ -1017,7 +1017,7 @@ ata_adapter_info(
         } else {
             if(AdapterInfo->AdapterInterfaceType == PCIBus) {
                 slotData.u.AsULONG = AdapterInfo->slotNumber;
-                printf("  PCI Bus/Dev/Func:   %lu/%lu/%lu%s\n",
+                printf("  PCI Bus/Dev/Func:   %lu/%u/%u%s\n",
                     AdapterInfo->SystemIoBusNumber, slotData.u.bits.DeviceNumber, slotData.u.bits.FunctionNumber,
                     AdapterInfo->AdapterInterfaceType == AdapterInfo->OrigAdapterInterfaceType ? "" : " (ISA-Bridged)");
                 printf("  VendorId/DevId/Rev: %#04x/%#04x/%#02x\n",

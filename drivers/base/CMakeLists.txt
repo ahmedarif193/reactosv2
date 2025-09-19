@@ -16,7 +16,7 @@ else()
     add_subdirectory(kdrosdbg)
 endif()
 
-if(NOT ARCH STREQUAL "arm")
+if(NOT ARCH STREQUAL "arm" AND NOT ARCH STREQUAL "arm64")
 add_subdirectory(nmidebug)
 endif()
 add_subdirectory(null)

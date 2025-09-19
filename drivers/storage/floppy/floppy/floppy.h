@@ -32,7 +32,11 @@
 #define MAX_CONTROLLERS 4
 
 /* MS doesn't prototype this but the w2k kernel exports it */
+#ifdef _M_ARM64
+int swprintf(const WCHAR *, ...);
+#else
 int _cdecl swprintf(const WCHAR *, ...);
+#endif
 
 /* need ioctls in ddk build mode */
 #include <ntdddisk.h>

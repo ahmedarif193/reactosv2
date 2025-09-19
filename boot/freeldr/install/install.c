@@ -145,6 +145,15 @@ BOOL InstallBootSector(LPCTSTR lpszVolumeType)
     if (_tcsicmp(lpszVolumeType, _T("fat")) == 0)
     {
         //
+        // Check if fat_data array has valid size (ARM64 uses UEFI, no legacy boot sectors)
+        //
+        if (fat_data_SIZE == 0)
+        {
+            _tprintf(_T("Error: FAT boot sector not available on this platform\n"));
+            return FALSE;
+        }
+
+        //
         // Update the BPB in the new boot sector
         //
         memcpy((fat_data+3), (BootSectorBuffer+3), 59 /*fat BPB length*/);
@@ -159,6 +168,15 @@ BOOL InstallBootSector(LPCTSTR lpszVolumeType)
     }
     else if (_tcsicmp(lpszVolumeType, _T("fat32")) == 0)
     {
+        //
+        // Check if fat32_data array has valid size (ARM64 uses UEFI, no legacy boot sectors)
+        //
+        if (fat32_data_SIZE == 0)
+        {
+            _tprintf(_T("Error: FAT32 boot sector not available on this platform\n"));
+            return FALSE;
+        }
+
         //
         // Update the BPB in the new boot sector
         //

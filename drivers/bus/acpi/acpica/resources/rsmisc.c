@@ -97,7 +97,7 @@ AcpiRsConvertAmlToResource (
         return_ACPI_STATUS (AE_BAD_PARAMETER);
     }
 
-    if (((ACPI_SIZE) Resource) & 0x3)
+    if (ACPI_TO_INTEGER(Resource) & 0x3)
     {
         /* Each internal resource struct is expected to be 32-bit aligned */
 

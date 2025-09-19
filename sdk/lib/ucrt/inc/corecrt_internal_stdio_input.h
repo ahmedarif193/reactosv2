@@ -1082,9 +1082,16 @@ public:
           _input_adapter                  {input_adapter                                               },
           _format_parser                  {options, reinterpret_cast<unsigned_char_type const*>(format)},
           _locale                         {locale                                                      },
+#ifdef __aarch64__
+          // _valist will be assigned in constructor body
+#else
           _valist                         {arglist                                                     },
+#endif
           _receiving_arguments_assigned   {0                                                           }
     {
+#ifdef __aarch64__
+        _valist = arglist;  // ARM64: assign va_list in constructor body
+#endif
     }
 
     int process() throw()

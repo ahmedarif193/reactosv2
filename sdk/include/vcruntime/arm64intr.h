@@ -45,6 +45,7 @@ long _InterlockedIncrement(long volatile * _Addend);
 long _InterlockedDecrement(long volatile * _Addend);
 long _InterlockedExchangeAdd(long volatile * _Addend, long _Value);
 long long _InterlockedAnd64(long long volatile * _Value, long long _Mask);
+long long _InterlockedAdd64(long long volatile * _Addend, long long _Value);
 long long _InterlockedOr64(long long volatile * _Value, long long _Mask);
 long long _InterlockedCompareExchange64(long long volatile * _Destination, long long _Exchange, long long _Comparand);
 char _InterlockedCompareExchange8(char volatile * _Destination, char _Exchange, char _Comparand);
@@ -86,6 +87,8 @@ __forceinline long _InterlockedExchangeAdd(long volatile * _Addend, long _Value)
     return __atomic_fetch_add(_Addend, _Value, __ATOMIC_SEQ_CST);
 }
 
+
+
 __forceinline void* _InterlockedCompareExchangePointer(void* volatile * _Destination, void* _Exchange, void* _Comparand)
 {
     void* expected = _Comparand;
@@ -116,6 +119,11 @@ __forceinline unsigned long long _byteswap_uint64(unsigned long long value)
 __forceinline long long _InterlockedAnd64(long long volatile * _Value, long long _Mask)
 {
     return __atomic_fetch_and(_Value, _Mask, __ATOMIC_SEQ_CST);
+}
+
+__forceinline long long _InterlockedAdd64(long long volatile * _Addend, long long _Value)
+{
+    return __atomic_fetch_add(_Addend, _Value, __ATOMIC_SEQ_CST);
 }
 
 __forceinline long long _InterlockedOr64(long long volatile * _Value, long long _Mask)
@@ -285,6 +293,7 @@ __forceinline short _InterlockedXor16(short volatile * _Value, short _Mask)
 #pragma intrinsic(_InterlockedDecrement)
 #pragma intrinsic(_InterlockedExchangeAdd)
 #pragma intrinsic(_InterlockedAnd64)
+#pragma intrinsic(_InterlockedAdd64)
 #pragma intrinsic(_InterlockedOr64)
 #pragma intrinsic(_InterlockedCompareExchange64)
 #pragma intrinsic(_InterlockedCompareExchange8)

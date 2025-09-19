@@ -13,6 +13,7 @@
 #include <corecrt_internal_strtox.h>
 #include <ctype.h>
 #include <locale.h>
+#include <string.h>  // For memset
 #include <stdarg.h>
 
 #include <corecrt_internal_ptd_propagation.h>
@@ -917,7 +918,7 @@ protected:
         : _options           {0            },
           _ptd               {ptd          },
           _format_it         {nullptr      },
-          _valist_it         {nullptr      },
+          // _valist_it will be initialized in constructor body
           _characters_written{0            },
           _state             {state::normal},
           _flags             {0            },
@@ -928,6 +929,12 @@ protected:
           _string_length     {0            },
           _string_is_wide    {false        }
     {
+#ifdef __aarch64__
+        // ARM64: va_list is a struct, zero-initialize it
+        memset(&_valist_it, 0, sizeof(_valist_it));
+#else
+        _valist_it = nullptr;
+#endif
     }
 
     uint64_t                        _options;

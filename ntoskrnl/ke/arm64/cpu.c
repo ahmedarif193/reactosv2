@@ -22,6 +22,18 @@ ULONG64 KeArm64CpuFeatures = 0;
 /* FUNCTIONS *****************************************************************/
 
 /**
+ * @brief Get the current processor index on ARM64
+ */
+ULONG
+NTAPI
+KeGetCurrentProcessorIndex(VOID)
+{
+    /* Get the processor index from the PCR */
+    /* On ARM64, Prcb is actually embedded in KIPCR */
+    return KeGetPcr()->Prcb.Number;
+}
+
+/**
  * @brief Initialize ARM64 CPU-specific features
  */
 VOID
@@ -74,17 +86,6 @@ NTAPI
 KeGetCurrentProcessorNumber(VOID)
 {
     /* Return processor 0 for now */
-    return 0;
-}
-
-/**
- * @brief Get the current processor index (ARM64 equivalent)
- */
-ULONG
-NTAPI
-KeGetCurrentProcessorIndex(VOID)
-{
-    /* Return processor 0 for now - same as KeGetCurrentProcessorNumber on ARM64 */
     return 0;
 }
 

@@ -1616,7 +1616,11 @@ int main(int argc, char *argv[])
     else if (strcasecmp(pszArchString, "x86_64") == 0) giArch = ARCH_AMD64;
     else if (strcasecmp(pszArchString, "ia64") == 0) giArch = ARCH_IA64;
     else if (strcasecmp(pszArchString, "arm") == 0) giArch = ARCH_ARM;
-    else if (strcasecmp(pszArchString, "arm64") == 0 || strcasecmp(pszArchString, "aarch64") == 0) giArch = ARCH_ARM64;
+    else if (strcasecmp(pszArchString, "arm64") == 0 || strcasecmp(pszArchString, "aarch64") == 0)
+    {
+        giArch = ARCH_ARM64;
+        pszArchString = "arm64";  /* Normalize aarch64 to arm64 for spec file compatibility */
+    }
     else if (strcasecmp(pszArchString, "ppc") == 0) giArch = ARCH_PPC;
 
     /* Treat 64-bit architectures as win64-style (no stdcall suffixes, PE+) */

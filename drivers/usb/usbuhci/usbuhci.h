@@ -50,7 +50,7 @@ typedef struct _UHCI_HCD_TD {
   struct _UHCI_HCD_TD * NextHcdTD;
   _ANONYMOUS_UNION union {
     PUHCI_TRANSFER UhciTransfer;
-#if !defined(_M_X64)
+#if !defined(_M_X64) && !defined(_M_ARM64) && !defined(__aarch64__)
     ULONG Frame; // for SOF_HcdTDs only
 #else
     struct {
@@ -60,14 +60,17 @@ typedef struct _UHCI_HCD_TD {
 #endif
   } DUMMYUNIONNAME;
   LIST_ENTRY TdLink;
-#if !defined(_M_X64)
+#if !defined(_M_X64) && !defined(_M_ARM64) && !defined(__aarch64__)
   ULONG Padded[4];
 #else
   ULONG Padded[15];
 #endif
 } UHCI_HCD_TD, *PUHCI_HCD_TD;
 
-#if !defined(_M_X64)
+#if defined(_M_ARM64) || defined(__aarch64__)
+/* ARM64 has different structure sizes due to pointer alignment */
+C_ASSERT(sizeof(UHCI_HCD_TD) == 0x80);
+#elif !defined(_M_X64)
 C_ASSERT(sizeof(UHCI_HCD_TD) == 0x40);
 #else
 C_ASSERT(sizeof(UHCI_HCD_TD) == 0x80);
@@ -84,21 +87,26 @@ typedef struct _UHCI_HCD_QH {
   ULONG PhysicalAddress;
   ULONG QhFlags;
   struct _UHCI_HCD_QH * NextHcdQH;
-#if !defined(_M_X64)
+#if !defined(_M_X64) && !defined(_M_ARM64) && !defined(__aarch64__)
   ULONG Pad1;
 #endif
   struct _UHCI_HCD_QH * PrevHcdQH;
-#if !defined(_M_X64)
+#if !defined(_M_X64) && !defined(_M_ARM64) && !defined(__aarch64__)
   ULONG Pad2;
 #endif
   PUHCI_ENDPOINT UhciEndpoint;
-#if !defined(_M_X64)
+#if !defined(_M_X64) && !defined(_M_ARM64) && !defined(__aarch64__)
   ULONG Pad3;
 #endif
   ULONG Padded[6];
 } UHCI_HCD_QH, *PUHCI_HCD_QH;
 
+#if defined(_M_ARM64) || defined(__aarch64__)
+/* ARM64 has different structure sizes due to pointer alignment */
+C_ASSERT(sizeof(UHCI_HCD_QH) == 0x80);
+#else
 C_ASSERT(sizeof(UHCI_HCD_QH) == 0x40);
+#endif
 
 #define UHCI_ENDPOINT_FLAG_HALTED           1
 #define UHCI_ENDPOINT_FLAG_RESERVED         2

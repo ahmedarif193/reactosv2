@@ -79,6 +79,20 @@ KsecReadMachineSpecificCounters(
 #elif defined(_M_ARM)
     /* Read the Cycle Counter Register */
     MachineSpecificCounters->Ccr = _MoveFromCoprocessor(CP15_PMCCNTR);
+#elif defined(_M_ARM64)
+    /* Read ARM64 performance monitoring counters for entropy */
+    /* Note: On ARM64, cycle counter access may require privileged mode */
+    /* We use a fallback approach with standard tick counters for now */
+    LARGE_INTEGER TickCount;
+    KeQueryTickCount(&TickCount);
+
+    /* Use tick count as cycle counter approximation */
+    MachineSpecificCounters->Ccr = TickCount.QuadPart;
+
+    /* Initialize performance counters to zero for now */
+    /* TODO: Implement actual PMC access when available */
+    MachineSpecificCounters->Pmc0 = 0;
+    MachineSpecificCounters->Pmc1 = 0;
 #else
     #error Implement me!
 #endif

@@ -988,7 +988,7 @@ GetClassLongPtrW(HWND hWnd,
 
     return Ret;
 }
-#endif
+#endif // _WIN64 || _M_ARM64
 
 
 /*
@@ -1199,7 +1199,7 @@ GetWindowLongPtrW(HWND hWnd,
     return IntGetWindowLong( hWnd, nIndex, sizeof(LONG_PTR), TRUE );
 
 }
-#endif // _WIN64
+#endif // _WIN64 || _M_ARM64
 
 /*
  * @implemented
@@ -1635,7 +1635,7 @@ SetClassLongPtrW(HWND hWnd,
                                  dwNewLong,
                                  FALSE);
 }
-#endif // _WIN64
+#endif // _WIN64 || _M_ARM64
 
 /*
  * @implemented
@@ -1735,7 +1735,7 @@ SetWindowLongPtrW(HWND hWnd,
 {
     return NtUserSetWindowLongPtr(hWnd, nIndex, dwNewLong, FALSE);
 }
-#endif
+#endif // _WIN64 || _M_ARM64
 
 /*
  * @implemented

@@ -39,6 +39,11 @@ PKTHREAD
 NTAPI
 KeGetCurrentThread(VOID);
 
+NTKERNELAPI
+ULONG
+NTAPI
+KeGetCurrentProcessorIndex(VOID);
+
 _IRQL_requires_max_(HIGH_LEVEL)
 _IRQL_saves_
 NTHALAPI
@@ -46,29 +51,71 @@ KIRQL
 NTAPI
 KeGetCurrentIrql(VOID);
 
-#define DbgRaiseAssertionFailure() __break(0xf001)
-
-/* PCR version constants for ARM64 */
-#define PCR_MINOR_VERSION 1
-#define PCR_MAJOR_VERSION 1
-
-/* ARM64 IRQL functions */
-/* ARM64 IRQL function declarations */
-NTHALAPI
-VOID
-NTAPI
-KfLowerIrql(
-    _In_ KIRQL NewIrql);
-
+_IRQL_requires_max_(HIGH_LEVEL)
+_IRQL_saves_
 NTHALAPI
 KIRQL
 NTAPI
 KfRaiseIrql(
     _In_ KIRQL NewIrql);
 
+_IRQL_requires_max_(HIGH_LEVEL)
+NTHALAPI
+VOID
+NTAPI
+KfLowerIrql(
+    _In_ KIRQL NewIrql);
+
+/* ARM64 debug break intrinsic */
+#define DbgRaiseAssertionFailure __debugbreak
+
+/* Memory barrier for ARM64 */
+#define KeMemoryBarrier() __asm__ volatile("dmb sy" ::: "memory")
+
+/* PCR version constants for ARM64 */
+#define PCR_MINOR_VERSION 1
+#define PCR_MAJOR_VERSION 1
+
 /* Match other arches: map Ke{Lower,Raise}Irql to Kf* */
 #define KeLowerIrql(a) KfLowerIrql(a)
 #define KeRaiseIrql(a,b) *(b) = KfRaiseIrql(a)
+
+/* VOID
+ * KeFlushIoBuffers(
+ *   IN PMDL Mdl,
+ *   IN BOOLEAN ReadOperation,
+ *   IN BOOLEAN DmaOperation)
+ */
+#define KeFlushIoBuffers(_Mdl, _ReadOperation, _DmaOperation)
+
+#define KeQueryTickCount(CurrentCount) _KeQueryTickCount(CurrentCount)
+
+FORCEINLINE
+VOID
+_KeQueryTickCount(
+    OUT PLARGE_INTEGER CurrentCount)
+{
+    /* ARM64 implementation - read from shared user data */
+    CurrentCount->QuadPart = *(volatile LONGLONG*)0xFFFFF78000000320ULL;
+}
+
+typedef union NEON128 {
+    struct {
+        ULONGLONG Low;
+        LONGLONG High;
+    } DUMMYSTRUCTNAME;
+    double D[2];
+    float  S[4];
+    USHORT H[8];
+    UCHAR  B[16];
+} NEON128, *PNEON128;
+
+typedef struct _KFLOATING_SAVE
+{
+    ULONG Fpcr;             /* Floating-point Control Register */
+    ULONG Fpsr;             /* Floating-point Status Register */
+    NEON128 V[32];          /* NEON/FPU registers */
+} KFLOATING_SAVE, *PKFLOATING_SAVE;
 
 $endif (_WDMDDK_)
 $if (_NTDDK_)
@@ -87,31 +134,9 @@ KeGetCurrentProcessorNumber(VOID)
     return *(ULONG*)((ULONG_PTR)processorNumber + 0x8);
 }
 
-#define KeQueryTickCount(CurrentCount) _KeQueryTickCount(CurrentCount)
-
-FORCEINLINE
-VOID
-_KeQueryTickCount(
-    OUT PLARGE_INTEGER CurrentCount)
-{
-    /* ARM64 implementation - read from shared user data */
-    CurrentCount->QuadPart = *(volatile LONGLONG*)0xFFFFF78000000320ULL;
-}
-
 #define ARM64_MAX_BREAKPOINTS 8
 #define ARM64_MAX_WATCHPOINTS 2
 
-typedef union NEON128 {
-    struct {
-        ULONGLONG Low;
-        LONGLONG High;
-    } DUMMYSTRUCTNAME;
-    double D[2];
-    float  S[4];
-    USHORT H[8];
-    UCHAR  B[16];
-} NEON128, *PNEON128;
-typedef NEON128 NEON128, *PNEON128;
 
 typedef struct _CONTEXT {
 
@@ -186,12 +211,6 @@ typedef struct _CONTEXT {
 } CONTEXT, *PCONTEXT;
 
 /* ARM64 floating point save area */
-typedef struct _KFLOATING_SAVE
-{
-    ULONG Fpcr;             /* Floating-point Control Register */
-    ULONG Fpsr;             /* Floating-point Status Register */
-    NEON128 V[32];          /* NEON/FPU registers */
-} KFLOATING_SAVE, *PKFLOATING_SAVE;
 
 /* ARM64 floating point functions */
 NTSTATUS

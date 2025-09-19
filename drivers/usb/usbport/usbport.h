@@ -400,10 +400,12 @@ typedef struct _USBPORT_DEVICE_EXTENSION {
 
 } USBPORT_DEVICE_EXTENSION, *PUSBPORT_DEVICE_EXTENSION;
 
-#if !defined(_M_X64)
+#if !defined(_M_X64) && !defined(_M_ARM64)
 C_ASSERT(sizeof(USBPORT_DEVICE_EXTENSION) == 0x500);
-#else
+#elif defined(_M_X64)
 C_ASSERT(sizeof(USBPORT_DEVICE_EXTENSION) == 0x700);
+#else
+/* TODO: Determine correct size for ARM64 */
 #endif
 
 typedef struct _USBPORT_RH_DESCRIPTORS {

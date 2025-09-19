@@ -76,6 +76,16 @@ __INTRIN_INLINE long long _InterlockedExchangeAdd64(volatile long long* a, long 
     return __sync_fetch_and_add((volatile long long*)a, b);
 }
 
+__INTRIN_INLINE long long _InterlockedIncrement64(volatile long long* a)
+{
+    return __sync_add_and_fetch((volatile long long*)a, 1);
+}
+
+__INTRIN_INLINE long long _InterlockedDecrement64(volatile long long* a)
+{
+    return __sync_sub_and_fetch((volatile long long*)a, 1);
+}
+
 __declspec(noreturn)
 __INTRIN_INLINE void __fastfail(unsigned int Code)
 {

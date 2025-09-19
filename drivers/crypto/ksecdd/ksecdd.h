@@ -49,6 +49,13 @@ typedef struct _KSEC_MACHINE_SPECIFIC_COUNTERS
 {
     ULONG Ccr;
 } KSEC_MACHINE_SPECIFIC_COUNTERS, *PKSEC_MACHINE_SPECIFIC_COUNTERS;
+#elif defined(_M_ARM64)
+typedef struct _KSEC_MACHINE_SPECIFIC_COUNTERS
+{
+    ULONG64 Ccr;          /* Cycle Counter Register */
+    ULONG64 Pmc0;         /* Performance Monitor Counter 0 */
+    ULONG64 Pmc1;         /* Performance Monitor Counter 1 */
+} KSEC_MACHINE_SPECIFIC_COUNTERS, *PKSEC_MACHINE_SPECIFIC_COUNTERS;
 #else
 typedef ULONG KSEC_MACHINE_SPECIFIC_COUNTERS, *PKSEC_MACHINE_SPECIFIC_COUNTERS;
 #endif
