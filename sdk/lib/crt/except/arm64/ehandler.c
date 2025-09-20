@@ -58,6 +58,15 @@ typedef struct _SCOPE_TABLE_ARM64 {
     } ScopeRecord[1];
 } SCOPE_TABLE_ARM64, *PSCOPE_TABLE_ARM64;
 
+/* Exception pointers structure */
+#ifndef _EXCEPTION_POINTERS_DEFINED
+typedef struct _EXCEPTION_POINTERS {
+    EXCEPTION_RECORD *ExceptionRecord;
+    CONTEXT *ContextRecord;
+} EXCEPTION_POINTERS, *PEXCEPTION_POINTERS;
+#define _EXCEPTION_POINTERS_DEFINED
+#endif
+
 /* Function pointer types */
 typedef void (*PTERMINATION_HANDLER)(unsigned char AbnormalTermination, void *EstablisherFrame);
 typedef long (*PEXCEPTION_FILTER)(PEXCEPTION_POINTERS ExceptionPointers, void *EstablisherFrame);

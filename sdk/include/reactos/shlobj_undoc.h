@@ -181,8 +181,14 @@ struct DEFFOLDERSETTINGS
     enum { SIZE_NT4 = 8, SIZE_IE4 = 36, SIZE_XP = 40 };
     enum { VER_98 = 0, VER_2000 = 3, VER_XP = 4 }; // Win98SE with IE5 writes 0, not 3 as the version
 #endif
-    UINT Statusbar : 1; // "StatusBarOther" is the new location for this
-    UINT Toolbar : 1; // Not used when Explorer uses ReBar
+    union {
+        struct {
+            UINT Statusbar : 1; // "StatusBarOther" is the new location for this
+            UINT Toolbar : 1; // Not used when Explorer uses ReBar
+            UINT Reserved : 30; // Ensure 32-bit container for bitfields
+        };
+        UINT BitFieldContainer; // Force 4-byte size for the bitfield
+    };
     FOLDERSETTINGS FolderSettings;
     SHELLVIEWID vid;
     UINT Version;

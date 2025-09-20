@@ -35,8 +35,8 @@ ULONG64 KiTimerFrequency = 0;
 /* Process counter for performance monitoring */
 ULONG ProcessCount;
 
-/* PCR and PRCB */
-KIPCR KiInitialPcr;
+/* PCR and PRCB - exported for kernel drivers */
+__declspec(dllexport) KIPCR KiInitialPcr;
 KPRCB KiInitialPrcb;
 
 /* FUNCTIONS *****************************************************************/
@@ -225,13 +225,26 @@ KiInitializeArm64Pcr(
 {
     /* Clear the PCR */
     RtlZeroMemory(Pcr, sizeof(KIPCR));
-    
+
+    /* Set up self-referential members required by common macros */
+    Pcr->Self = (PKPCR)(PVOID)Pcr;
+    Pcr->Used_Self = (PVOID)Pcr;
+    Pcr->PcrReserved0 = NULL;
+    Pcr->LockArray = NULL;
+    Pcr->CurrentIrql = PASSIVE_LEVEL;
+    Pcr->Prcb.CurrentThread = NULL;
+    Pcr->Prcb.NextThread = NULL;
+    Pcr->Prcb.IdleThread = NULL;
+    Pcr->Prcb.DpcStack = NULL;
+    Pcr->Prcb.MultiThreadProcessorSet = 0;
+    Pcr->Prcb.BuildType = 0;
+    Pcr->Prcb.FeatureBits = 0;
+
     /* Set up basic PCR fields */
     Pcr->MajorVersion = PCR_MAJOR_VERSION;
     Pcr->MinorVersion = PCR_MINOR_VERSION;
     Pcr->Prcb.MajorVersion = PRCB_MAJOR_VERSION;
     Pcr->Prcb.MinorVersion = PRCB_MINOR_VERSION;
-    Pcr->Prcb.BuildType = 0;
     
     /* Set processor number */
     Pcr->Prcb.Number = (UCHAR)ProcessorNumber;
@@ -239,12 +252,10 @@ KiInitializeArm64Pcr(
     
     /* Initialize PRCB */
     Pcr->Prcb.CurrentThread = IdleThread;
-    Pcr->Prcb.NextThread = NULL;
     Pcr->Prcb.IdleThread = IdleThread;
-    
-    /* Set DPC stack */
     Pcr->Prcb.DpcStack = DpcStack;
-    
+    Pcr->Prcb.MultiThreadProcessorSet = Pcr->Prcb.SetMember;
+
     /* Initialize processor features */
     Pcr->Prcb.FeatureBits = (ULONG)KiArm64Features;
     
@@ -304,21 +315,33 @@ KiInitializeKernel(
     IN PLOADER_PARAMETER_BLOCK LoaderBlock
 )
 {
+    UNREFERENCED_PARAMETER(Prcb);
+    UNREFERENCED_PARAMETER(LoaderBlock);
+
     /* Early processor initialization */
     KiInitializeProcessor();
-    
+
     /* Initialize PCR */
     KiInitializeArm64Pcr((PKIPCR)&KiInitialPcr, Number, InitThread, IdleStack);
     
     /* Initialize PRCB */
     RtlCopyMemory(&KiInitialPrcb, &KiInitialPcr.Prcb, sizeof(KPRCB));
-    
-    /* Set up initial thread */
-    InitThread->ApcState.Process = InitProcess;
-    InitProcess->DirectoryTableBase[0] = __readttbr1_el1();
-    
+
+    /* Set up initial thread/process information when available */
+    if (InitThread != NULL && InitProcess != NULL)
+    {
+        InitThread->ApcState.Process = InitProcess;
+
+        /* Preserve the loader supplied top-level translation base */
+        InitProcess->DirectoryTableBase[0] = __readttbr1_el1();
+    }
+    else
+    {
+        DPRINT1("ARM64: KiInitializeKernel called without initial thread/process context\n");
+    }
+
     DPRINT("ARM64: Kernel initialization completed\n");
-    
+
     return STATUS_SUCCESS;
 }
 
@@ -377,12 +400,154 @@ KiSystemStartup(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 
     /* TODO: For now, just loop to prevent returning */
     /* Real implementation would initialize the system and start the scheduler */
-    DPRINT1("ARM64: KiSystemStartup completed - entering infinite loop\n");
+    DPRINT1("ARM64: KiSystemStartup not yet implemented - bugchecking to avoid hang\n");
 
-    /* Disable interrupts and halt */
-    _disable();
-    for (;;)
+    /* Fail fast until full bring-up is implemented */
+    ARM64_DISABLE_INTERRUPTS();
+    KeBugCheckEx(PHASE0_INITIALIZATION_FAILED, 0, 0, 0, 0);
+}
+
+/**
+ * @brief Initialize machine-dependent kernel features for ARM64
+ *
+ * This function is called by KeInitSystem to initialize
+ * architecture-specific features after the portable kernel
+ * initialization is complete.
+ */
+VOID
+NTAPI
+KiInitMachineDependent(VOID)
+{
+    /* Initialize ARM64 specific features */
+    DPRINT("ARM64: Initializing machine-dependent features\n");
+
+    /* Check for and initialize Advanced SIMD if present */
+    if (KiArm64Features & ARM64_FEATURE_ASIMD)
     {
-        __asm__ volatile("wfe"); /* Wait for event - low power mode */
+        /* Enable Advanced SIMD for the kernel */
+        DPRINT("ARM64: Advanced SIMD support enabled\n");
+        /* TODO: Initialize SIMD state management */
     }
+
+    /* Check for and initialize crypto extensions if present */
+    if (KiArm64Features & ARM64_FEATURE_AES)
+    {
+        DPRINT("ARM64: AES crypto acceleration available\n");
+        /* TODO: Register crypto acceleration routines */
+    }
+
+    if (KiArm64Features & ARM64_FEATURE_SHA)
+    {
+        DPRINT("ARM64: SHA crypto acceleration available\n");
+        /* TODO: Register SHA acceleration routines */
+    }
+
+    /* Check for and initialize CRC32 if present */
+    if (KiArm64Features & ARM64_FEATURE_CRC32)
+    {
+        DPRINT("ARM64: CRC32 hardware acceleration available\n");
+        /* TODO: Register CRC32 acceleration routines */
+    }
+
+    /* Initialize cache management */
+    DPRINT("ARM64: D-Cache line size: %u bytes\n", KiDcacheLineSize);
+    DPRINT("ARM64: I-Cache line size: %u bytes\n", KiIcacheLineSize);
+
+    /* Initialize timer frequency for performance counters */
+    if (KiTimerFrequency != 0)
+    {
+        DPRINT("ARM64: System timer frequency: %llu Hz\n", KiTimerFrequency);
+        /* TODO: Initialize performance counter infrastructure */
+    }
+
+    /* Initialize atomics support */
+    if (KiArm64Features & ARM64_FEATURE_ATOMIC)
+    {
+        DPRINT("ARM64: Large System Extensions (LSE) atomics available\n");
+        /* TODO: Use LSE atomics instead of LL/SC sequences */
+    }
+
+    /* Platform-specific initialization (if needed) */
+    /* TODO: Initialize platform-specific features like GIC, etc. */
+
+    DPRINT("ARM64: Machine-dependent initialization complete\n");
+}
+
+/**
+ * @brief Get the Processor Control Region for ARM64
+ *
+ * This function returns the PCR for the current processor.
+ * For external drivers that can't access KiInitialPcr directly.
+ */
+#undef KeGetPcr
+#undef KeGetCurrentPrcb
+#undef KeGetCurrentIrql
+
+PKIPCR
+NTAPI
+KeGetPcr(VOID)
+{
+    ASSERTMSG("TODO: ARM64 SMP PCR accessor not implemented. Update KeGetPcr before enabling SMP.",
+              KeNumberProcessors <= 1);
+    /* TODO: In SMP, this should read TPIDR_EL1 to get per-CPU PCR */
+    return PCR;
+}
+
+/**
+ * @brief Get the Processor Control Block for ARM64
+ *
+ * This function returns the PRCB for the current processor.
+ * For external drivers that can't access KiInitialPcr directly.
+ */
+PKPRCB
+NTAPI
+KeGetCurrentPrcb(VOID)
+{
+    ASSERTMSG("TODO: ARM64 SMP PRCB accessor not implemented. Update KeGetCurrentPrcb before enabling SMP.",
+              KeNumberProcessors <= 1);
+    /* TODO: In SMP, this should read TPIDR_EL1 to get per-CPU PCR */
+    return &PCR->Prcb;
+}
+
+/**
+ * @brief Get the current IRQL for ARM64
+ *
+ * This function returns the current interrupt request level.
+ * For external drivers that can't access the PCR directly.
+ */
+KIRQL
+NTAPI
+KeGetCurrentIrql(VOID)
+{
+    ASSERTMSG("TODO: ARM64 SMP IRQL accessor not implemented. Update KeGetCurrentIrql before enabling SMP.",
+              KeNumberProcessors <= 1);
+    /* TODO: In SMP, this should read from per-CPU PCR */
+    return PCR->CurrentIrql;
+}
+
+#define KeGetPcr() PCR
+#define KeGetCurrentPrcb() (&(PCR->Prcb))
+#define KeGetCurrentIrql()             KeGetPcr()->CurrentIrql
+
+/**
+ * @brief Start all Application Processors (APs) for ARM64
+ *
+ * This function is responsible for starting secondary processors
+ * on multiprocessor ARM64 systems. For now, it's a stub as
+ * ReactOS ARM64 doesn't yet support SMP.
+ */
+VOID
+NTAPI
+KeStartAllProcessors(VOID)
+{
+    /* ARM64 SMP support not yet implemented */
+    DPRINT1("ARM64: KeStartAllProcessors called - SMP not yet supported\n");
+
+    /* TODO: Implement ARM64 SMP support:
+     * 1. Detect number of CPUs from device tree or ACPI MADT
+     * 2. Allocate stacks for each AP
+     * 3. Send SGI (Software Generated Interrupt) to wake APs
+     * 4. Initialize each AP's PCR/PRCB
+     * 5. Start AP initialization sequence
+     */
 }

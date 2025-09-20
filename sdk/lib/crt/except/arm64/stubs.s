@@ -132,48 +132,6 @@ __report_gsfailure:
     brk #0x2                /* Trigger debug break with different code */
     ret                     /* Should not reach here */
 
-/* _CxxThrowException - throw C++ exception (ARM64 version) */
-.global _CxxThrowException
-_CxxThrowException:
-    /* Inputs:
-     * x0 = exception object pointer
-     * x1 = exception type info pointer
-     */
-    stp x29, x30, [sp, #-32]!   /* Save frame pointer and link register */
-    mov x29, sp
-
-    /* Set up exception parameters for ARM64 */
-    mov x2, #4                  /* NumberParameters = 4 for ARM64 */
-    adrp x3, .Lcxx_magic        /* Load CXX exception magic */
-    add x3, x3, :lo12:.Lcxx_magic
-    ldr w3, [x3]                /* Load the magic value */
-
-    /* Call RaiseException with ARM64 parameters */
-    stp x0, x1, [sp, #16]       /* Save exception object and type info */
-    /* Load CXX_EXCEPTION code using literal pool */
-    ldr w0, =0xe06d7363         /* CXX_EXCEPTION code */
-    mov w1, #1                  /* EH_NONCONTINUABLE */
-    mov w2, #4                  /* Number of parameters */
-    add x3, sp, #16             /* Pointer to parameter array */
-
-    /* Set up parameter array on stack */
-    str x3, [sp, #24]           /* Save original x3 (magic) */
-    ldp x4, x5, [sp, #16]       /* Load object and type pointers */
-    str x3, [sp, #16]           /* args[0] = magic */
-    str x4, [sp, #20]           /* args[1] = object */
-    str x5, [sp, #24]           /* args[2] = type info */
-    /* args[3] = image base will be set by RaiseException */
-
-    bl RaiseException           /* Call RaiseException */
-
-    ldp x29, x30, [sp], #32     /* Restore frame pointer and return */
-    ret
-
-.Lcxx_magic:
-    .word 0x19930520            /* CXX_FRAME_MAGIC_VC6 */
-
-/* Note: __gxx_personality_v0 and __gxx_personality_arm64 are implemented in ehandler.c */
-
 /* _CallSettingFrame - call a function with specific frame setup */
 .global _CallSettingFrame
 _CallSettingFrame:

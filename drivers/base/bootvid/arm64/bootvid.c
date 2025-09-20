@@ -23,7 +23,6 @@ PHYSICAL_ADDRESS VgaPhysical;
 static ULONG ScreenWidth = 0;
 static ULONG ScreenHeight = 0;
 static ULONG PixelsPerScanLine = 0;
-static ULONG BytesPerPixel = 2;  /* Default to 16bpp */
 
 /* PRIVATE FUNCTIONS *********************************************************/
 

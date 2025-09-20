@@ -203,7 +203,7 @@ static void *arm64_fetch_context_reg(union ctx *pctx, unsigned regno, unsigned *
     case CV_ARM64_X0 + 26:
     case CV_ARM64_X0 + 27:
     case CV_ARM64_X0 + 28: *size = sizeof(ctx->DUMMYUNIONNAME.X[0]); return &ctx->DUMMYUNIONNAME.X[regno - CV_ARM64_X0];
-    case CV_ARM64_PSTATE:  *size = sizeof(ctx->Pstate); return &ctx->Pstate;
+    case CV_ARM64_PSTATE:  *size = sizeof(ctx->Cpsr); return &ctx->Cpsr;
     case CV_ARM64_FP:      *size = sizeof(ctx->DUMMYUNIONNAME.DUMMYSTRUCTNAME.Fp); return &ctx->DUMMYUNIONNAME.DUMMYSTRUCTNAME.Fp;
     case CV_ARM64_LR:      *size = sizeof(ctx->DUMMYUNIONNAME.DUMMYSTRUCTNAME.Lr); return &ctx->DUMMYUNIONNAME.DUMMYSTRUCTNAME.Lr;
     case CV_ARM64_SP:      *size = sizeof(ctx->Sp);     return &ctx->Sp;

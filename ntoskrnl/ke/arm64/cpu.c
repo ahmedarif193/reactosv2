@@ -61,8 +61,9 @@ KeSaveFloatingPointState(
     OUT PKFLOATING_SAVE FloatSave)
 {
     /* ARM64 FPU state saving placeholder */
+    UNREFERENCED_PARAMETER(FloatSave);
     UNIMPLEMENTED;
-    return STATUS_SUCCESS;
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 /**
@@ -74,8 +75,9 @@ KeRestoreFloatingPointState(
     IN PKFLOATING_SAVE FloatSave)
 {
     /* ARM64 FPU state restoration placeholder */
+    UNREFERENCED_PARAMETER(FloatSave);
     UNIMPLEMENTED;
-    return STATUS_SUCCESS;
+    return STATUS_NOT_IMPLEMENTED;
 }
 
 /**
@@ -289,4 +291,3 @@ KeInvalidateTlbEntry(
     DPRINT("ARM64: KeInvalidateTlbEntry(0x%p) called\n", VirtualAddress);
 #endif
 }
-

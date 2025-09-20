@@ -30,7 +30,16 @@
 #endif
 #endif // __REACTOS__
 #if defined(_ARM_) || defined(_ARM64_)
-#include <arm_neon.h>
+/* For ARM64, we need NEON intrinsics but MinGW cross-compiler doesn't expose them by default */
+#ifdef __has_include
+  #if __has_include(<arm_neon.h>)
+    #include <arm_neon.h>
+    #define HAS_ARM_NEON 1
+  #endif
+#elif !defined(__REACTOS__) || defined(_MSC_VER)
+  #include <arm_neon.h>
+  #define HAS_ARM_NEON 1
+#endif
 #endif
 #include <ntddscsi.h>
 #include "btrfs.h"
@@ -290,7 +299,7 @@ bool is_top_level(_In_ PIRP Irp) {
 static void __stdcall do_xor_basic(uint8_t* buf1, uint8_t* buf2, uint32_t len) {
     uint32_t j;
 
-#if defined(_ARM_) || defined(_ARM64_)
+#if (defined(_ARM_) || defined(_ARM64_)) && defined(HAS_ARM_NEON)
     /* NEON intrinsics for ARM32 and ARM64 */
     uint64x2_t x1, x2;
 
@@ -308,8 +317,8 @@ static void __stdcall do_xor_basic(uint8_t* buf1, uint8_t* buf2, uint32_t len) {
     }
 #endif
 
-#if defined(_AMD64_)
-    /* 64-bit operations for AMD64 when NEON not available */
+#if defined(_AMD64_) || (defined(_ARM64_) && !defined(HAS_ARM_NEON))
+    /* 64-bit operations for 64-bit platforms when NEON not available */
     while (len > 8) {
         *(uint64_t*)buf1 ^= *(uint64_t*)buf2;
         buf1 += 8;

@@ -347,7 +347,7 @@ typedef struct _KIPCR
         {
             ULONG TibPad0[2];
             PVOID Spare1;
-            struct _KPCR *Self;
+            PVOID Self;
             PVOID  PcrReserved0;
             struct _KSPIN_LOCK_QUEUE* LockArray;
             PVOID Used_Self;
@@ -391,30 +391,45 @@ typedef struct _KIPCR
 //
 // PCR/PRCB accessors (bring-up shim)
 //
-#ifndef NTOS_MODE_USER
-/* Import KiInitialPcr from ntoskrnl */
+/* PCR access for ARM64 */
 #ifdef _NTOSKRNL_
+/* Internal to kernel - direct access */
 extern struct _KIPCR KiInitialPcr;
-#else
-__declspec(dllimport) extern struct _KIPCR KiInitialPcr;
-#endif
 FORCEINLINE
 struct _KIPCR * KeGetPcr(VOID)
 {
     return &KiInitialPcr;
 }
-
 FORCEINLINE
 struct _KPRCB * KeGetCurrentPrcb(VOID)
 {
     return &KiInitialPcr.Prcb;
 }
+#else
+/* External drivers - use proper accessor functions */
+NTSYSAPI
+struct _KIPCR *
+NTAPI
+KeGetPcr(VOID);
+
+NTSYSAPI
+struct _KPRCB *
+NTAPI
+KeGetCurrentPrcb(VOID);
 #endif
 
 //
-// Just read it from the PCR
+// IRQL access - for external drivers use the HAL function
 //
+#ifdef _NTOSKRNL_
 #define KeGetCurrentIrql()             KeGetPcr()->CurrentIrql
+#else
+/* External drivers must use the exported function */
+NTSYSAPI
+KIRQL
+NTAPI
+KeGetCurrentIrql(VOID);
+#endif
 #define _KeGetCurrentThread()          KeGetCurrentPrcb()->CurrentThread
 #define _KeGetPreviousMode()           KeGetCurrentPrcb()->CurrentThread->PreviousMode
 #define _KeIsExecutingDpc()            (KeGetCurrentPrcb()->DpcRoutineActive != 0)

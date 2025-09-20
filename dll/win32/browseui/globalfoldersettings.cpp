@@ -47,17 +47,13 @@ static void InitializeDefaults(DEFFOLDERSETTINGS &dfs)
 {
     // Ensure Windows ABI packing for DEFFOLDERSETTINGS structure
     // The structure layout must match Windows for registry compatibility
-#if defined(_M_IX86) || defined(_M_AMD64)
-    C_ASSERT(FIELD_OFFSET(DEFFOLDERSETTINGS, FolderSettings) == 4);
-    C_ASSERT(FIELD_OFFSET(DEFFOLDERSETTINGS, ViewPriority) == DEFFOLDERSETTINGS::SIZE_IE4);
-    C_ASSERT(sizeof(DEFFOLDERSETTINGS) == DEFFOLDERSETTINGS::SIZE_XP);
-#elif defined(_M_ARM64)
-    // ARM64 must use exact same layout as x86/x64 for Windows ABI compatibility
-    // Force proper alignment and verify exact offsets match Windows expectations
-    C_ASSERT(FIELD_OFFSET(DEFFOLDERSETTINGS, FolderSettings) == 4);
-    C_ASSERT(FIELD_OFFSET(DEFFOLDERSETTINGS, ViewPriority) == DEFFOLDERSETTINGS::SIZE_IE4);
-    C_ASSERT(sizeof(DEFFOLDERSETTINGS) == DEFFOLDERSETTINGS::SIZE_XP);
-#endif
+    // Note: pshpack4.h ensures consistent packing across all architectures
+    static_assert(FIELD_OFFSET(DEFFOLDERSETTINGS, FolderSettings) == 4,
+                  "DEFFOLDERSETTINGS.FolderSettings must be at offset 4");
+    static_assert(FIELD_OFFSET(DEFFOLDERSETTINGS, ViewPriority) == DEFFOLDERSETTINGS::SIZE_IE4,
+                  "DEFFOLDERSETTINGS.ViewPriority must be at correct offset");
+    static_assert(sizeof(DEFFOLDERSETTINGS) == DEFFOLDERSETTINGS::SIZE_XP,
+                  "DEFFOLDERSETTINGS size must match Windows XP size");
 
     *(UINT*)&dfs = FALSE; // Set all unknown flags to FALSE
     dfs.Statusbar = TRUE;
