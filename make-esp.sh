@@ -10,7 +10,7 @@ set -euo pipefail
 #   QEMU_DISPLAY  - QEMU -display argument (default: gtk). Use 'none' for headless.
 #   QEMU_SERIAL   - serial log path (default: /tmp/freeldr_arm64.log)
 #   QEMU_EXTRA    - extra args appended to QEMU command
-QEMU_TIMEOUT="${QEMU_TIMEOUT:-120}"
+QEMU_TIMEOUT="${QEMU_TIMEOUT:-260}"
 QEMU_DISPLAY="${QEMU_DISPLAY:-gtk}"
 QEMU_SERIAL="${QEMU_SERIAL:-/tmp/freeldr_arm64.log}"
 QEMU_EXTRA=${QEMU_EXTRA:-}
@@ -245,6 +245,9 @@ for header, sec_lines in sections:
     for line in sec_lines:
         stripped = line.strip()
         lower = stripped.lower()
+
+        if 'ARM64TESTCRASH' in stripped:
+            stripped = stripped.replace(' /ARM64TESTCRASH', '').replace('/ARM64TESTCRASH', '')
 
         if lower.startswith('options=') and '/noguiboot' not in lower:
             line = stripped + ' /NOGUIBOOT'
