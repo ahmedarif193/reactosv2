@@ -537,6 +537,8 @@ DisplayBootBitmap(
     /* Check if this is text mode */
     if (TextMode)
     {
+        BOOLEAN IsWorkstation = (SharedUserData->NtProductType == NtProductWinNt);
+
         /*
          * Make the kernel resource section temporarily writable,
          * as we are going to change the bitmaps' palette in place.
@@ -544,7 +546,7 @@ DisplayBootBitmap(
         MmChangeKernelResourceSectionProtection(MM_READWRITE);
 
         /* Check the type of the OS: workstation or server */
-        if (SharedUserData->NtProductType == NtProductWinNt)
+        if (IsWorkstation)
         {
             /* Workstation; set colors */
             InbvSetTextColor(BV_COLOR_WHITE);
@@ -585,6 +587,25 @@ DisplayBootBitmap(
                           AL_HORIZONTAL_CENTER,
                           AL_VERTICAL_TOP,
                           0, 0, 0, 0);
+        }
+
+        if (InbvIsGopVideo())
+        {
+            InbvSolidColorFill(VID_SCROLL_AREA_LEFT,
+                               VID_SCROLL_AREA_TOP,
+                               VID_SCROLL_AREA_RIGHT,
+                               VID_SCROLL_AREA_BOTTOM,
+                               IsWorkstation ? BV_COLOR_DARK_GRAY : BV_COLOR_CYAN);
+
+            InbvSolidColorFill(0,
+                               VID_FOOTER_BG_TOP,
+                               SCREEN_WIDTH - 1,
+                               SCREEN_HEIGHT - 1,
+                               BV_COLOR_RED);
+
+            /* Re-apply scroll region so GOP picks up the new colors */
+            InbvSetScrollRegion(VID_SCROLL_AREA_LEFT, VID_SCROLL_AREA_TOP,
+                                VID_SCROLL_AREA_RIGHT, VID_SCROLL_AREA_BOTTOM);
         }
 
         /* Restore the kernel resource section protection to be read-only */

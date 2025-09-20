@@ -21,9 +21,9 @@ PVOID BfiGraphicsRectangle;
 ULONG ConsoleGraphicalResolutionListFlags;
 BL_DISPLAY_MODE ConsoleGraphicalResolutionList[3] =
 {
-    {1024, 768, 1024},
+    {640, 480, 640},
     {800, 600, 800},
-    {1024, 600, 1024}
+    {1024, 768, 1024}
 };
 ULONG ConsoleGraphicalResolutionListSize = RTL_NUMBER_OF(ConsoleGraphicalResolutionList);
 

@@ -28,6 +28,10 @@ INBV_DISPLAY_STATE
 NTAPI
 InbvGetDisplayState(VOID);
 
+BOOLEAN
+NTAPI
+InbvIsGopVideo(VOID);
+
 VOID
 NTAPI
 InbvAcquireLock(VOID);

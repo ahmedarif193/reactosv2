@@ -6,3 +6,5 @@ VOID    NTAPI GopVidBufferToScreenBlt(_In_reads_bytes_(Delta*Height) PUCHAR Buf,
 VOID    NTAPI GopVidScreenToBufferBlt(_Out_writes_bytes_(Delta*Height) PUCHAR Buf,_In_ ULONG L,_In_ ULONG T,_In_ ULONG W,_In_ ULONG H,_In_ ULONG Delta);
 VOID    NTAPI GopVidDisplayString(_In_z_ PUCHAR String);
 VOID    NTAPI GopVidBitBlt(_In_ PUCHAR Buffer,_In_ ULONG Left,_In_ ULONG Top);
+VOID    NTAPI GopVidSetScrollRegion(_In_ ULONG Left,_In_ ULONG Top,_In_ ULONG Right,_In_ ULONG Bottom);
+VOID    NTAPI GopVidSetTextColor(_In_ UCHAR Color);

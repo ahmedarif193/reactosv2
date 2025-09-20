@@ -21,6 +21,8 @@ VOID    NTAPI GopVidBufferToScreenBlt(_In_reads_bytes_(Delta * Height) PUCHAR Bu
 VOID    NTAPI GopVidScreenToBufferBlt(_Out_writes_bytes_(Delta * Height) PUCHAR Buffer, _In_ ULONG Left, _In_ ULONG Top, _In_ ULONG Width, _In_ ULONG Height, _In_ ULONG Delta);
 VOID    NTAPI GopVidDisplayString(_In_z_ PUCHAR String);
 VOID    NTAPI GopVidBitBlt(_In_ PUCHAR Buffer, _In_ ULONG Left, _In_ ULONG Top);
+VOID    NTAPI GopVidSetScrollRegion(_In_ ULONG Left, _In_ ULONG Top, _In_ ULONG Right, _In_ ULONG Bottom);
+VOID    NTAPI GopVidSetTextColor(_In_ UCHAR Color);
 
 /* GLOBALS *******************************************************************/
 
@@ -294,6 +296,13 @@ InbvGetDisplayState(VOID)
 
 BOOLEAN
 NTAPI
+InbvIsGopVideo(VOID)
+{
+    return InbvUsingGopVideo;
+}
+
+BOOLEAN
+NTAPI
 InbvDisplayString(
     _In_ PCHAR String)
 {
@@ -408,7 +417,8 @@ InbvSetScrollRegion(
     /* Text mode scroll region only applies to BOOTVID (VGA text). */
     if (!InbvUsingGopVideo)
         VidSetScrollRegion(Left, Top, Right, Bottom);
-    /* else: GOP path has no text-mode scroll; intentionally no-op. */
+    else
+        GopVidSetScrollRegion(Left, Top, Right, Bottom);
 }
 
 VOID
@@ -434,6 +444,8 @@ InbvSetTextColor(
     /* BOOTVID can update text color; GOP backend has no text-mode attributes. */
     if (!InbvUsingGopVideo)
         VidSetTextColor(Color);
+    else
+        GopVidSetTextColor((UCHAR)Color);
 }
 
 VOID

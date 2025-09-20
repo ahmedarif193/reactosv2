@@ -1,6 +1,9 @@
 #include <ntoskrnl.h>
+#include <drivers/bootvid/display.h>
 #define NDEBUG
 #include <debug.h>
+
+#include "gopfont.h"
 
 typedef struct tagBITMAPINFOHEADER
 {
@@ -37,6 +40,62 @@ static BOOLEAN   BgrtValid = FALSE;
 static ULONG     BgrtX = 0, BgrtY = 0, BgrtW = 0, BgrtH = 0;
 static ULONGLONG BgrtAddr = 0;
 static ULONG     BgrtSize = 0;
+
+static const ULONG GopFontWidth = 8;
+static const ULONG GopFontHeight = 16;
+static const ULONG GopLineSpacing = 2;
+static const ULONG GopTabColumns = 4;
+
+static const ULONG GopPaletteDefault[BV_MAX_COLORS] =
+{
+    0x000000, /* Black */
+    0x800000, /* Red */
+    0x008000, /* Green */
+    0x808000, /* Brown */
+    0x000080, /* Blue */
+    0x800080, /* Magenta */
+    0x008080, /* Cyan */
+    0x808080, /* Dark Gray */
+    0xC0C0C0, /* Light Gray */
+    0xFF0000, /* Light Red */
+    0x00FF00, /* Light Green */
+    0xFFFF00, /* Yellow */
+    0x0000FF, /* Light Blue */
+    0xFF00FF, /* Light Magenta */
+    0x00FFFF, /* Light Cyan */
+    0xFFFFFF  /* White */
+};
+
+static ULONG GopPalette[BV_MAX_COLORS] =
+{
+    0x000000, 0x800000, 0x008000, 0x808000,
+    0x000080, 0x800080, 0x008080, 0x808080,
+    0xC0C0C0, 0xFF0000, 0x00FF00, 0xFFFF00,
+    0x0000FF, 0xFF00FF, 0x00FFFF, 0xFFFFFF
+};
+
+static ULONG GopScrollLeft = 0;
+static ULONG GopScrollTop = 0;
+static ULONG GopScrollRight = 0;
+static ULONG GopScrollBottom = 0;
+static ULONG GopRegionWidth = 0;
+static ULONG GopRegionHeight = 0;
+static ULONG GopCharsPerLine = 0;
+static ULONG GopMaxLines = 0;
+static ULONG GopColumn = 0;
+static ULONG GopLine = 0;
+static ULONG GopLineHeight = 18;
+static UCHAR  GopTextColorIndex = BV_COLOR_WHITE;
+static ULONG  GopTextColor = 0xFFFFFF;
+static ULONG  GopBgColor = 0x000000;
+static BOOLEAN GopTextReady = FALSE;
+
+static VOID ResetGopPalette(VOID)
+{
+    for (ULONG i = 0; i < BV_MAX_COLORS; ++i)
+        GopPalette[i] = GopPaletteDefault[i];
+    GopTextColor = GopPalette[GopTextColorIndex & (BV_MAX_COLORS - 1)];
+}
 
 static __inline VOID ComputeMaskInfo(ULONG Mask, PULONG Shift, PULONG Width)
 {
@@ -140,6 +199,235 @@ static __inline VOID WritePixel(ULONG x, ULONG y, ULONG rgb)
     else { p[0]=(UCHAR)(packed & 0xFF); p[1]=(UCHAR)((packed>>8)&0xFF); p[2]=(UCHAR)((packed>>16)&0xFF); }
 }
 
+static __inline ULONG ReadPixel(ULONG x, ULONG y)
+{
+    if (!GopFbBase || x >= GopWidth || y >= GopHeight) return 0;
+    SIZE_T offset = (SIZE_T)y * GopPitch + (SIZE_T)x * GopBpp;
+    if (offset + GopBpp > GopFbSize) return 0;
+    PUCHAR p = GopFbBase + offset;
+    ULONG raw = 0;
+    if (GopBpp == 4) raw = *(PULONG)p;
+    else if (GopBpp == 2) raw = *(PUSHORT)p;
+    else raw = (ULONG)p[0] | ((ULONG)p[1] << 8) | ((ULONG)p[2] << 16);
+    return UnpackToRGB888(raw);
+}
+
+static VOID FillRectPixels(ULONG left, ULONG top, ULONG right, ULONG bottom, ULONG rgb)
+{
+    if (!GopFbBase) return;
+    if (left > right || top > bottom) return;
+    if (right >= GopWidth) right = GopWidth - 1;
+    if (bottom >= GopHeight) bottom = GopHeight - 1;
+    for (ULONG y = top; y <= bottom; ++y)
+        for (ULONG x = left; x <= right; ++x)
+            WritePixel(x, y, rgb);
+}
+
+static VOID ClearLineArea(ULONG lineIndex)
+{
+    if (!GopTextReady) return;
+    ULONG top = GopScrollTop + lineIndex * GopLineHeight;
+    ULONG bottom = top + GopLineHeight - 1;
+    FillRectPixels(GopScrollLeft,
+                   top,
+                   (GopScrollRight >= GopScrollLeft) ? GopScrollRight : (GopWidth - 1),
+                   (bottom <= GopScrollBottom) ? bottom : GopScrollBottom,
+                   GopBgColor);
+}
+
+static VOID ScrollTextUp(VOID)
+{
+    if (!GopTextReady || GopRegionHeight <= GopLineHeight) return;
+
+    SIZE_T bytesPerRow = (SIZE_T)GopRegionWidth * GopBpp;
+    PUCHAR dest = GopFbBase + (SIZE_T)GopScrollTop * GopPitch + (SIZE_T)GopScrollLeft * GopBpp;
+    PUCHAR src  = dest + (SIZE_T)GopLineHeight * GopPitch;
+    ULONG rowsToMove = (GopRegionHeight > GopLineHeight) ? (GopRegionHeight - GopLineHeight) : 0;
+
+    for (ULONG row = 0; row < rowsToMove; ++row)
+    {
+        RtlMoveMemory(dest + (SIZE_T)row * GopPitch,
+                     src  + (SIZE_T)row * GopPitch,
+                     bytesPerRow);
+    }
+
+    ULONG clearTop = (GopScrollBottom >= GopLineHeight)
+        ? GopScrollBottom - GopLineHeight + 1
+        : GopScrollTop;
+
+    FillRectPixels(GopScrollLeft,
+                   clearTop,
+                   (GopScrollRight >= GopScrollLeft) ? GopScrollRight : (GopWidth - 1),
+                   GopScrollBottom,
+                   GopBgColor);
+
+    if (GopMaxLines > 0)
+    {
+        ClearLineArea(GopMaxLines - 1);
+    }
+}
+
+static VOID ClearCharCell(ULONG column, ULONG line)
+{
+    if (!GopTextReady) return;
+    ULONG left = GopScrollLeft + column * GopFontWidth;
+    ULONG top = GopScrollTop + line * GopLineHeight;
+    ULONG right = left + GopFontWidth - 1;
+    ULONG bottom = top + GopFontHeight - 1;
+    FillRectPixels(left, top, right, bottom, GopBgColor);
+}
+
+static VOID UpdateRegionMetrics(VOID)
+{
+    if (GopScrollLeft >= GopWidth)  GopScrollLeft  = (GopWidth  > 0) ? GopWidth  - 1 : 0;
+    if (GopScrollTop >= GopHeight)  GopScrollTop   = (GopHeight > 0) ? GopHeight - 1 : 0;
+    if (GopScrollRight >= GopWidth) GopScrollRight = (GopWidth  > 0) ? GopWidth  - 1 : 0;
+    if (GopScrollBottom >= GopHeight) GopScrollBottom = (GopHeight > 0) ? GopHeight - 1 : 0;
+
+    if (GopScrollRight < GopScrollLeft) GopScrollRight = GopScrollLeft;
+    if (GopScrollBottom < GopScrollTop) GopScrollBottom = GopScrollTop;
+
+    GopRegionWidth  = GopScrollRight - GopScrollLeft + 1;
+    GopRegionHeight = GopScrollBottom - GopScrollTop + 1;
+    if (GopRegionWidth == 0)  GopRegionWidth  = 1;
+    if (GopRegionHeight == 0) GopRegionHeight = 1;
+
+    GopLineHeight = GopFontHeight + GopLineSpacing;
+    if (GopLineHeight == 0) GopLineHeight = GopFontHeight;
+
+    GopCharsPerLine = (GopRegionWidth >= GopFontWidth && GopFontWidth) ? (GopRegionWidth / GopFontWidth) : 1;
+    if (GopCharsPerLine == 0) GopCharsPerLine = 1;
+
+    GopMaxLines = (GopRegionHeight >= GopLineHeight && GopLineHeight) ? (GopRegionHeight / GopLineHeight) : 1;
+    if (GopMaxLines == 0) GopMaxLines = 1;
+
+    GopColumn = 0;
+    GopLine = 0;
+    GopTextReady = TRUE;
+
+    ULONG sampleX = (GopScrollLeft < GopWidth) ? GopScrollLeft : 0;
+    ULONG sampleY = (GopScrollTop < GopHeight) ? GopScrollTop : 0;
+    ULONG sample = ReadPixel(sampleX, sampleY);
+    GopBgColor = sample ? sample : GopPalette[BV_COLOR_BLACK];
+    GopTextColorIndex = BV_COLOR_WHITE;
+    GopTextColor = GopPalette[GopTextColorIndex & (BV_MAX_COLORS - 1)];
+}
+
+static VOID EnsureTextReady(VOID)
+{
+    if (GopTextReady) return;
+
+    ULONG marginX = (GopWidth  > 64) ? 32 : 0;
+    ULONG marginY = (GopHeight > 64) ? 32 : 0;
+
+    GopScrollLeft = (marginX < GopWidth) ? marginX : 0;
+    GopScrollTop = (marginY < GopHeight) ? marginY : 0;
+    GopScrollRight = (marginX < GopWidth && GopWidth > marginX)
+        ? GopWidth - marginX - 1
+        : (GopWidth ? GopWidth - 1 : 0);
+    GopScrollBottom = (marginY < GopHeight && GopHeight > marginY)
+        ? GopHeight - marginY - 1
+        : (GopHeight ? GopHeight - 1 : 0);
+
+    UpdateRegionMetrics();
+    ClearLineArea(0);
+}
+
+static VOID AdvanceLine(VOID)
+{
+    if (!GopTextReady) return;
+
+    if (GopMaxLines == 0)
+    {
+        EnsureTextReady();
+        if (!GopTextReady) return;
+    }
+
+    if (GopLine + 1 >= GopMaxLines)
+    {
+        ScrollTextUp();
+        GopLine = (GopMaxLines > 0) ? GopMaxLines - 1 : 0;
+        ClearLineArea(GopLine);
+    }
+    else
+    {
+        ++GopLine;
+        ClearLineArea(GopLine);
+    }
+    GopColumn = 0;
+}
+
+static VOID WriteGlyph(UCHAR ch)
+{
+    const UCHAR* glyph = &GopFont8x16[(SIZE_T)ch * GopFontHeight];
+    ULONG left = GopScrollLeft + GopColumn * GopFontWidth;
+    ULONG top = GopScrollTop + GopLine * GopLineHeight;
+
+    for (ULONG row = 0; row < GopFontHeight; ++row)
+    {
+        UCHAR bits = glyph[row];
+        ULONG y = top + row;
+        if (y > GopScrollBottom) break;
+        for (ULONG col = 0; col < GopFontWidth; ++col)
+        {
+            if (bits & (0x80 >> col))
+            {
+                ULONG x = left + col;
+                if (x > GopScrollRight) break;
+                WritePixel(x, y, GopTextColor);
+            }
+        }
+    }
+}
+
+static VOID WriteChar(UCHAR ch)
+{
+    EnsureTextReady();
+    if (!GopTextReady) return;
+
+    switch (ch)
+    {
+    case '\r':
+        GopColumn = 0;
+        break;
+    case '\n':
+        AdvanceLine();
+        break;
+    case '\t':
+    {
+        ULONG nextColumn = ((GopColumn / GopTabColumns) + 1) * GopTabColumns;
+        if (nextColumn >= GopCharsPerLine)
+        {
+            AdvanceLine();
+        }
+        else
+        {
+            for (; GopColumn < nextColumn; ++GopColumn)
+                ClearCharCell(GopColumn, GopLine);
+        }
+        break;
+    }
+    case '\b':
+        if (GopColumn > 0)
+        {
+            --GopColumn;
+            ClearCharCell(GopColumn, GopLine);
+        }
+        break;
+    default:
+        if (ch < 32)
+            break;
+
+        if (GopColumn >= GopCharsPerLine)
+            AdvanceLine();
+
+        ClearCharCell(GopColumn, GopLine);
+        WriteGlyph(ch);
+        ++GopColumn;
+        break;
+    }
+}
+
 BOOLEAN NTAPI GopVidInitialize(PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
     if (KeGetCurrentIrql() > PASSIVE_LEVEL) return FALSE;
@@ -224,6 +512,8 @@ BOOLEAN NTAPI GopVidInitialize(PLOADER_PARAMETER_BLOCK LoaderBlock)
     else BgrtValid = FALSE;
 
     DPRINT1("[GOP] %ux%u PSL=%u Bpp=%u Fmt=%lu\n", GopWidth, GopHeight, GopPsl, GopBpp, GopFormat);
+    ResetGopPalette();
+    GopTextReady = FALSE;
     return TRUE;
 }
 
@@ -241,6 +531,8 @@ VOID NTAPI GopVidResetDisplay(BOOLEAN HalReset)
     {
         SIZE_T total = (SIZE_T)GopPitch * (SIZE_T)GopHeight;
         if (total <= GopFbSize) RtlZeroMemory(GopFbBase, total); else RtlZeroMemory(GopFbBase, GopFbSize);
+        GopTextReady = FALSE;
+        ResetGopPalette();
         return;
     }
 
@@ -262,14 +554,12 @@ VOID NTAPI GopVidResetDisplay(BOOLEAN HalReset)
             }
         }
     }
+    GopTextReady = FALSE;
+    ResetGopPalette();
 }
 
 VOID NTAPI GopVidSolidColorFill(ULONG Left, ULONG Top, ULONG Right, ULONG Bottom, UCHAR Color)
 {
-    static const ULONG pal16[16] = {
-        0x000000,0x0000AA,0x00AA00,0x00AAAA,0xAA0000,0xAA00AA,0xAA5500,0xAAAAAA,
-        0x555555,0x5555FF,0x55FF55,0x55FFFF,0xFF5555,0xFF55FF,0xFFFF55,0xFFFFFF
-    };
     if (!GopFbBase) return;
 
     LONG l = (LONG)Left, t = (LONG)Top, r = (LONG)Right, b = (LONG)Bottom;
@@ -281,7 +571,7 @@ VOID NTAPI GopVidSolidColorFill(ULONG Left, ULONG Top, ULONG Right, ULONG Bottom
     if ((ULONG)b >= GopHeight) b = (LONG)GopHeight - 1;
     if (RectEmpty(l,t,r,b)) return;
 
-    const ULONG rgb = pal16[Color & 0x0F];
+    const ULONG rgb = GopPalette[Color & (BV_MAX_COLORS - 1)];
 
     if (!BgrtValid && GopBpp == 4 && (ULONG)l <= (ULONG)r)
     {
@@ -339,11 +629,7 @@ VOID NTAPI GopVidBufferToScreenBlt(PUCHAR Buffer, ULONG Left, ULONG Top, ULONG W
             }
             else
             {
-                static const ULONG pal16[16] = {
-                    0x000000,0x0000AA,0x00AA00,0x00AAAA,0xAA0000,0xAA00AA,0xAA5500,0xAAAAAA,
-                    0x555555,0x5555FF,0x55FF55,0x55FFFF,0xFF5555,0xFF55FF,0xFFFF55,0xFFFFFF
-                };
-                rgb = pal16[src[x] & 0x0F];
+                rgb = GopPalette[src[x] & (BV_MAX_COLORS - 1)];
             }
             WritePixel(Left + x, Top + y, rgb);
         }
@@ -403,17 +689,49 @@ VOID NTAPI GopVidScreenToBufferBlt(PUCHAR Buffer, ULONG Left, ULONG Top, ULONG W
     }
 }
 
+VOID NTAPI GopVidSetScrollRegion(ULONG Left, ULONG Top, ULONG Right, ULONG Bottom)
+{
+    GopScrollLeft = Left;
+    GopScrollTop = Top;
+    GopScrollRight = Right;
+    GopScrollBottom = Bottom;
+    UpdateRegionMetrics();
+    ClearLineArea(0);
+}
+
+VOID NTAPI GopVidSetTextColor(UCHAR Color)
+{
+    GopTextColorIndex = Color & (BV_MAX_COLORS - 1);
+    GopTextColor = GopPalette[GopTextColorIndex];
+}
+
 VOID NTAPI GopVidDisplayString(PUCHAR String)
 {
+    if (!String) return;
+
     while (*String)
     {
-        if (*String == '\r' || *String == '\n')
+        UCHAR ch = *String++;
+        WriteChar(ch);
+
+        if (ch == '\r')
+        {
+            if (*String == '\n')
+            {
+                WriteChar(*String++);
+                DbgPrint("\n");
+                continue;
+            }
+            DbgPrint("\r");
+        }
+        else if (ch == '\n')
         {
             DbgPrint("\n");
-            if (*String == '\r' && *(String + 1) == '\n') String++;
         }
-        else DbgPrint("%c", *String);
-        String++;
+        else
+        {
+            DbgPrint("%c", ch);
+        }
     }
 }
 
@@ -439,15 +757,40 @@ VOID NTAPI GopVidBitBlt(PUCHAR Buffer, ULONG Left, ULONG Top)
 
     PULONG Palette = (PULONG)afterHeader;
 
-    static ULONG VgaPalette[16];
-    for (ULONG i = 0; i < PaletteCount && i < 16; i++)
+    ULONG BitmapPalette[256] = {0};
+    ULONG LoadedPalette = (PaletteCount <= 256) ? PaletteCount : 256;
+    BOOLEAN HasPixels = (Width != 0 && Height != 0);
+    BOOLEAN PaletteHasColorData = FALSE;
+
+    for (ULONG i = 0; i < LoadedPalette; i++)
     {
         ULONG bgra = Palette[i];
         UCHAR b = (UCHAR)(bgra & 0xFF);
         UCHAR g = (UCHAR)((bgra >> 8) & 0xFF);
         UCHAR r = (UCHAR)((bgra >> 16) & 0xFF);
-        VgaPalette[i] = ((ULONG)r << 16) | ((ULONG)g << 8) | (ULONG)b;
+        ULONG rgb = ((ULONG)r << 16) | ((ULONG)g << 8) | (ULONG)b;
+        if ((bgra & 0x00FFFFFF) != 0)
+        {
+            PaletteHasColorData = TRUE;
+        }
+        BitmapPalette[i] = rgb;
     }
+
+    BOOLEAN ShouldUpdatePalette = (!HasPixels) || PaletteHasColorData;
+    if (ShouldUpdatePalette)
+    {
+        for (ULONG i = 0; i < LoadedPalette && i < BV_MAX_COLORS; i++)
+        {
+            ULONG rgb = BitmapPalette[i];
+            GopPalette[i] = rgb;
+            if (i == GopTextColorIndex)
+            {
+                GopTextColor = rgb;
+            }
+        }
+    }
+
+    BOOLEAN UseBitmapPalette = PaletteHasColorData;
 
     LONG Delta = ((BitCount * Width + 31) / 32) * 4;
     PUCHAR DataStart = Buffer + sizeof(BITMAPINFOHEADER) + (SIZE_T)PaletteCount * sizeof(ULONG);
@@ -485,12 +828,21 @@ VOID NTAPI GopVidBitBlt(PUCHAR Buffer, ULONG Left, ULONG Top)
                 ULONG Color2 = NewRleValue & 0x0F;
                 for (ULONG i = 0; i < RleValue; i++)
                 {
-                    ULONG Color = (i & 1) ? Color2 : Color1;
+                    ULONG ColorIndex = (i & 1) ? Color2 : Color1;
+                    ULONG ColorRgb;
+                    if (UseBitmapPalette && ColorIndex < LoadedPalette)
+                    {
+                        ColorRgb = BitmapPalette[ColorIndex];
+                    }
+                    else
+                    {
+                        ColorRgb = GopPalette[ColorIndex & (BV_MAX_COLORS - 1)];
+                    }
                     if (CurrentX < GopWidth && CurrentY < GopHeight &&
                         CurrentX >= Left && CurrentX < (Left + Width) &&
                         CurrentY >= Top && CurrentY < (Top + Height))
                     {
-                        WritePixel(CurrentX, CurrentY, VgaPalette[Color & 0x0F]);
+                        WritePixel(CurrentX, CurrentY, ColorRgb);
                     }
                     CurrentX++;
                 }
@@ -534,7 +886,16 @@ VOID NTAPI GopVidBitBlt(PUCHAR Buffer, ULONG Left, ULONG Top)
                             CurrentX >= Left && CurrentX < (Left + Width) &&
                             CurrentY >= Top && CurrentY < (Top + Height))
                         {
-                            WritePixel(CurrentX, CurrentY, VgaPalette[Code & 0x0F]);
+                            ULONG CodeRgb;
+                            if (UseBitmapPalette && Code < LoadedPalette)
+                            {
+                                CodeRgb = BitmapPalette[Code];
+                            }
+                            else
+                            {
+                                CodeRgb = GopPalette[Code & (BV_MAX_COLORS - 1)];
+                            }
+                            WritePixel(CurrentX, CurrentY, CodeRgb);
                         }
                         CurrentX++;
                     }
@@ -557,20 +918,36 @@ VOID NTAPI GopVidBitBlt(PUCHAR Buffer, ULONG Left, ULONG Top)
             UCHAR Colors = 0;
             for (ULONG x = 0; x < Width; x++)
             {
-                ULONG Color;
+                ULONG ColorRgb;
                 if ((x & 1) == 0)
                 {
                     if (InputBuffer >= DataEnd) return;
                     Colors = *InputBuffer;
-                    Color = VgaPalette[(Colors >> 4) & 0x0F];
+                    ULONG Index = (Colors >> 4) & 0x0F;
+                    if (UseBitmapPalette && Index < LoadedPalette)
+                    {
+                        ColorRgb = BitmapPalette[Index];
+                    }
+                    else
+                    {
+                        ColorRgb = GopPalette[Index & (BV_MAX_COLORS - 1)];
+                    }
                 }
                 else
                 {
-                    Color = VgaPalette[Colors & 0x0F];
+                    ULONG Index = Colors & 0x0F;
+                    if (UseBitmapPalette && Index < LoadedPalette)
+                    {
+                        ColorRgb = BitmapPalette[Index];
+                    }
+                    else
+                    {
+                        ColorRgb = GopPalette[Index & (BV_MAX_COLORS - 1)];
+                    }
                     InputBuffer++;
                 }
                 if ((Left + x) < GopWidth && (Top + y) < GopHeight)
-                    WritePixel(Left + x, Top + y, Color);
+                    WritePixel(Left + x, Top + y, ColorRgb);
             }
         }
         return;

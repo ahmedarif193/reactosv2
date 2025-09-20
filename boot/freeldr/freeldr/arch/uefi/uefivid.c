@@ -72,22 +72,29 @@ UefiFindOptimalGopMode(EFI_GRAPHICS_OUTPUT_PROTOCOL* gop)
                 TRACE("    Skipping - no framebuffer\n");
                 continue;
             }
-            
+
+            /* Hard-prefer native VGA resolution if available */
+            if (Width == 640 && Height == 480)
+            {
+                TRACE("    VGA-native mode found, selecting immediately\n");
+                BestMode = CurrentMode;
+                BestScore = 120;
+                break;
+            }
+
             /* Preferred resolutions (in order of preference) */
-            if (Width == 1024 && Height == 768)
-                Score = 100;  /* Most preferred */
-            else if (Width == 1280 && Height == 1024)
-                Score = 95;
-            else if (Width == 1280 && Height == 800)
+            if (Width == 800 && Height == 600)
+                Score = 100;
+            else if (Width == 1024 && Height == 768)
                 Score = 90;
-            else if (Width == 800 && Height == 600)
+            else if (Width == 1280 && Height == 1024)
                 Score = 85;
-            else if (Width == 1366 && Height == 768)
+            else if (Width == 1280 && Height == 800)
                 Score = 80;
-            else if (Width == 1440 && Height == 900)
+            else if (Width == 1366 && Height == 768)
                 Score = 75;
-            else if (Width == 640 && Height == 480)
-                Score = 50;  /* Fallback */
+            else if (Width == 1440 && Height == 900)
+                Score = 70;
             else if (Width >= PREFERRED_WIDTH_MIN && Width <= PREFERRED_WIDTH_MAX &&
                      Height >= PREFERRED_HEIGHT_MIN && Height <= PREFERRED_HEIGHT_MAX)
             {
@@ -103,7 +110,13 @@ UefiFindOptimalGopMode(EFI_GRAPHICS_OUTPUT_PROTOCOL* gop)
             }
         }
     }
-    
+
+    if (BestScore == 120)
+    {
+        TRACE("AGENT-MODIFIED: VGA-native mode already chosen\n");
+        return BestMode;
+    }
+
     TRACE("AGENT-MODIFIED: Selected mode %d with score %d\n", BestMode, BestScore);
     return BestMode;
 }
