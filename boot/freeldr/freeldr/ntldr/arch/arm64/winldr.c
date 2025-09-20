@@ -113,15 +113,10 @@ Arm64InitializeMemory(
         return FALSE;
     }
     
-    /* Initialize memory descriptor list if needed */
-    if (IsListEmpty(&LoaderBlock->MemoryDescriptorListHead))
-    {
-        ERR("ARM64: Memory descriptor list is empty\n");
-        return FALSE;
-    }
-    
-    /* Dump memory descriptors for debugging */
-    WinLdrpDumpMemoryDescriptors(LoaderBlock);
+    /* Note: Memory descriptor list will be populated later by WinLdrSetupMemoryLayout() */
+    /* For now, just ensure the LoaderBlock is valid - the list may still be empty at this point */
+
+    /* Memory descriptors will be dumped later after WinLdrSetupMemoryLayout() */
     
     /* ARM64 specific memory initialization */
     /* The UEFI firmware has already set up basic memory management */
