@@ -143,7 +143,7 @@ BOOLEAN FatOpenVolume(PFAT_VOLUME_INFO Volume, PFAT_BOOTSECTOR BootSector, ULONG
     PFAT32_BOOTSECTOR Fat32VolumeBootSector;
     PFATX_BOOTSECTOR FatXVolumeBootSector;
 
-    TRACE("FatOpenVolume() DeviceId = %d\n", Volume->DeviceId);
+    //TRACE("FatOpenVolume() DeviceId = %d\n", Volume->DeviceId);
 
     //
     // Allocate the memory to hold the boot sector
@@ -156,81 +156,81 @@ BOOLEAN FatOpenVolume(PFAT_VOLUME_INFO Volume, PFAT_BOOTSECTOR BootSector, ULONG
     Volume->FatType = FatDetermineFatType(FatVolumeBootSector, PartitionSectorCount);
 
     // Dump boot sector (and swap it for big endian systems)
-    TRACE("Dumping boot sector:\n");
+    //TRACE("Dumping boot sector:\n");
     if (ISFATX(Volume->FatType))
     {
         FatSwapFatXBootSector(FatXVolumeBootSector);
-        TRACE("sizeof(FATX_BOOTSECTOR) = 0x%x.\n", sizeof(FATX_BOOTSECTOR));
+        //TRACE("sizeof(FATX_BOOTSECTOR) = 0x%x.\n", sizeof(FATX_BOOTSECTOR));
 
-        TRACE("FileSystemType: %c%c%c%c.\n", FatXVolumeBootSector->FileSystemType[0], FatXVolumeBootSector->FileSystemType[1], FatXVolumeBootSector->FileSystemType[2], FatXVolumeBootSector->FileSystemType[3]);
-        TRACE("VolumeSerialNumber: 0x%x\n", FatXVolumeBootSector->VolumeSerialNumber);
-        TRACE("SectorsPerCluster: %d\n", FatXVolumeBootSector->SectorsPerCluster);
-        TRACE("NumberOfFats: %d\n", FatXVolumeBootSector->NumberOfFats);
-        TRACE("Unknown: 0x%x\n", FatXVolumeBootSector->Unknown);
+        //TRACE("FileSystemType: %c%c%c%c.\n", FatXVolumeBootSector->FileSystemType[0], FatXVolumeBootSector->FileSystemType[1], FatXVolumeBootSector->FileSystemType[2], FatXVolumeBootSector->FileSystemType[3]);
+        //TRACE("VolumeSerialNumber: 0x%x\n", FatXVolumeBootSector->VolumeSerialNumber);
+        //TRACE("SectorsPerCluster: %d\n", FatXVolumeBootSector->SectorsPerCluster);
+        //TRACE("NumberOfFats: %d\n", FatXVolumeBootSector->NumberOfFats);
+        //TRACE("Unknown: 0x%x\n", FatXVolumeBootSector->Unknown);
 
-        TRACE("FatType %s\n", Volume->FatType == FATX16 ? "FATX16" : "FATX32");
+        //TRACE("FatType %s\n", Volume->FatType == FATX16 ? "FATX16" : "FATX32");
 
     }
     else if (Volume->FatType == FAT32)
     {
         FatSwapFat32BootSector(Fat32VolumeBootSector);
-        TRACE("sizeof(FAT32_BOOTSECTOR) = 0x%x.\n", sizeof(FAT32_BOOTSECTOR));
+        //TRACE("sizeof(FAT32_BOOTSECTOR) = 0x%x.\n", sizeof(FAT32_BOOTSECTOR));
 
-        TRACE("JumpBoot: 0x%x 0x%x 0x%x\n", Fat32VolumeBootSector->JumpBoot[0], Fat32VolumeBootSector->JumpBoot[1], Fat32VolumeBootSector->JumpBoot[2]);
-        TRACE("OemName: %c%c%c%c%c%c%c%c\n", Fat32VolumeBootSector->OemName[0], Fat32VolumeBootSector->OemName[1], Fat32VolumeBootSector->OemName[2], Fat32VolumeBootSector->OemName[3], Fat32VolumeBootSector->OemName[4], Fat32VolumeBootSector->OemName[5], Fat32VolumeBootSector->OemName[6], Fat32VolumeBootSector->OemName[7]);
-        TRACE("BytesPerSector: %d\n", Fat32VolumeBootSector->BytesPerSector);
-        TRACE("SectorsPerCluster: %d\n", Fat32VolumeBootSector->SectorsPerCluster);
-        TRACE("ReservedSectors: %d\n", Fat32VolumeBootSector->ReservedSectors);
-        TRACE("NumberOfFats: %d\n", Fat32VolumeBootSector->NumberOfFats);
-        TRACE("RootDirEntries: %d\n", Fat32VolumeBootSector->RootDirEntries);
-        TRACE("TotalSectors: %d\n", Fat32VolumeBootSector->TotalSectors);
-        TRACE("MediaDescriptor: 0x%x\n", Fat32VolumeBootSector->MediaDescriptor);
-        TRACE("SectorsPerFat: %d\n", Fat32VolumeBootSector->SectorsPerFat);
-        TRACE("SectorsPerTrack: %d\n", Fat32VolumeBootSector->SectorsPerTrack);
-        TRACE("NumberOfHeads: %d\n", Fat32VolumeBootSector->NumberOfHeads);
-        TRACE("HiddenSectors: %d\n", Fat32VolumeBootSector->HiddenSectors);
-        TRACE("TotalSectorsBig: %d\n", Fat32VolumeBootSector->TotalSectorsBig);
-        TRACE("SectorsPerFatBig: %d\n", Fat32VolumeBootSector->SectorsPerFatBig);
-        TRACE("ExtendedFlags: 0x%x\n", Fat32VolumeBootSector->ExtendedFlags);
-        TRACE("FileSystemVersion: 0x%x\n", Fat32VolumeBootSector->FileSystemVersion);
-        TRACE("RootDirStartCluster: %d\n", Fat32VolumeBootSector->RootDirStartCluster);
-        TRACE("FsInfo: %d\n", Fat32VolumeBootSector->FsInfo);
-        TRACE("BackupBootSector: %d\n", Fat32VolumeBootSector->BackupBootSector);
-        TRACE("Reserved: 0x%x\n", Fat32VolumeBootSector->Reserved);
-        TRACE("DriveNumber: 0x%x\n", Fat32VolumeBootSector->DriveNumber);
-        TRACE("Reserved1: 0x%x\n", Fat32VolumeBootSector->Reserved1);
-        TRACE("BootSignature: 0x%x\n", Fat32VolumeBootSector->BootSignature);
-        TRACE("VolumeSerialNumber: 0x%x\n", Fat32VolumeBootSector->VolumeSerialNumber);
-        TRACE("VolumeLabel: %c%c%c%c%c%c%c%c%c%c%c\n", Fat32VolumeBootSector->VolumeLabel[0], Fat32VolumeBootSector->VolumeLabel[1], Fat32VolumeBootSector->VolumeLabel[2], Fat32VolumeBootSector->VolumeLabel[3], Fat32VolumeBootSector->VolumeLabel[4], Fat32VolumeBootSector->VolumeLabel[5], Fat32VolumeBootSector->VolumeLabel[6], Fat32VolumeBootSector->VolumeLabel[7], Fat32VolumeBootSector->VolumeLabel[8], Fat32VolumeBootSector->VolumeLabel[9], Fat32VolumeBootSector->VolumeLabel[10]);
-        TRACE("FileSystemType: %c%c%c%c%c%c%c%c\n", Fat32VolumeBootSector->FileSystemType[0], Fat32VolumeBootSector->FileSystemType[1], Fat32VolumeBootSector->FileSystemType[2], Fat32VolumeBootSector->FileSystemType[3], Fat32VolumeBootSector->FileSystemType[4], Fat32VolumeBootSector->FileSystemType[5], Fat32VolumeBootSector->FileSystemType[6], Fat32VolumeBootSector->FileSystemType[7]);
-        TRACE("BootSectorMagic: 0x%x\n", Fat32VolumeBootSector->BootSectorMagic);
+        //TRACE("JumpBoot: 0x%x 0x%x 0x%x\n", Fat32VolumeBootSector->JumpBoot[0], Fat32VolumeBootSector->JumpBoot[1], Fat32VolumeBootSector->JumpBoot[2]);
+        //TRACE("OemName: %c%c%c%c%c%c%c%c\n", Fat32VolumeBootSector->OemName[0], Fat32VolumeBootSector->OemName[1], Fat32VolumeBootSector->OemName[2], Fat32VolumeBootSector->OemName[3], Fat32VolumeBootSector->OemName[4], Fat32VolumeBootSector->OemName[5], Fat32VolumeBootSector->OemName[6], Fat32VolumeBootSector->OemName[7]);
+        //TRACE("BytesPerSector: %d\n", Fat32VolumeBootSector->BytesPerSector);
+        //TRACE("SectorsPerCluster: %d\n", Fat32VolumeBootSector->SectorsPerCluster);
+        //TRACE("ReservedSectors: %d\n", Fat32VolumeBootSector->ReservedSectors);
+        //TRACE("NumberOfFats: %d\n", Fat32VolumeBootSector->NumberOfFats);
+        //TRACE("RootDirEntries: %d\n", Fat32VolumeBootSector->RootDirEntries);
+        //TRACE("TotalSectors: %d\n", Fat32VolumeBootSector->TotalSectors);
+        //TRACE("MediaDescriptor: 0x%x\n", Fat32VolumeBootSector->MediaDescriptor);
+        //TRACE("SectorsPerFat: %d\n", Fat32VolumeBootSector->SectorsPerFat);
+        //TRACE("SectorsPerTrack: %d\n", Fat32VolumeBootSector->SectorsPerTrack);
+        //TRACE("NumberOfHeads: %d\n", Fat32VolumeBootSector->NumberOfHeads);
+        //TRACE("HiddenSectors: %d\n", Fat32VolumeBootSector->HiddenSectors);
+        //TRACE("TotalSectorsBig: %d\n", Fat32VolumeBootSector->TotalSectorsBig);
+        //TRACE("SectorsPerFatBig: %d\n", Fat32VolumeBootSector->SectorsPerFatBig);
+        //TRACE("ExtendedFlags: 0x%x\n", Fat32VolumeBootSector->ExtendedFlags);
+        //TRACE("FileSystemVersion: 0x%x\n", Fat32VolumeBootSector->FileSystemVersion);
+        //TRACE("RootDirStartCluster: %d\n", Fat32VolumeBootSector->RootDirStartCluster);
+        //TRACE("FsInfo: %d\n", Fat32VolumeBootSector->FsInfo);
+        //TRACE("BackupBootSector: %d\n", Fat32VolumeBootSector->BackupBootSector);
+        //TRACE("Reserved: 0x%x\n", Fat32VolumeBootSector->Reserved);
+        //TRACE("DriveNumber: 0x%x\n", Fat32VolumeBootSector->DriveNumber);
+        //TRACE("Reserved1: 0x%x\n", Fat32VolumeBootSector->Reserved1);
+        //TRACE("BootSignature: 0x%x\n", Fat32VolumeBootSector->BootSignature);
+        //TRACE("VolumeSerialNumber: 0x%x\n", Fat32VolumeBootSector->VolumeSerialNumber);
+        //TRACE("VolumeLabel: %c%c%c%c%c%c%c%c%c%c%c\n", Fat32VolumeBootSector->VolumeLabel[0], Fat32VolumeBootSector->VolumeLabel[1], Fat32VolumeBootSector->VolumeLabel[2], Fat32VolumeBootSector->VolumeLabel[3], Fat32VolumeBootSector->VolumeLabel[4], Fat32VolumeBootSector->VolumeLabel[5], Fat32VolumeBootSector->VolumeLabel[6], Fat32VolumeBootSector->VolumeLabel[7], Fat32VolumeBootSector->VolumeLabel[8], Fat32VolumeBootSector->VolumeLabel[9], Fat32VolumeBootSector->VolumeLabel[10]);
+        //TRACE("FileSystemType: %c%c%c%c%c%c%c%c\n", Fat32VolumeBootSector->FileSystemType[0], Fat32VolumeBootSector->FileSystemType[1], Fat32VolumeBootSector->FileSystemType[2], Fat32VolumeBootSector->FileSystemType[3], Fat32VolumeBootSector->FileSystemType[4], Fat32VolumeBootSector->FileSystemType[5], Fat32VolumeBootSector->FileSystemType[6], Fat32VolumeBootSector->FileSystemType[7]);
+        //TRACE("BootSectorMagic: 0x%x\n", Fat32VolumeBootSector->BootSectorMagic);
     }
     else
     {
         FatSwapFatBootSector(FatVolumeBootSector);
-        TRACE("sizeof(FAT_BOOTSECTOR) = 0x%x.\n", sizeof(FAT_BOOTSECTOR));
+        //TRACE("sizeof(FAT_BOOTSECTOR) = 0x%x.\n", sizeof(FAT_BOOTSECTOR));
 
-        TRACE("JumpBoot: 0x%x 0x%x 0x%x\n", FatVolumeBootSector->JumpBoot[0], FatVolumeBootSector->JumpBoot[1], FatVolumeBootSector->JumpBoot[2]);
-        TRACE("OemName: %c%c%c%c%c%c%c%c\n", FatVolumeBootSector->OemName[0], FatVolumeBootSector->OemName[1], FatVolumeBootSector->OemName[2], FatVolumeBootSector->OemName[3], FatVolumeBootSector->OemName[4], FatVolumeBootSector->OemName[5], FatVolumeBootSector->OemName[6], FatVolumeBootSector->OemName[7]);
-        TRACE("BytesPerSector: %d\n", FatVolumeBootSector->BytesPerSector);
-        TRACE("SectorsPerCluster: %d\n", FatVolumeBootSector->SectorsPerCluster);
-        TRACE("ReservedSectors: %d\n", FatVolumeBootSector->ReservedSectors);
-        TRACE("NumberOfFats: %d\n", FatVolumeBootSector->NumberOfFats);
-        TRACE("RootDirEntries: %d\n", FatVolumeBootSector->RootDirEntries);
-        TRACE("TotalSectors: %d\n", FatVolumeBootSector->TotalSectors);
-        TRACE("MediaDescriptor: 0x%x\n", FatVolumeBootSector->MediaDescriptor);
-        TRACE("SectorsPerFat: %d\n", FatVolumeBootSector->SectorsPerFat);
-        TRACE("SectorsPerTrack: %d\n", FatVolumeBootSector->SectorsPerTrack);
-        TRACE("NumberOfHeads: %d\n", FatVolumeBootSector->NumberOfHeads);
-        TRACE("HiddenSectors: %d\n", FatVolumeBootSector->HiddenSectors);
-        TRACE("TotalSectorsBig: %d\n", FatVolumeBootSector->TotalSectorsBig);
-        TRACE("DriveNumber: 0x%x\n", FatVolumeBootSector->DriveNumber);
-        TRACE("Reserved1: 0x%x\n", FatVolumeBootSector->Reserved1);
-        TRACE("BootSignature: 0x%x\n", FatVolumeBootSector->BootSignature);
-        TRACE("VolumeSerialNumber: 0x%x\n", FatVolumeBootSector->VolumeSerialNumber);
-        TRACE("VolumeLabel: %c%c%c%c%c%c%c%c%c%c%c\n", FatVolumeBootSector->VolumeLabel[0], FatVolumeBootSector->VolumeLabel[1], FatVolumeBootSector->VolumeLabel[2], FatVolumeBootSector->VolumeLabel[3], FatVolumeBootSector->VolumeLabel[4], FatVolumeBootSector->VolumeLabel[5], FatVolumeBootSector->VolumeLabel[6], FatVolumeBootSector->VolumeLabel[7], FatVolumeBootSector->VolumeLabel[8], FatVolumeBootSector->VolumeLabel[9], FatVolumeBootSector->VolumeLabel[10]);
-        TRACE("FileSystemType: %c%c%c%c%c%c%c%c\n", FatVolumeBootSector->FileSystemType[0], FatVolumeBootSector->FileSystemType[1], FatVolumeBootSector->FileSystemType[2], FatVolumeBootSector->FileSystemType[3], FatVolumeBootSector->FileSystemType[4], FatVolumeBootSector->FileSystemType[5], FatVolumeBootSector->FileSystemType[6], FatVolumeBootSector->FileSystemType[7]);
-        TRACE("BootSectorMagic: 0x%x\n", FatVolumeBootSector->BootSectorMagic);
+        //TRACE("JumpBoot: 0x%x 0x%x 0x%x\n", FatVolumeBootSector->JumpBoot[0], FatVolumeBootSector->JumpBoot[1], FatVolumeBootSector->JumpBoot[2]);
+        //TRACE("OemName: %c%c%c%c%c%c%c%c\n", FatVolumeBootSector->OemName[0], FatVolumeBootSector->OemName[1], FatVolumeBootSector->OemName[2], FatVolumeBootSector->OemName[3], FatVolumeBootSector->OemName[4], FatVolumeBootSector->OemName[5], FatVolumeBootSector->OemName[6], FatVolumeBootSector->OemName[7]);
+        //TRACE("BytesPerSector: %d\n", FatVolumeBootSector->BytesPerSector);
+        //TRACE("SectorsPerCluster: %d\n", FatVolumeBootSector->SectorsPerCluster);
+        //TRACE("ReservedSectors: %d\n", FatVolumeBootSector->ReservedSectors);
+        //TRACE("NumberOfFats: %d\n", FatVolumeBootSector->NumberOfFats);
+        //TRACE("RootDirEntries: %d\n", FatVolumeBootSector->RootDirEntries);
+        //TRACE("TotalSectors: %d\n", FatVolumeBootSector->TotalSectors);
+        //TRACE("MediaDescriptor: 0x%x\n", FatVolumeBootSector->MediaDescriptor);
+        //TRACE("SectorsPerFat: %d\n", FatVolumeBootSector->SectorsPerFat);
+        //TRACE("SectorsPerTrack: %d\n", FatVolumeBootSector->SectorsPerTrack);
+        //TRACE("NumberOfHeads: %d\n", FatVolumeBootSector->NumberOfHeads);
+        //TRACE("HiddenSectors: %d\n", FatVolumeBootSector->HiddenSectors);
+        //TRACE("TotalSectorsBig: %d\n", FatVolumeBootSector->TotalSectorsBig);
+        //TRACE("DriveNumber: 0x%x\n", FatVolumeBootSector->DriveNumber);
+        //TRACE("Reserved1: 0x%x\n", FatVolumeBootSector->Reserved1);
+        //TRACE("BootSignature: 0x%x\n", FatVolumeBootSector->BootSignature);
+        //TRACE("VolumeSerialNumber: 0x%x\n", FatVolumeBootSector->VolumeSerialNumber);
+        //TRACE("VolumeLabel: %c%c%c%c%c%c%c%c%c%c%c\n", FatVolumeBootSector->VolumeLabel[0], FatVolumeBootSector->VolumeLabel[1], FatVolumeBootSector->VolumeLabel[2], FatVolumeBootSector->VolumeLabel[3], FatVolumeBootSector->VolumeLabel[4], FatVolumeBootSector->VolumeLabel[5], FatVolumeBootSector->VolumeLabel[6], FatVolumeBootSector->VolumeLabel[7], FatVolumeBootSector->VolumeLabel[8], FatVolumeBootSector->VolumeLabel[9], FatVolumeBootSector->VolumeLabel[10]);
+        //TRACE("FileSystemType: %c%c%c%c%c%c%c%c\n", FatVolumeBootSector->FileSystemType[0], FatVolumeBootSector->FileSystemType[1], FatVolumeBootSector->FileSystemType[2], FatVolumeBootSector->FileSystemType[3], FatVolumeBootSector->FileSystemType[4], FatVolumeBootSector->FileSystemType[5], FatVolumeBootSector->FileSystemType[6], FatVolumeBootSector->FileSystemType[7]);
+        //TRACE("BootSectorMagic: 0x%x\n", FatVolumeBootSector->BootSectorMagic);
     }
 
     //
@@ -315,7 +315,7 @@ BOOLEAN FatOpenVolume(PFAT_VOLUME_INFO Volume, PFAT_BOOTSECTOR BootSector, ULONG
     }
 
     Volume->FatCacheSize = min(Volume->SectorsPerFat, FAT_MAX_CACHE_SIZE / Volume->BytesPerSector);
-    TRACE("FAT cache is %d sectors, %d bytes\n", Volume->FatCacheSize, Volume->FatCacheSize * Volume->BytesPerSector);
+    //TRACE("FAT cache is %d sectors, %d bytes\n", Volume->FatCacheSize, Volume->FatCacheSize * Volume->BytesPerSector);
 
     Volume->FatCache = FrLdrTempAlloc(Volume->FatCacheSize * Volume->BytesPerSector, TAG_FAT_CACHE);
     if (!Volume->FatCache)
@@ -421,7 +421,7 @@ PVOID FatBufferDirectory(PFAT_VOLUME_INFO Volume, ULONG DirectoryStartCluster, U
     PDIRECTORY_BUFFER DirectoryBuffer;
     PLIST_ENTRY Entry;
 
-    TRACE("FatBufferDirectory() DirectoryStartCluster = %d RootDirectory = %s\n", DirectoryStartCluster, (RootDirectory ? "TRUE" : "FALSE"));
+    //TRACE("FatBufferDirectory() DirectoryStartCluster = %d RootDirectory = %s\n", DirectoryStartCluster, (RootDirectory ? "TRUE" : "FALSE"));
 
     /*
      * For FAT32, the root directory is nothing special. We can treat it the same
@@ -444,7 +444,7 @@ PVOID FatBufferDirectory(PFAT_VOLUME_INFO Volume, ULONG DirectoryStartCluster, U
         if ((DirectoryBuffer->Volume == Volume) &&
             (DirectoryBuffer->DirectoryStartCluster == DirectoryStartCluster))
         {
-            TRACE("Found cached buffer\n");
+            //TRACE("Found cached buffer\n");
             *DirectorySize = DirectoryBuffer->DirectorySize;
             return DirectoryBuffer->Data;
         }
@@ -465,7 +465,7 @@ PVOID FatBufferDirectory(PFAT_VOLUME_INFO Volume, ULONG DirectoryStartCluster, U
     //
     // Attempt to allocate memory for directory buffer
     //
-    TRACE("Trying to allocate (DirectorySize) %d bytes.\n", *DirectorySize);
+    //TRACE("Trying to allocate (DirectorySize) %d bytes.\n", *DirectorySize);
     DirectoryBuffer = FrLdrTempAlloc(*DirectorySize + sizeof(DIRECTORY_BUFFER),
                                      TAG_FAT_BUFFER);
 
@@ -517,7 +517,7 @@ BOOLEAN FatSearchDirectoryBufferForFile(PFAT_VOLUME_INFO Volume, PVOID Directory
 
     EntryCount = DirectorySize / sizeof(DIRENTRY);
 
-    TRACE("FatSearchDirectoryBufferForFile() DirectoryBuffer = 0x%x EntryCount = %d FileName = %s\n", DirectoryBuffer, EntryCount, FileName);
+    //TRACE("FatSearchDirectoryBufferForFile() DirectoryBuffer = 0x%x EntryCount = %d FileName = %s\n", DirectoryBuffer, EntryCount, FileName);
 
     RtlZeroMemory(ShortNameBuffer, 13 * sizeof(CHAR));
     RtlZeroMemory(LfnNameBuffer, 261 * sizeof(CHAR));
@@ -529,7 +529,7 @@ BOOLEAN FatSearchDirectoryBufferForFile(PFAT_VOLUME_INFO Volume, PVOID Directory
         OurDirEntry = *((PDIRENTRY) DirectoryBuffer);
         FatSwapDirEntry(DirEntry);
 
-        //TRACE("Dumping directory entry %d:\n", CurrentEntry);
+        ////TRACE("Dumping directory entry %d:\n", CurrentEntry);
         //DbgDumpBuffer(DPRINT_FILESYSTEM, DirEntry, sizeof(DIRENTRY));
 
         //
@@ -630,7 +630,7 @@ BOOLEAN FatSearchDirectoryBufferForFile(PFAT_VOLUME_INFO Volume, PVOID Directory
                 LfnNameBuffer[12 + (LfnDirEntry->SequenceNumber * 13)] = (UCHAR)LfnDirEntry->Name11_12[1];
             }
 
-            //TRACE("Dumping long name buffer:\n");
+            ////TRACE("Dumping long name buffer:\n");
             //DbgDumpBuffer(DPRINT_FILESYSTEM, LfnNameBuffer, 260);
 
             continue;
@@ -661,8 +661,8 @@ BOOLEAN FatSearchDirectoryBufferForFile(PFAT_VOLUME_INFO Volume, PVOID Directory
         //
         FatParseShortFileName(ShortNameBuffer, DirEntry);
 
-        //TRACE("Entry: %d LFN = %s\n", CurrentEntry, LfnNameBuffer);
-        //TRACE("Entry: %d DOS name = %s\n", CurrentEntry, ShortNameBuffer);
+        ////TRACE("Entry: %d LFN = %s\n", CurrentEntry, LfnNameBuffer);
+        ////TRACE("Entry: %d DOS name = %s\n", CurrentEntry, ShortNameBuffer);
 
         //
         // See if the file name matches either the short or long name
@@ -680,20 +680,20 @@ BOOLEAN FatSearchDirectoryBufferForFile(PFAT_VOLUME_INFO Volume, PVOID Directory
             FatFileInfoPointer->CurrentCluster = StartCluster;
             FatFileInfoPointer->StartCluster = StartCluster;
 
-            TRACE("MSDOS Directory Entry:\n");
-            TRACE("FileName[11] = %c%c%c%c%c%c%c%c%c%c%c\n", DirEntry->FileName[0], DirEntry->FileName[1], DirEntry->FileName[2], DirEntry->FileName[3], DirEntry->FileName[4], DirEntry->FileName[5], DirEntry->FileName[6], DirEntry->FileName[7], DirEntry->FileName[8], DirEntry->FileName[9], DirEntry->FileName[10]);
-            TRACE("Attr = 0x%x\n", DirEntry->Attr);
-            TRACE("ReservedNT = 0x%x\n", DirEntry->ReservedNT);
-            TRACE("TimeInTenths = %d\n", DirEntry->TimeInTenths);
-            TRACE("CreateTime = %d\n", DirEntry->CreateTime);
-            TRACE("CreateDate = %d\n", DirEntry->CreateDate);
-            TRACE("LastAccessDate = %d\n", DirEntry->LastAccessDate);
-            TRACE("ClusterHigh = 0x%x\n", DirEntry->ClusterHigh);
-            TRACE("Time = %d\n", DirEntry->Time);
-            TRACE("Date = %d\n", DirEntry->Date);
-            TRACE("ClusterLow = 0x%x\n", DirEntry->ClusterLow);
-            TRACE("Size = %d\n", DirEntry->Size);
-            TRACE("StartCluster = 0x%x\n", StartCluster);
+            //TRACE("MSDOS Directory Entry:\n");
+            //TRACE("FileName[11] = %c%c%c%c%c%c%c%c%c%c%c\n", DirEntry->FileName[0], DirEntry->FileName[1], DirEntry->FileName[2], DirEntry->FileName[3], DirEntry->FileName[4], DirEntry->FileName[5], DirEntry->FileName[6], DirEntry->FileName[7], DirEntry->FileName[8], DirEntry->FileName[9], DirEntry->FileName[10]);
+            //TRACE("Attr = 0x%x\n", DirEntry->Attr);
+            //TRACE("ReservedNT = 0x%x\n", DirEntry->ReservedNT);
+            //TRACE("TimeInTenths = %d\n", DirEntry->TimeInTenths);
+            //TRACE("CreateTime = %d\n", DirEntry->CreateTime);
+            //TRACE("CreateDate = %d\n", DirEntry->CreateDate);
+            //TRACE("LastAccessDate = %d\n", DirEntry->LastAccessDate);
+            //TRACE("ClusterHigh = 0x%x\n", DirEntry->ClusterHigh);
+            //TRACE("Time = %d\n", DirEntry->Time);
+            //TRACE("Date = %d\n", DirEntry->Date);
+            //TRACE("ClusterLow = 0x%x\n", DirEntry->ClusterLow);
+            //TRACE("Size = %d\n", DirEntry->Size);
+            //TRACE("StartCluster = 0x%x\n", StartCluster);
 
             return TRUE;
         }
@@ -718,7 +718,7 @@ static BOOLEAN FatXSearchDirectoryBufferForFile(PFAT_VOLUME_INFO Volume, PVOID D
 
     EntryCount = DirectorySize / sizeof(FATX_DIRENTRY);
 
-    TRACE("FatXSearchDirectoryBufferForFile() DirectoryBuffer = 0x%x EntryCount = %d FileName = %s\n", DirectoryBuffer, EntryCount, FileName);
+    //TRACE("FatXSearchDirectoryBufferForFile() DirectoryBuffer = 0x%x EntryCount = %d FileName = %s\n", DirectoryBuffer, EntryCount, FileName);
 
     FileNameLen = strlen(FileName);
 
@@ -746,17 +746,17 @@ static BOOLEAN FatXSearchDirectoryBufferForFile(PFAT_VOLUME_INFO Volume, PVOID D
             FatFileInfoPointer->CurrentCluster = DirEntry->StartCluster;
             FatFileInfoPointer->StartCluster = DirEntry->StartCluster;
 
-            TRACE("FATX Directory Entry:\n");
-            TRACE("FileNameSize = %d\n", DirEntry->FileNameSize);
-            TRACE("Attr = 0x%x\n", DirEntry->Attr);
-            TRACE("StartCluster = 0x%x\n", DirEntry->StartCluster);
-            TRACE("Size = %d\n", DirEntry->Size);
-            TRACE("Time = %d\n", DirEntry->Time);
-            TRACE("Date = %d\n", DirEntry->Date);
-            TRACE("CreateTime = %d\n", DirEntry->CreateTime);
-            TRACE("CreateDate = %d\n", DirEntry->CreateDate);
-            TRACE("LastAccessTime = %d\n", DirEntry->LastAccessTime);
-            TRACE("LastAccessDate = %d\n", DirEntry->LastAccessDate);
+            //TRACE("FATX Directory Entry:\n");
+            //TRACE("FileNameSize = %d\n", DirEntry->FileNameSize);
+            //TRACE("Attr = 0x%x\n", DirEntry->Attr);
+            //TRACE("StartCluster = 0x%x\n", DirEntry->StartCluster);
+            //TRACE("Size = %d\n", DirEntry->Size);
+            //TRACE("Time = %d\n", DirEntry->Time);
+            //TRACE("Date = %d\n", DirEntry->Date);
+            //TRACE("CreateTime = %d\n", DirEntry->CreateTime);
+            //TRACE("CreateDate = %d\n", DirEntry->CreateDate);
+            //TRACE("LastAccessTime = %d\n", DirEntry->LastAccessTime);
+            //TRACE("LastAccessDate = %d\n", DirEntry->LastAccessDate);
 
             return TRUE;
         }
@@ -781,7 +781,7 @@ ARC_STATUS FatLookupFile(PFAT_VOLUME_INFO Volume, PCSTR FileName, PFAT_FILE_INFO
     ULONG        DirectorySize;
     FAT_FILE_INFO    FatFileInfo;
 
-    TRACE("FatLookupFile() FileName = %s\n", FileName);
+    //TRACE("FatLookupFile() FileName = %s\n", FileName);
 
     RtlZeroMemory(FatFileInfoPointer, sizeof(FAT_FILE_INFO));
 
@@ -906,7 +906,7 @@ void FatParseShortFileName(PCHAR Buffer, PDIRENTRY DirEntry)
         Buffer[Idx++] = (DirEntry->FileName[10] == ' ') ? '\0' : DirEntry->FileName[10];
     }
 
-    //TRACE("FatParseShortFileName() ShortName = %s\n", Buffer);
+    ////TRACE("FatParseShortFileName() ShortName = %s\n", Buffer);
 }
 
 /**
@@ -936,11 +936,7 @@ PUCHAR FatGetFatSector(PFAT_VOLUME_INFO Volume, UINT32 FatSectorNumber)
             Volume->FatCacheIndex[CacheIndex + i] = SectorNumAbsolute + i;
         }
 
-        TRACE("FAT cache miss: read sector 0x%x from disk\n", SectorNumAbsolute);
-    }
-    else
-    {
-        TRACE("FAT cache hit: sector 0x%x present\n", SectorNumAbsolute);
+        //TRACE("FAT cache miss: read sector 0x%x from disk\n", SectorNumAbsolute);
     }
 
     return &Volume->FatCache[CacheIndex * Volume->BytesPerSector];
@@ -956,8 +952,6 @@ BOOLEAN FatGetFatEntry(PFAT_VOLUME_INFO Volume, UINT32 Cluster, PUINT32 ClusterP
     UINT32 FatOffset, ThisFatSecNum, ThisFatEntOffset, fat;
     PUCHAR ReadBuffer;
 
-    TRACE("FatGetFatEntry() Retrieving FAT entry for cluster %d.\n", Cluster);
-
     switch(Volume->FatType)
     {
     case FAT12:
@@ -966,9 +960,9 @@ BOOLEAN FatGetFatEntry(PFAT_VOLUME_INFO Volume, UINT32 Cluster, PUINT32 ClusterP
         ThisFatSecNum = FatOffset / Volume->BytesPerSector;
         ThisFatEntOffset = (FatOffset % Volume->BytesPerSector);
 
-        TRACE("FatOffset: %d\n", FatOffset);
-        TRACE("ThisFatSecNum: %d\n", ThisFatSecNum);
-        TRACE("ThisFatEntOffset: %d\n", ThisFatEntOffset);
+        //TRACE("FatOffset: %d\n", FatOffset);
+        //TRACE("ThisFatSecNum: %d\n", ThisFatSecNum);
+        //TRACE("ThisFatEntOffset: %d\n", ThisFatEntOffset);
 
         // The cluster pointer can span within two sectors, but the FatGetFatSector function
         // reads 4 sectors most times, except when we are at the edge of FAT cache
@@ -1033,8 +1027,6 @@ BOOLEAN FatGetFatEntry(PFAT_VOLUME_INFO Volume, UINT32 Cluster, PUINT32 ClusterP
         return FALSE;
     }
 
-    TRACE("FAT entry is 0x%x.\n", fat);
-
     *ClusterPointer = fat;
 
     return TRUE;
@@ -1045,7 +1037,7 @@ ULONG FatCountClustersInChain(PFAT_VOLUME_INFO Volume, UINT32 StartCluster)
 {
     ULONG    ClusterCount = 0;
 
-    TRACE("FatCountClustersInChain() StartCluster = %d\n", StartCluster);
+    //TRACE("FatCountClustersInChain() StartCluster = %d\n", StartCluster);
 
     while (1)
     {
@@ -1071,7 +1063,7 @@ ULONG FatCountClustersInChain(PFAT_VOLUME_INFO Volume, UINT32 StartCluster)
         }
     }
 
-    TRACE("FatCountClustersInChain() ClusterCount = %d\n", ClusterCount);
+    //TRACE("FatCountClustersInChain() ClusterCount = %d\n", ClusterCount);
 
     return ClusterCount;
 }
@@ -1129,7 +1121,7 @@ BOOLEAN FatReadClusterChain(PFAT_VOLUME_INFO Volume, UINT32 StartClusterNumber, 
 {
     UINT32 ClustersRead, NextClusterNumber, ClustersLeft = NumberOfClusters;
 
-    TRACE("FatReadClusterChain() StartClusterNumber = %d NumberOfClusters = %d Buffer = 0x%x\n", StartClusterNumber, NumberOfClusters, Buffer);
+    //TRACE("FatReadClusterChain() StartClusterNumber = %d NumberOfClusters = %d Buffer = 0x%x\n", StartClusterNumber, NumberOfClusters, Buffer);
 
     ASSERT(NumberOfClusters > 0);
 
@@ -1159,7 +1151,7 @@ BOOLEAN FatReadPartialCluster(PFAT_VOLUME_INFO Volume, ULONG ClusterNumber, ULON
     PUCHAR ReadBuffer;
     BOOLEAN Success = FALSE;
 
-    //TRACE("FatReadPartialCluster() ClusterNumber = %d StartingOffset = %d Length = %d Buffer = 0x%x\n", ClusterNumber, StartingOffset, Length, Buffer);
+    ////TRACE("FatReadPartialCluster() ClusterNumber = %d StartingOffset = %d Length = %d Buffer = 0x%x\n", ClusterNumber, StartingOffset, Length, Buffer);
 
     ClusterStartSector = ((ClusterNumber - 2) * Volume->SectorsPerCluster) + Volume->DataSectorStart;
 
@@ -1201,7 +1193,7 @@ BOOLEAN FatReadFile(PFAT_FILE_INFO FatFileInfo, ULONG BytesToRead, ULONG* BytesR
     PFAT_VOLUME_INFO Volume = FatFileInfo->Volume;
     UINT32 NextClusterNumber, BytesPerCluster;
 
-    TRACE("FatReadFile() BytesToRead = %d Buffer = 0x%x\n", BytesToRead, Buffer);
+    //TRACE("FatReadFile() BytesToRead = %d Buffer = 0x%x\n", BytesToRead, Buffer);
 
     if (BytesRead != NULL)
     {
@@ -1294,7 +1286,7 @@ BOOLEAN FatReadFile(PFAT_FILE_INFO FatFileInfo, ULONG BytesToRead, ULONG* BytesR
             }
 
             FatFileInfo->CurrentCluster = NextClusterNumber;
-            TRACE("FatReadFile() FatFileInfo->CurrentCluster = 0x%x\n", FatFileInfo->CurrentCluster);
+            //TRACE("FatReadFile() FatFileInfo->CurrentCluster = 0x%x\n", FatFileInfo->CurrentCluster);
         }
     }
 
@@ -1308,7 +1300,7 @@ BOOLEAN FatReadFile(PFAT_FILE_INFO FatFileInfo, ULONG BytesToRead, ULONG* BytesR
         //
         UINT32 NumberOfClusters = BytesToRead / BytesPerCluster;
 
-        TRACE("Going to read: %u clusters\n", NumberOfClusters);
+        //TRACE("Going to read: %u clusters\n", NumberOfClusters);
 
         if (NumberOfClusters > 0)
         {
@@ -1332,7 +1324,7 @@ BOOLEAN FatReadFile(PFAT_FILE_INFO FatFileInfo, ULONG BytesToRead, ULONG* BytesR
 
             FatFileInfo->FilePointer += BytesReadHere;
             FatFileInfo->CurrentCluster = NextClusterNumber;
-            TRACE("FatReadFile() FatFileInfo->CurrentCluster = 0x%x\n", FatFileInfo->CurrentCluster);
+            //TRACE("FatReadFile() FatFileInfo->CurrentCluster = 0x%x\n", FatFileInfo->CurrentCluster);
         }
     }
 
@@ -1366,7 +1358,7 @@ BOOLEAN FatReadVolumeSectors(PFAT_VOLUME_INFO Volume, ULONG SectorNumber, ULONG 
     ULONG Count;
     ARC_STATUS Status;
 
-    //TRACE("FatReadVolumeSectors(): SectorNumber %d, SectorCount %d, Buffer %p\n",
+    ////TRACE("FatReadVolumeSectors(): SectorNumber %d, SectorCount %d, Buffer %p\n",
     //    SectorNumber, SectorCount, Buffer);
 
     //
@@ -1376,7 +1368,7 @@ BOOLEAN FatReadVolumeSectors(PFAT_VOLUME_INFO Volume, ULONG SectorNumber, ULONG 
     Status = ArcSeek(Volume->DeviceId, &Position, SeekAbsolute);
     if (Status != ESUCCESS)
     {
-        TRACE("FatReadVolumeSectors() Failed to seek\n");
+        //TRACE("FatReadVolumeSectors() Failed to seek\n");
         return FALSE;
     }
 
@@ -1386,7 +1378,7 @@ BOOLEAN FatReadVolumeSectors(PFAT_VOLUME_INFO Volume, ULONG SectorNumber, ULONG 
     Status = ArcRead(Volume->DeviceId, Buffer, SectorCount * Volume->BytesPerSector, &Count);
     if (Status != ESUCCESS || Count != SectorCount * Volume->BytesPerSector)
     {
-        TRACE("FatReadVolumeSectors() Failed to read\n");
+        //TRACE("FatReadVolumeSectors() Failed to read\n");
         return FALSE;
     }
 
@@ -1411,8 +1403,7 @@ ARC_STATUS FatGetFileInformation(ULONG FileId, FILEINFORMATION* Information)
     Information->EndingAddress.LowPart = FileHandle->FileSize;
     Information->CurrentAddress.LowPart = FileHandle->FilePointer;
 
-    TRACE("FatGetFileInformation(%lu) -> FileSize = %lu, FilePointer = 0x%lx\n",
-          FileId, Information->EndingAddress.LowPart, Information->CurrentAddress.LowPart);
+    //TRACE("FatGetFileInformation(%lu) -> FileSize = %lu, FilePointer = 0x%lx\n", FileId, Information->EndingAddress.LowPart, Information->CurrentAddress.LowPart);
 
     return ESUCCESS;
 }
@@ -1432,7 +1423,7 @@ ARC_STATUS FatOpen(CHAR* Path, OPENMODE OpenMode, ULONG* FileId)
     DeviceId = FsGetDeviceId(*FileId);
     FatVolume = FatVolumes[DeviceId];
 
-    TRACE("FatOpen() FileName = %s\n", Path);
+    //TRACE("FatOpen() FileName = %s\n", Path);
 
     RtlZeroMemory(&TempFileInfo, sizeof(TempFileInfo));
     Status = FatLookupFile(FatVolume, Path, &TempFileInfo);
@@ -1501,13 +1492,13 @@ ARC_STATUS FatSeek(ULONG FileId, LARGE_INTEGER* Position, SEEKMODE SeekMode)
     if (NewPosition.LowPart >= FileHandle->FileSize)
         return EINVAL;
 
-    TRACE("FatSeek() NewPosition = %u, OldPointer = %u, SeekMode = %d\n", NewPosition.LowPart, FileHandle->FilePointer, SeekMode);
+    //TRACE("FatSeek() NewPosition = %u, OldPointer = %u, SeekMode = %d\n", NewPosition.LowPart, FileHandle->FilePointer, SeekMode);
 
     {
         UINT32 OldClusterIdx = FileHandle->FilePointer / (Volume->SectorsPerCluster * Volume->BytesPerSector);
         UINT32 NewClusterIdx = NewPosition.LowPart / (Volume->SectorsPerCluster * Volume->BytesPerSector);
 
-        TRACE("FatSeek() OldClusterIdx: %u, NewClusterIdx: %u\n", OldClusterIdx, NewClusterIdx);
+        //TRACE("FatSeek() OldClusterIdx: %u, NewClusterIdx: %u\n", OldClusterIdx, NewClusterIdx);
 
         if (NewClusterIdx != OldClusterIdx)
         {
@@ -1573,7 +1564,7 @@ const DEVVTBL* FatMount(ULONG DeviceId)
     ULARGE_INTEGER SectorCount;
     ARC_STATUS Status;
 
-    TRACE("Enter FatMount(%lu)\n", DeviceId);
+    //TRACE("Enter FatMount(%lu)\n", DeviceId);
 
     //
     // Allocate data for volume information
@@ -1646,6 +1637,6 @@ const DEVVTBL* FatMount(ULONG DeviceId)
     //
     // Return success
     //
-    TRACE("FatMount(%lu) success\n", DeviceId);
+    //TRACE("FatMount(%lu) success\n", DeviceId);
     return (ISFATX(Volume->FatType) ? &FatXFuncTable : &FatFuncTable);
 }
