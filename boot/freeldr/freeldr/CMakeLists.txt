@@ -119,8 +119,8 @@ elseif(ARCH STREQUAL "arm64")
     list(APPEND FREELDR_ARC_SOURCE
         arch/arm64/macharm64.c)
 
-    # Minimal NTLDR sources for ARM64 UEFI only
-    set(FREELDR_NTLDR_SOURCE
+    # ARM64 still needs architecture-specific NT loader glue
+    list(APPEND FREELDR_NTLDR_SOURCE
         ntldr/arch/arm64/winldr.c)
 
 else()

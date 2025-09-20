@@ -30,7 +30,6 @@ typedef VOID
 (*EDIT_OS_ENTRY_PROC)(
     _Inout_ OperatingSystemItem* OperatingSystem);
 
-#if !defined(_M_ARM64)
 static VOID
 EditCustomBootReactOSSetup(
     _Inout_ OperatingSystemItem* OperatingSystem)
@@ -44,7 +43,6 @@ EditCustomBootNTOS(
 {
     EditCustomBootReactOS(OperatingSystem, FALSE);
 }
-#endif
 
 typedef struct _OS_LOADING_METHOD
 {
@@ -66,6 +64,10 @@ static const OS_LOADING_METHOD OSLoadingMethods[] = {
      NULL,
 #endif
      LoadAndBootEfiApp},
+    {"ReactOSSetup", EditCustomBootReactOSSetup, LoadReactOSSetup},
+    {"Windows", EditCustomBootNTOS, LoadAndBootWindows},
+    {"Windows2003", EditCustomBootNTOS, LoadAndBootWindows},
+    {"WindowsVista", EditCustomBootNTOS, LoadAndBootWindows},
 };
 #else
 static const OS_LOADING_METHOD

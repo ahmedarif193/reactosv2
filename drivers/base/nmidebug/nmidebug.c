@@ -13,6 +13,28 @@
 
 /* FUNCTIONS ******************************************************************/
 
+#if defined(_M_ARM64)
+
+NTSTATUS
+NTAPI
+DriverEntry(IN PDRIVER_OBJECT DriverObject,
+            IN PUNICODE_STRING RegistryPath)
+{
+    UNREFERENCED_PARAMETER(DriverObject);
+    UNREFERENCED_PARAMETER(RegistryPath);
+    PAGED_CODE();
+
+    /*
+     * ARM64 systems currently lack an NMI infrastructure. Provide a
+     * no-op stub so the loader can locate nmidebug.sys without failing
+     * the boot sequence.
+     */
+
+    return STATUS_SUCCESS;
+}
+
+#else
+
 PCHAR NmiBegin = "NMI4NMI@";
 
 FORCEINLINE
@@ -38,6 +60,9 @@ NTAPI
 NmiDbgCallback(IN PVOID Context,
                IN BOOLEAN Handled)
 {
+    UNREFERENCED_PARAMETER(Context);
+    UNREFERENCED_PARAMETER(Handled);
+
     /* Clear the NMI flag */
     NmiClearFlag();
 
@@ -57,6 +82,8 @@ NTAPI
 DriverEntry(IN PDRIVER_OBJECT DriverObject,
             IN PUNICODE_STRING RegistryPath)
 {
+    UNREFERENCED_PARAMETER(DriverObject);
+    UNREFERENCED_PARAMETER(RegistryPath);
     PAGED_CODE();
 
     /* Register NMI callback */
@@ -65,5 +92,7 @@ DriverEntry(IN PDRIVER_OBJECT DriverObject,
     /* Return success */
     return STATUS_SUCCESS;
 }
+
+#endif
 
 /* EOF */

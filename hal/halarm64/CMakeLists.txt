@@ -9,14 +9,17 @@ include_directories(
 
 list(APPEND HAL_SOURCE
     halarm64.c
-    portio.c)
+    portio.c
+    stubs.c)
 
 add_asm_files(hal_asm)
 
 add_library(hal MODULE
     ${HAL_SOURCE}
     ${hal_asm}
-    hal.rc)
+    hal.rc
+    ${CMAKE_CURRENT_BINARY_DIR}/hal.def
+    ${CMAKE_CURRENT_BINARY_DIR}/hal_stubs.c)
 
 target_link_libraries(hal libcntpr)
 

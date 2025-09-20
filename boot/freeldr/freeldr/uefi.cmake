@@ -99,21 +99,13 @@ endif()
 
 spec2def(uefildr.exe freeldr.spec)
 
-if(ARCH STREQUAL "arm64")
-    list(APPEND UEFILDR_BASE_SOURCE
-        include/arch/uefi/uefildr.h
-        arch/uefi/uefildr.c
-        bootmgr.c
-        ${FREELDR_BASE_SOURCE})
-else()
-    list(APPEND UEFILDR_BASE_SOURCE
-        include/arch/uefi/uefildr.h
-        arch/uefi/uefildr.c
-        bootmgr.c
-        ntldr/setupldr.c
-        ntldr/inffile.c
-        ${FREELDR_BASE_SOURCE})
-endif()
+list(APPEND UEFILDR_BASE_SOURCE
+    include/arch/uefi/uefildr.h
+    arch/uefi/uefildr.c
+    bootmgr.c
+    ntldr/setupldr.c
+    ntldr/inffile.c
+    ${FREELDR_BASE_SOURCE})
 
 if(ARCH STREQUAL "i386" OR ARCH STREQUAL "arm64")
     # Must be included together with disk/scsiport.c
@@ -162,11 +154,14 @@ if(ARCH STREQUAL "i386")
     target_link_libraries(uefildr mini_hal)
 endif()
 
-if(ARCH STREQUAL "arm64")
-    target_link_libraries(uefildr uefifreeldr_common libcntpr blrtl)
-else()
-    target_link_libraries(uefildr uefifreeldr_common cportlib blcmlib blrtl libcntpr)
-endif()
+target_link_libraries(uefildr
+    -Wl,--start-group
+    uefifreeldr_common
+    cportlib
+    blcmlib
+    libcntpr
+    blrtl
+    -Wl,--end-group)
 
 # dynamic analysis switches
 if(STACK_PROTECTOR)

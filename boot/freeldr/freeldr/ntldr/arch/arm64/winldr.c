@@ -12,6 +12,7 @@
 DBG_DEFAULT_CHANNEL(WINDOWS);
 
 static BOOLEAN Arm64InitializeMemory(IN PLOADER_PARAMETER_BLOCK LoaderBlock);
+static VOID Arm64ConfigureProcessorContext(USHORT OperatingSystemVersion);
 
 BOOLEAN
 MempSetupPaging(
@@ -78,6 +79,13 @@ Arm64SetupForNt(
     return TRUE;
 }
 
+VOID
+WinLdrSetProcessorContext(
+    _In_ USHORT OperatingSystemVersion)
+{
+    Arm64ConfigureProcessorContext(OperatingSystemVersion);
+}
+
 /* Provide the machine-dependent setup entry used by the generic NT loader path */
 VOID
 WinLdrSetupMachineDependent(
@@ -121,6 +129,25 @@ Arm64InitializeMemory(
     
     TRACE("ARM64: Memory management structures initialized\n");
     return TRUE;
+}
+
+static VOID
+Arm64ConfigureProcessorContext(USHORT OperatingSystemVersion)
+{
+    UNREFERENCED_PARAMETER(OperatingSystemVersion);
+
+    TRACE("ARM64: WinLdrSetProcessorContext\n");
+
+    /*
+     * UEFI firmware already leaves the CPU in EL1 with MMU enabled and the
+     * kernel is expected to reset the environment. We currently rely on the
+     * identity mapping established by the firmware/boot manager, so there is
+     * nothing mandatory to program here yet.
+     *
+     * Hook for future enhancements: switch stacks, adjust translation base,
+     * or clean caches before transferring control to the kernel.
+     */
+    /* Nothing to do yet. */
 }
 
 /* WinLdrpDumpMemoryDescriptors and WinLdrLoadModule are defined in the main winldr.c */
