@@ -21,6 +21,8 @@ Options:
     -o, --output DIR        Set output directory name
     -p, --toolchain-path    Set toolchain binaries path (e.g., /home/ahmed/x-tools/x86_64-w64-mingw32/bin)
     --toolchain-prefix      Set toolchain prefix (e.g., x86_64-w64-mingw32)
+    --clang                 Configure using the Clang toolchain file
+    --clang-version VER     Use clang binaries with the specified version suffix (e.g., 18)
     -c, --ccache            Enable ccache
     --clean                 Clean build directory before configuring
     
@@ -46,9 +48,12 @@ CMAKE_GENERATOR=""
 OUTPUT_DIR=""
 TOOLCHAIN_PATH=""
 TOOLCHAIN_PREFIX=""
+TOOLCHAIN_FILE="toolchain-gcc.cmake"
 ENABLE_CCACHE=""
 CLEAN_BUILD=0
 CMAKE_EXTRA_ARGS=""
+USE_CLANG=0
+CLANG_VERSION=""
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -78,6 +83,21 @@ while [[ $# -gt 0 ]]; do
             ;;
         --toolchain-prefix)
             TOOLCHAIN_PREFIX="$2"
+            shift 2
+            ;;
+        --clang)
+            USE_CLANG=1
+            TOOLCHAIN_FILE="toolchain-clang.cmake"
+            shift
+            ;;
+        --clang-version)
+            if [ -z "$2" ] || [[ "$2" == -* ]]; then
+                echo "Error: --clang-version requires a value"
+                exit 1
+            fi
+            CLANG_VERSION="$2"
+            USE_CLANG=1
+            TOOLCHAIN_FILE="toolchain-clang.cmake"
             shift 2
             ;;
         -c|--ccache)
@@ -149,7 +169,11 @@ ARCH_LOWER=$(echo "$ARCH" | tr '[:upper:]' '[:lower:]')
 
 # Set output directory if not specified
 if [ -z "$OUTPUT_DIR" ]; then
-    OUTPUT_DIR="output-MinGW-${ARCH_LOWER}"
+    if [ "$USE_CLANG" -eq 1 ]; then
+        OUTPUT_DIR="output-Clang-${ARCH_LOWER}"
+    else
+        OUTPUT_DIR="output-MinGW-${ARCH_LOWER}"
+    fi
 fi
 
 # Print configuration
@@ -163,6 +187,10 @@ echo "Build Type:       $BUILD_TYPE"
 echo "Generator:        $CMAKE_GENERATOR"
 echo "Toolchain Path:   $TOOLCHAIN_PATH"
 echo "Toolchain Prefix: $TOOLCHAIN_PREFIX"
+echo "Toolchain File:   $TOOLCHAIN_FILE"
+if [ "$USE_CLANG" -eq 1 ] && [ -n "$CLANG_VERSION" ]; then
+    echo "Clang Version:   $CLANG_VERSION"
+fi
 echo "Enable ccache:    $ENABLE_CCACHE"
 if [ -n "$CMAKE_EXTRA_ARGS" ]; then
     echo "Extra CMake args: $CMAKE_EXTRA_ARGS"
@@ -207,15 +235,20 @@ if [ "$CMAKE_GENERATOR" = "Ninja" ]; then
     fi
 fi
 
+CLANG_VERSION_ARG=""
+if [ -n "$CLANG_VERSION" ]; then
+    CLANG_VERSION_ARG="-DCLANG_VERSION=\"$CLANG_VERSION\""
+fi
 CMAKE_COMMAND="cmake -G \"$CMAKE_GENERATOR\" \
     -DCMAKE_BUILD_TYPE=\"$BUILD_TYPE\" \
     -DARCH=\"$ARCH\" \
     -DTOOLCHAIN_PATH=\"$TOOLCHAIN_PATH\" \
     -DTOOLCHAIN_PREFIX=\"$TOOLCHAIN_PREFIX\" \
     -DENABLE_CCACHE:BOOL=\"$ENABLE_CCACHE\" \
-    -DCMAKE_TOOLCHAIN_FILE:FILEPATH=\"$REACTOS_SOURCE_DIR/toolchain-gcc.cmake\" \
+    -DCMAKE_TOOLCHAIN_FILE:FILEPATH=\"$REACTOS_SOURCE_DIR/$TOOLCHAIN_FILE\" \
     ${CMAKE_MAKE_PROGRAM_ARG} \
     -C \"$REACTOS_SOURCE_DIR/ReactOS.cmake\" \
+    ${CLANG_VERSION_ARG} \
     $CMAKE_EXTRA_ARGS \
     \"$REACTOS_SOURCE_DIR\""
 
