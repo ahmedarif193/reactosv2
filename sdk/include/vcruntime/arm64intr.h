@@ -26,6 +26,49 @@ typedef enum _tag_ARM64INTR_BARRIER_TYPE
     _ARM64_BARRIER_OSHST  = 0x2,
     _ARM64_BARRIER_OSHLD  = 0x1
 } _ARM64INTR_BARRIER_TYPE;
+#if defined(__clang__)
+#define _rotl8 __reactos___rotl8
+#define _rotr8 __reactos___rotr8
+#define _rotr16 __reactos___rotr16
+#define _InterlockedIncrement __reactos___InterlockedIncrement
+#define _InterlockedDecrement __reactos___InterlockedDecrement
+#define _InterlockedExchangeAdd __reactos___InterlockedExchangeAdd
+#define _InterlockedCompareExchangePointer __reactos___InterlockedCompareExchangePointer
+#define _InterlockedExchangePointer __reactos___InterlockedExchangePointer
+#define _byteswap_ulong __reactos___byteswap_ulong
+#define _byteswap_ushort __reactos___byteswap_ushort
+#define _byteswap_uint64 __reactos___byteswap_uint64
+#define _InterlockedAnd64 __reactos___InterlockedAnd64
+#define _InterlockedAdd64 __reactos___InterlockedAdd64
+#define _InterlockedOr64 __reactos___InterlockedOr64
+#define _InterlockedCompareExchange64 __reactos___InterlockedCompareExchange64
+#define _InterlockedCompareExchange8 __reactos___InterlockedCompareExchange8
+#define _disable __reactos___disable
+#define _enable __reactos___enable
+#define _ReturnAddress __reactos___ReturnAddress
+#define __debugbreak __reactos____debugbreak
+#define _ReadWriteBarrier __reactos___ReadWriteBarrier
+#define _ReadBarrier __reactos___ReadBarrier
+#define _WriteBarrier __reactos___WriteBarrier
+#define _rotl __reactos___rotl
+#define _rotr __reactos___rotr
+#define _InterlockedCompareExchange16 __reactos___InterlockedCompareExchange16
+#define _InterlockedCompareExchange __reactos___InterlockedCompareExchange
+#define _InterlockedIncrement16 __reactos___InterlockedIncrement16
+#define _InterlockedDecrement16 __reactos___InterlockedDecrement16
+#define _InterlockedExchange __reactos___InterlockedExchange
+#define _InterlockedExchange8 __reactos___InterlockedExchange8
+#define _InterlockedExchange16 __reactos___InterlockedExchange16
+#define _InterlockedAnd __reactos___InterlockedAnd
+#define _InterlockedAnd8 __reactos___InterlockedAnd8
+#define _InterlockedAnd16 __reactos___InterlockedAnd16
+#define _InterlockedOr __reactos___InterlockedOr
+#define _InterlockedOr8 __reactos___InterlockedOr8
+#define _InterlockedOr16 __reactos___InterlockedOr16
+#define _InterlockedXor __reactos___InterlockedXor
+#define _InterlockedXor8 __reactos___InterlockedXor8
+#define _InterlockedXor16 __reactos___InterlockedXor16
+#endif
 
 void __dmb(unsigned int _Type);
 void __dsb(unsigned int _Type);
@@ -73,7 +116,7 @@ void _enable(void);
 void* _ReturnAddress(void);
 void __debugbreak(void);
 
-#ifdef __GNUC__
+#if defined(__GNUC__)
 /* GCC/MinGW implementation using built-in atomics and inline functions */
 
 /* Bit rotation inline implementations */

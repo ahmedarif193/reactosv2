@@ -329,7 +329,7 @@ static inline __attribute__((always_inline)) __attribute__((returns_twice)) void
 	__label__ _SEHBeginExcept; \
 	__label__ _SEHEndExcept; \
  \
-	auto __SEH_DECLARE_FINALLY(_SEHFinally);
+	__SEH_DECLARE_FINALLY(_SEHFinally);
 
 #define _SEH2_TRY \
 	__PREVENT_GCC_FROM_INLINING_SEH_FUNCTIONS() \

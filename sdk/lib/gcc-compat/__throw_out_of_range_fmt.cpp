@@ -12,6 +12,7 @@
 #include <cstdarg>
 #include <cstring>
 #include <malloc.h>
+#include <cstdlib>
 
 namespace std {
 
@@ -39,7 +40,12 @@ void __throw_out_of_range_fmt(const char *format, ...)
     buffer[sizeof(buffer) - 1] = 0;
     va_end(argptr);
 
+#if defined(__clang__)
+    /* Clang/ARM64 build lacks C++ unwinding support yet, fail fast instead of throwing. */
+    std::abort();
+#else
     throw out_of_range_error(buffer);
+#endif
 }
 
 }  // namespace std

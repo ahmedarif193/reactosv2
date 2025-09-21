@@ -5,6 +5,7 @@ list(APPEND SOURCE
     kmixer.c
     filter.c
     pin.c
+    mathstubs.c
     kmixer.h)
 
 add_library(kmixer MODULE ${SOURCE})

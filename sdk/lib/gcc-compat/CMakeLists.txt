@@ -7,6 +7,10 @@ list(APPEND SOURCE
     __throw_out_of_range_fmt.cpp
     StringCchCopyNA.c)
 
+if(CMAKE_CXX_COMPILER_ID STREQUAL "Clang")
+    list(APPEND SOURCE clang_stubs.cpp)
+endif()
+
 add_library(stdc++compat ${SOURCE})
 set_target_cpp_properties(stdc++compat WITH_EXCEPTIONS)
 add_dependencies(stdc++compat xdk)

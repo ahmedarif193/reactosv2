@@ -39,11 +39,19 @@ extern "C" {
 #define __yield()           __asm__ volatile("yield" ::: "memory")
 
 /* ARM64 Debug Instructions */
+#if defined(__clang__)
+static __inline__ void __reactos___break(int val)
+{
+    __asm__ __volatile__("brk #%0" : : "i"(val));
+}
+#define __break(val) __reactos___break(val)
+#else
 #ifndef __break
 static __inline__ void __break(int val)
 {
     __asm__ __volatile__("brk #%0" : : "i"(val));
 }
+#endif
 #endif
 
 /* ARM64 Atomic Operations using GCC built-ins */

@@ -19,7 +19,7 @@ Options:
     -t, --type TYPE         Set build type (Debug, Release, MinSizeRel, RelWithDebInfo)
     -g, --generator GEN     Set CMake generator (Ninja, "Unix Makefiles")
     -o, --output DIR        Set output directory name
-    -p, --toolchain-path    Set toolchain binaries path (e.g., /home/ahmed/x-tools/x86_64-w64-mingw32/bin)
+    -p, --toolchain-path    Set toolchain binaries path (e.g., /home/ahmed/toolchains/x86_64-w64-mingw32/bin)
     --toolchain-prefix      Set toolchain prefix (e.g., x86_64-w64-mingw32)
     --clang                 Configure using the Clang toolchain file
     --clang-version VER     Use clang binaries with the specified version suffix (e.g., 18)
@@ -38,7 +38,7 @@ EOF
 # BUILD_TYPE="RelWithDebInfo"
 # CMAKE_GENERATOR=""
 # OUTPUT_DIR=""
-# TOOLCHAIN_PATH="/home/ahmed/x-tools/i686-w64-mingw32/bin"
+# TOOLCHAIN_PATH="/home/ahmed/toolchains/i686-w64-mingw32/bin"
 # TOOLCHAIN_PREFIX="i686-w64-mingw32"
 
 # Default values (will be overridden by ReactOS.cmake and command line)
@@ -132,16 +132,16 @@ fi
 if [ -z "$TOOLCHAIN_PATH" ]; then
     case "$ARCH" in
         amd64|x86_64)
-            TOOLCHAIN_PATH="/home/ahmed/x-tools/x86_64-w64-mingw32/bin"
+            TOOLCHAIN_PATH="/home/ahmed/toolchains/x86_64-w64-mingw32/bin"
             ;;
         arm64|aarch64)
-            TOOLCHAIN_PATH="/home/ahmed/x-tools/aarch64-w64-mingw32/bin"
+            TOOLCHAIN_PATH="/home/ahmed/toolchains/aarch64-w64-mingw32/bin"
             ;;
         i386|x86)
-            TOOLCHAIN_PATH="/home/ahmed/x-tools/i686-w64-mingw32/bin"
+            TOOLCHAIN_PATH="/home/ahmed/toolchains/i686-w64-mingw32/bin"
             ;;
         *)
-            TOOLCHAIN_PATH="/home/ahmed/x-tools/i686-w64-mingw32/bin"
+            TOOLCHAIN_PATH="/home/ahmed/toolchains/i686-w64-mingw32/bin"
             ;;
     esac
 fi

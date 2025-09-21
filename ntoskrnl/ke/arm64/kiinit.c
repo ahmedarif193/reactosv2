@@ -36,7 +36,11 @@ ULONG64 KiTimerFrequency = 0;
 ULONG ProcessCount;
 
 /* PCR and PRCB - exported for kernel drivers */
+#if defined(__clang__)
+KIPCR KiInitialPcr;
+#else
 __declspec(dllexport) KIPCR KiInitialPcr;
+#endif
 KPRCB KiInitialPrcb;
 
 /* FUNCTIONS *****************************************************************/

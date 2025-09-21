@@ -88,3 +88,10 @@ RtlImageNtHeaderEx(
 {
     return RtlpImageNtHeaderEx(Flags, Base, Size, OutHeaders);
 }
+#if defined(__clang__) && (defined(_M_ARM64) || defined(__aarch64__))
+/* Clang emits references to __chkstk for large stack frames; provide a stub for freeldr. */
+void __chkstk(void)
+{
+    /* freeldr uses small stack allocations; simply return. */
+}
+#endif

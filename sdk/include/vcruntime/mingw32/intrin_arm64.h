@@ -8,6 +8,21 @@
 
 #include <vcruntime.h>
 
+#if defined(__clang__)
+#define _BitScanForward __reactos___BitScanForward
+#define _BitScanReverse __reactos___BitScanReverse
+#define _BitScanForward64 __reactos___BitScanForward64
+#define _BitScanReverse64 __reactos___BitScanReverse64
+#define _interlockedbittestandset __reactos___interlockedbittestandset
+#define _interlockedbittestandset64 __reactos___interlockedbittestandset64
+#define _interlockedbittestandreset __reactos___interlockedbittestandreset
+#define _interlockedbittestandreset64 __reactos___interlockedbittestandreset64
+#define __yield __reactos____yield
+#define _InterlockedExchangeAdd64 __reactos___InterlockedExchangeAdd64
+#define _InterlockedIncrement64 __reactos___InterlockedIncrement64
+#define _InterlockedDecrement64 __reactos___InterlockedDecrement64
+#define __fastfail __reactos____fastfail
+#endif
 #ifdef __GNUC__
 
 __INTRIN_INLINE unsigned char _BitScanForward(unsigned long* Index, unsigned long Mask)
