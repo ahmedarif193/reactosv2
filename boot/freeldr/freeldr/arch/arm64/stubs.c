@@ -4,6 +4,7 @@
 
 #include <freeldr.h>
 #include <stdarg.h>
+#include <arch/arm64/arm64.h>
 
 void __debugbreak(void)
 {
@@ -38,9 +39,21 @@ FrLdrBugCheckWithMessage(
     for (;;) { __asm__ volatile("wfi"); }
 }
 
-/* ARM64 FreeLDR uses identity mapping under UEFI */
-PVOID VaToPa(PVOID Va) { return Va; }
-PVOID PaToVa(PVOID Pa) { return Pa; }
+/* ARM64 FreeLDR uses a simple KSEG0 offset mapping for kernel addresses */
+PVOID VaToPa(PVOID Va)
+{
+    ULONGLONG value = (ULONGLONG)(ULONG_PTR)Va;
+    if (value >= ARM64_KSEG0_BASE)
+        return (PVOID)(value - ARM64_KSEG0_BASE);
+    return Va;
+}
+
+PVOID PaToVa(PVOID Pa)
+{
+    if (Pa == NULL)
+        return NULL;
+    return (PVOID)((ULONGLONG)(ULONG_PTR)Pa + ARM64_KSEG0_BASE);
+}
 
 double floor(double x) { return (double)((long long)x); }
 

@@ -107,7 +107,15 @@ MempSetupPagingForRegion(
           BasePage, PageCount, Type);
 
     /* Make sure we don't map too high */
+#if !defined(_M_ARM64)
     if (BasePage + PageCount > MmGetLoaderPagesSpanned()) return;
+#else
+    if (BasePage + PageCount > MmGetLoaderPagesSpanned())
+    {
+        TRACE("MempSetupPagingForRegion: extending map for BasePage=0x%lx beyond LoaderPagesSpanned=0x%lx\n",
+              BasePage, MmGetLoaderPagesSpanned());
+    }
+#endif
 
     switch (Type)
     {

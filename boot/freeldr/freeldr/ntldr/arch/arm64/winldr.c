@@ -8,6 +8,7 @@
 #include <freeldr.h>
 #include <ntldr/winldr.h>
 #include <peloader.h>
+#include <arch/arm64/arm64.h>
 #include <debug.h>
 DBG_DEFAULT_CHANNEL(WINDOWS);
 
@@ -20,13 +21,63 @@ MempSetupPaging(
     IN PFN_NUMBER NumberOfPages,
     IN BOOLEAN KernelMapping)
 {
-    /* ARM64 paging setup using UEFI memory management */
+    ULONGLONG phys_start;
+    ULONGLONG phys_end;
+    ULONGLONG map_start;
+    ULONGLONG map_end;
+    ULONGLONG current;
+    BOOLEAN Status = TRUE;
+    const ULONGLONG block_size = ARM64_BLOCK_SIZE_1G;
+    const ULONGLONG block_mask = ARM64_BLOCK_MASK_1G;
+    const ULONG attrs = ARM64_MAP_ATTR_NORMAL | ARM64_MAP_ATTR_EXECUTE;
+
     TRACE("ARM64: Setting up paging for StartPage=0x%lx, NumberOfPages=0x%lx, KernelMapping=%d\n",
           (ULONG)StartPage, (ULONG)NumberOfPages, KernelMapping);
-    
-    /* For UEFI ARM64, we rely on identity mapping set up by the bootloader */
-    /* The kernel will set up its own page tables */
-    return TRUE;
+
+    if (NumberOfPages == 0)
+        return TRUE;
+
+    phys_start = ((ULONGLONG)StartPage) << MM_PAGE_SHIFT;
+    phys_end = phys_start + (((ULONGLONG)NumberOfPages) << MM_PAGE_SHIFT);
+
+    /* Expand to 1GB boundaries because current mapper works at that granularity */
+    map_start = phys_start & ~block_mask;
+    map_end = (phys_end + block_mask) & ~block_mask;
+
+    TRACE("ARM64: Paging span phys_start=0x%llx phys_end=0x%llx map_start=0x%llx map_end=0x%llx\n",
+          phys_start, phys_end, map_start, map_end);
+
+    for (current = map_start; current < map_end; current += block_size)
+    {
+        TRACE("ARM64:   TTBR0 map block @PA 0x%llx -> Size 0x%llx\n", current, block_size);
+
+        if (!Arm64MapVirtualMemory(current, current, block_size, attrs))
+        {
+            ERR("ARM64: Failed to identity map PA 0x%llx\n", current);
+            Status = FALSE;
+            break;
+        }
+
+        TRACE("ARM64:   TTBR0 map success for 0x%llx\n", current);
+
+        if (KernelMapping)
+        {
+            ULONGLONG kernel_va = ARM64_KSEG0_BASE + current;
+            TRACE("ARM64:   TTBR1 map block @VA 0x%llx -> PA 0x%llx\n", kernel_va, current);
+            if (!Arm64MapVirtualMemory(kernel_va, current, block_size, attrs))
+            {
+                ERR("ARM64: Failed to map kernel VA 0x%llx -> PA 0x%llx\n", kernel_va, current);
+                Status = FALSE;
+                break;
+            }
+
+            TRACE("ARM64:   TTBR1 map success for VA 0x%llx\n", kernel_va);
+        }
+    }
+
+    TRACE("ARM64: Paging setup result=%d for StartPage=0x%lx\n", Status, (ULONG)StartPage);
+
+    return Status;
 }
 
 VOID

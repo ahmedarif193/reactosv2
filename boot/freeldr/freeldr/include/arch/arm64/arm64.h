@@ -26,6 +26,22 @@ ULONGLONG Arm64GetPhysicalAddress(ULONGLONG VirtualAddress);
 ULONG Arm64GetMemoryAttributes(ULONGLONG Address);
 VOID Arm64FlushTlbRange(ULONGLONG VirtualAddress, ULONGLONG Size);
 
+/* Mapping attribute helpers */
+#define ARM64_MEM_ATTR_DEVICE_nGnRnE   0U
+#define ARM64_MEM_ATTR_DEVICE_nGnRE    1U
+#define ARM64_MEM_ATTR_DEVICE_GRE      2U
+#define ARM64_MEM_ATTR_NORMAL_NC       3U
+#define ARM64_MEM_ATTR_NORMAL_WB       4U
+
+#define ARM64_MAP_ATTR_EXECUTE         0x00000100U
+#define ARM64_MAP_ATTR_TYPE_MASK       0x000000FFU
+#define ARM64_MAP_ATTR_NORMAL          ARM64_MEM_ATTR_NORMAL_WB
+#define ARM64_MAP_ATTR_DEVICE          ARM64_MEM_ATTR_DEVICE_nGnRnE
+
+#define ARM64_KSEG0_BASE               0xFFFF800000000000ULL
+#define ARM64_BLOCK_SIZE_1G            (1ULL << 30)
+#define ARM64_BLOCK_MASK_1G            (ARM64_BLOCK_SIZE_1G - 1ULL)
+
 /* Exception and trap handlers */
 typedef struct _ARM64_CONTEXT ARM64_CONTEXT, *PARM64_CONTEXT;
 VOID Arm64HandleSynchronousException(PARM64_CONTEXT Context, ULONGLONG Esr, ULONGLONG FaultAddr, ULONGLONG PC);

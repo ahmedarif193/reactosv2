@@ -12,6 +12,10 @@
 #include "registry.h"
 #include <internal/cmboot.h>
 
+#if defined(_M_ARM64)
+#include <arch/arm64/arm64.h>
+#endif
+
 // AGENT-MODIFIED: Include UEFI ARC functions header for UEFI boot support
 #ifdef UEFIBOOT
 #include <uefildr.h>
@@ -1410,8 +1414,52 @@ LoadAndBootWindowsCommon(
     /* Set processor context */
     WinLdrSetProcessorContext(OperatingSystemVersion);
 
+    TRACE("ARM64: Returned from WinLdrSetProcessorContext - preparing final handoff\n");
+
     /* Save final value of LoaderPagesSpanned */
-    LoaderBlock->Extension->LoaderPagesSpanned = MmGetLoaderPagesSpanned();
+    {
+#if defined(_M_ARM64)
+        PLOADER_PARAMETER_EXTENSION ExtensionVA = LoaderBlock->Extension;
+        ULONG LoaderPages = MmGetLoaderPagesSpanned();
+        ULONG_PTR ExtensionPA = 0;
+
+        if (ExtensionVA != NULL)
+        {
+            ULONGLONG ExtAddr = (ULONGLONG)(ULONG_PTR)ExtensionVA;
+            if (ExtAddr >= ARM64_KSEG0_BASE)
+                ExtensionPA = (ULONG_PTR)(ExtAddr - ARM64_KSEG0_BASE);
+            else
+                ExtensionPA = (ULONG_PTR)ExtensionVA;
+
+            TRACE("ARM64: Loader extension VA=%p PA=0x%p LoaderPages=0x%lx\n",
+                  ExtensionVA, (PVOID)ExtensionPA, LoaderPages);
+
+            if (ExtensionPA != 0)
+            {
+                ((PLOADER_PARAMETER_EXTENSION)(ULONG_PTR)ExtensionPA)->LoaderPagesSpanned = LoaderPages;
+
+                if ((PVOID)(ULONG_PTR)ExtensionPA != ExtensionVA)
+                {
+                    TRACE("ARM64: LoaderPagesSpanned mirrored through physical mapping\n");
+                }
+            }
+            else
+            {
+                TRACE("ARM64: Unable to derive physical address for loader extension, skipping VA update\n");
+            }
+        }
+        else
+        {
+            TRACE("ARM64: Loader extension is NULL, skipping LoaderPagesSpanned update\n");
+        }
+
+        TRACE("ARM64: LoaderPagesSpanned = 0x%lx\n", LoaderPages);
+#else
+        LoaderBlock->Extension->LoaderPagesSpanned = MmGetLoaderPagesSpanned();
+        TRACE("LoaderPagesSpanned = 0x%lx\n",
+              LoaderBlock->Extension->LoaderPagesSpanned);
+#endif
+    }
 
     TRACE("Hello from paged mode, KiSystemStartup %p, LoaderBlockVA %p!\n",
           KiSystemStartup, LoaderBlockVA);
@@ -1421,13 +1469,18 @@ LoadAndBootWindowsCommon(
     RtlZeroMemory((PVOID)KI_USER_SHARED_DATA, MM_PAGE_SIZE);
 #endif
 
+#if !defined(_M_ARM64)
     WinLdrpDumpMemoryDescriptors(LoaderBlockVA);
     WinLdrpDumpBootDriver(LoaderBlockVA);
 #ifndef _M_AMD64
     WinLdrpDumpArcDisks(LoaderBlockVA);
 #endif
+#endif
 
     /* Pass control */
+    TRACE("ARM64: Transferring to kernel at %p with LoaderBlock %p\n",
+          KiSystemStartup,
+          LoaderBlockVA);
     (*KiSystemStartup)(LoaderBlockVA);
 
     UNREACHABLE; // return ESUCCESS;

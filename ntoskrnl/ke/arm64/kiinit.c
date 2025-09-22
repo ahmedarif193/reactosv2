@@ -386,6 +386,24 @@ KiSystemStartup(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 
     DPRINT("ARM64: KiSystemStartup - LoaderBlock at 0x%p\n", LoaderBlock);
 
+    /* Emit a serial banner so automated tests can confirm kernel entry. */
+    {
+        static const CHAR Message[] = "ARM64 kernel entry reached\r\n";
+        const CHAR *Current = Message;
+        volatile ULONG *const Pl011Dr = (volatile ULONG *)0x09000000;
+
+        while (*Current != '\0')
+        {
+            *Pl011Dr = (UCHAR)(*Current++);
+
+            /* Crude delay to give the UART time to shift out data */
+            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
+            {
+                __asm__ __volatile__("nop");
+            }
+        }
+    }
+
     /* TODO: Get the current CPU number - for now assume CPU 0 */
     Cpu = 0;
     KeNumberProcessors = 1; // Start with 1 processor

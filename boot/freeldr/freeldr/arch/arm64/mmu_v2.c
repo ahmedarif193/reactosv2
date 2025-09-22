@@ -32,37 +32,36 @@ DBG_DEFAULT_CHANNEL(WARNING);
 #define PTE_BLOCK_RO            (1ULL << 7)
 
 /* Memory types */
-#define MT_DEVICE_NGNRNE        0
-#define MT_DEVICE_NGNRE         1
-#define MT_DEVICE_GRE           2
-#define MT_NORMAL_NC            3
-#define MT_NORMAL               4
-
-#define MEMORY_ATTRIBUTES       ((0x00ULL << (MT_DEVICE_NGNRNE * 8)) |  \
-                                (0x04ULL << (MT_DEVICE_NGNRE * 8)) |    \
-                                (0x0CULL << (MT_DEVICE_GRE * 8)) |      \
-                                (0x44ULL << (MT_NORMAL_NC * 8)) |       \
-                                (0xFFULL << (MT_NORMAL * 8)))
+#define MEMORY_ATTRIBUTES       ((0x00ULL << (ARM64_MEM_ATTR_DEVICE_nGnRnE * 8)) |  \
+                                (0x04ULL << (ARM64_MEM_ATTR_DEVICE_nGnRE * 8)) |    \
+                                (0x0CULL << (ARM64_MEM_ATTR_DEVICE_GRE * 8)) |      \
+                                (0x44ULL << (ARM64_MEM_ATTR_NORMAL_NC * 8)) |       \
+                                (0xFFULL << (ARM64_MEM_ATTR_NORMAL_WB * 8)))
 
 /* TCR flags */
 #define TCR_T0SZ(x)             ((64 - (x)) << 0)
-#define TCR_IRGN_NC             (0 << 8)
-#define TCR_IRGN_WBWA           (1 << 8)
-#define TCR_IRGN_WT             (2 << 8)
-#define TCR_IRGN_WBNWA          (3 << 8)
-#define TCR_IRGN_MASK           (3 << 8)
-#define TCR_ORGN_NC             (0 << 10)
-#define TCR_ORGN_WBWA           (1 << 10)
-#define TCR_ORGN_WT             (2 << 10)
-#define TCR_ORGN_WBNWA          (3 << 10)
-#define TCR_ORGN_MASK           (3 << 10)
-#define TCR_SHARED_NON          (0 << 12)
-#define TCR_SHARED_OUTER        (2 << 12)
-#define TCR_SHARED_INNER        (3 << 12)
-#define TCR_TG0_4K              (0 << 14)
-#define TCR_TG0_64K             (1 << 14)
-#define TCR_TG0_16K             (2 << 14)
-#define TCR_EPD1_DISABLE        (1 << 23)
+#define TCR_IRGN_NC             (0ULL << 8)
+#define TCR_IRGN_WBWA           (1ULL << 8)
+#define TCR_IRGN_WT             (2ULL << 8)
+#define TCR_IRGN_WBNWA          (3ULL << 8)
+#define TCR_IRGN_MASK           (3ULL << 8)
+#define TCR_ORGN_NC             (0ULL << 10)
+#define TCR_ORGN_WBWA           (1ULL << 10)
+#define TCR_ORGN_WT             (2ULL << 10)
+#define TCR_ORGN_WBNWA          (3ULL << 10)
+#define TCR_ORGN_MASK           (3ULL << 10)
+#define TCR_SHARED_NON          (0ULL << 12)
+#define TCR_SHARED_OUTER        (2ULL << 12)
+#define TCR_SHARED_INNER        (3ULL << 12)
+#define TCR_TG0_4K              (0ULL << 14)
+#define TCR_TG0_64K             (1ULL << 14)
+#define TCR_TG0_16K             (2ULL << 14)
+#define TCR_T1SZ(x)             ((64 - (x)) << 16)
+#define TCR_IRGN1_WBWA          (1ULL << 24)
+#define TCR_ORGN1_WBWA          (1ULL << 26)
+#define TCR_SHARED1_INNER       (3ULL << 28)
+#define TCR_TG1_4K              (2ULL << 30)
+#define TCR_A1                  (1ULL << 22)
 
 #define TCR_EL1_RSVD            (1U << 31)
 #define TCR_EL2_RSVD            (1U << 31 | 1 << 23)
@@ -79,16 +78,22 @@ DBG_DEFAULT_CHANNEL(WARNING);
 extern FREELDR_MEMORY_DESCRIPTOR* UefiMemGetMemoryMap(PULONG MaxMemoryMapSize);
 static BOOLEAN identity_mapping_enabled = FALSE;
 
+#define ARM64_KSEG0_L0_INDEX      (((ULONGLONG)ARM64_KSEG0_BASE >> 39) & 0x1FFULL)
+#define ARM64_KERNEL_L1_TABLES    4U
+#define ARM64_USER_L1_TABLES      4U
+
 /* Page tables - aligned to 4K boundaries */
 static UINT64 arm64_l0_page_table[512] __attribute__((aligned(4096)));
-static UINT64 arm64_l1_page_tables[4][512] __attribute__((aligned(4096)));
+static UINT64 arm64_l1_page_tables[ARM64_USER_L1_TABLES][512] __attribute__((aligned(4096)));
+static UINT64 arm64_kernel_l0_table[512] __attribute__((aligned(4096)));
+static UINT64 arm64_kernel_l1_tables[ARM64_KERNEL_L1_TABLES][512] __attribute__((aligned(4096)));
 static BOOLEAN mmu_enabled = FALSE;
 
 /* Function prototypes */
 static UINT64 get_tcr(UINT64 *pips, UINT64 *pva_bits);
 static int get_effective_el(VOID);
 static VOID setup_pgtables(VOID);
-static VOID set_ttbr_tcr_mair(int el, UINT64 table, UINT64 tcr, UINT64 attr);
+static VOID set_ttbr_tcr_mair(int el, UINT64 table0, UINT64 table1, UINT64 tcr, UINT64 attr);
 
 /* Get current effective exception level */
 static int get_effective_el(VOID)
@@ -144,17 +149,21 @@ static UINT64 get_tcr(UINT64 *pips, UINT64 *pva_bits)
     
     /* Build TCR based on exception level */
     if (el == 1) {
-        tcr = TCR_EL1_RSVD | (ips << 32) | TCR_EPD1_DISABLE;
+        tcr = TCR_EL1_RSVD | (ips << 32);
     } else if (el == 2) {
         tcr = TCR_EL2_RSVD | (ips << 16);
     } else {
         tcr = TCR_EL3_RSVD | (ips << 16);
     }
-    
-    /* Add common TCR settings */
-    tcr |= TCR_T0SZ(va_bits) | TCR_SHARED_INNER | TCR_ORGN_WBWA | 
+
+    /* Add common TCR settings for both TTBRs */
+    tcr |= TCR_T0SZ(va_bits) | TCR_SHARED_INNER | TCR_ORGN_WBWA |
            TCR_IRGN_WBWA | TCR_TG0_4K;
-    
+
+    /* Configure TTBR1 (kernel space) for a 48-bit VA window */
+    tcr |= TCR_T1SZ(48) | TCR_SHARED1_INNER | TCR_ORGN1_WBWA |
+           TCR_IRGN1_WBWA | TCR_TG1_4K | TCR_A1;
+
     if (pips) *pips = ips;
     if (pva_bits) *pva_bits = va_bits;
     
@@ -162,20 +171,21 @@ static UINT64 get_tcr(UINT64 *pips, UINT64 *pva_bits)
 }
 
 /* Set MMU registers */
-static VOID set_ttbr_tcr_mair(int el, UINT64 table, UINT64 tcr, UINT64 attr)
+static VOID set_ttbr_tcr_mair(int el, UINT64 table0, UINT64 table1, UINT64 tcr, UINT64 attr)
 {
     __asm__ volatile("dsb sy");
     
     if (el == 1) {
-        __asm__ volatile("msr ttbr0_el1, %0" : : "r" (table) : "memory");
+        __asm__ volatile("msr ttbr0_el1, %0" : : "r" (table0) : "memory");
+        __asm__ volatile("msr ttbr1_el1, %0" : : "r" (table1) : "memory");
         __asm__ volatile("msr tcr_el1, %0" : : "r" (tcr) : "memory");
         __asm__ volatile("msr mair_el1, %0" : : "r" (attr) : "memory");
     } else if (el == 2) {
-        __asm__ volatile("msr ttbr0_el2, %0" : : "r" (table) : "memory");
+        __asm__ volatile("msr ttbr0_el2, %0" : : "r" (table0) : "memory");
         __asm__ volatile("msr tcr_el2, %0" : : "r" (tcr) : "memory");
         __asm__ volatile("msr mair_el2, %0" : : "r" (attr) : "memory");
     } else if (el == 3) {
-        __asm__ volatile("msr ttbr0_el3, %0" : : "r" (table) : "memory");
+        __asm__ volatile("msr ttbr0_el3, %0" : : "r" (table0) : "memory");
         __asm__ volatile("msr tcr_el3, %0" : : "r" (tcr) : "memory");
         __asm__ volatile("msr mair_el3, %0" : : "r" (attr) : "memory");
     }
@@ -195,11 +205,25 @@ static VOID setup_pgtables(VOID)
     /* Clear all page tables */
     RtlZeroMemory(arm64_l0_page_table, sizeof(arm64_l0_page_table));
     RtlZeroMemory(arm64_l1_page_tables, sizeof(arm64_l1_page_tables));
-    
-    /* Set up L0 page table entries pointing to L1 tables */
-    for (i = 0; i < 4; i++) {
+    RtlZeroMemory(arm64_kernel_l0_table, sizeof(arm64_kernel_l0_table));
+    RtlZeroMemory(arm64_kernel_l1_tables, sizeof(arm64_kernel_l1_tables));
+
+    /* Set up TTBR0 (lower VA space) L0 entries */
+    for (i = 0; i < ARM64_USER_L1_TABLES; i++)
+    {
         arm64_l0_page_table[i] = (UINT64)&arm64_l1_page_tables[i][0] |
-                                PTE_TYPE_VALID | PTE_TYPE_TABLE;
+                                 PTE_TYPE_VALID | PTE_TYPE_TABLE;
+    }
+
+    /* Set up TTBR1 (kernel VA space) L0 entries covering KSEG0 */
+    for (i = 0; i < ARM64_KERNEL_L1_TABLES; i++)
+    {
+        UINT64 l0_index = ARM64_KSEG0_L0_INDEX + i;
+        if (l0_index < ARRAYSIZE(arm64_kernel_l0_table))
+        {
+            arm64_kernel_l0_table[l0_index] = (UINT64)&arm64_kernel_l1_tables[i][0] |
+                                              PTE_TYPE_VALID | PTE_TYPE_TABLE;
+        }
     }
     
     /* Get UEFI memory map and create identity mappings */
@@ -215,7 +239,7 @@ static VOID setup_pgtables(VOID)
                 case LoaderFirmwarePermanent:
                 case LoaderFirmwareTemporary:
                     /* Firmware memory - device attributes */
-                    attrs = PTE_BLOCK_MEMTYPE(MT_DEVICE_NGNRNE) |
+                    attrs = PTE_BLOCK_MEMTYPE(ARM64_MEM_ATTR_DEVICE_nGnRnE) |
                            PTE_BLOCK_NON_SHARE | PTE_BLOCK_AF |
                            PTE_BLOCK_PXN | PTE_BLOCK_UXN;
                     break;
@@ -226,7 +250,7 @@ static VOID setup_pgtables(VOID)
                 case LoaderOsloaderStack:
                 default:
                     /* Normal memory - cacheable */
-                    attrs = PTE_BLOCK_MEMTYPE(MT_NORMAL) |
+                    attrs = PTE_BLOCK_MEMTYPE(ARM64_MEM_ATTR_NORMAL_WB) |
                            PTE_BLOCK_INNER_SHARE | PTE_BLOCK_AF;
                     break;
             }
@@ -239,7 +263,7 @@ static VOID setup_pgtables(VOID)
                 /* Compute L0 and L1 indices for this physical address */
                 UINT64 l0_index = (phys_start >> 39) & 0x1FF;     /* 512GB granularity */
                 l1_table_idx = (phys_start >> 30) & 0x1FF;        /* 1GB granularity */
-                if (l0_index >= 4)
+                if (l0_index >= ARM64_USER_L1_TABLES)
                 {
                     /* Outside of our static L0 coverage; skip */
                     phys_start += chunk_size;
@@ -252,8 +276,28 @@ static VOID setup_pgtables(VOID)
                 /* Create 1GB identity mapping block entry */
                 if (l1_table[l1_table_idx] == 0)
                 {
-                    l1_table[l1_table_idx] = (phys_start & ~0x3FFFFFFFULL) |
+                    UINT64 block_base = phys_start & ~0x3FFFFFFFULL;
+                    l1_table[l1_table_idx] = block_base |
                                              PTE_TYPE_VALID | PTE_TYPE_BLOCK | attrs;
+
+                    /* Mirror this block into the kernel (TTBR1) region */
+                    UINT64 kernel_va = block_base | ARM64_KSEG0_BASE;
+                    UINT64 kernel_l0 = (kernel_va >> 39) & 0x1FF;
+
+                    if (kernel_l0 >= ARM64_KSEG0_L0_INDEX)
+                    {
+                        UINT64 kernel_slot = kernel_l0 - ARM64_KSEG0_L0_INDEX;
+                        if (kernel_slot < ARM64_KERNEL_L1_TABLES)
+                        {
+                            UINT64 kernel_l1 = (kernel_va >> 30) & 0x1FF;
+                            UINT64 *kernel_table = arm64_kernel_l1_tables[kernel_slot];
+                            if (kernel_table[kernel_l1] == 0)
+                            {
+                                kernel_table[kernel_l1] = block_base |
+                                                          PTE_TYPE_VALID | PTE_TYPE_BLOCK | attrs;
+                            }
+                        }
+                    }
                 }
 
                 phys_start += chunk_size;
@@ -288,7 +332,11 @@ VOID Arm64InitializeMMU(VOID)
           (ips == 2) ? 40 : (ips == 1) ? 36 : 32);
     
     /* Configure MMU registers */
-    set_ttbr_tcr_mair(el, (UINT64)arm64_l0_page_table, tcr, MEMORY_ATTRIBUTES);
+    set_ttbr_tcr_mair(el,
+                      (UINT64)arm64_l0_page_table,
+                      (UINT64)arm64_kernel_l0_table,
+                      tcr,
+                      MEMORY_ATTRIBUTES);
     
     /* Enable MMU and caches based on current EL */
     if (el == 1)
@@ -327,40 +375,70 @@ BOOLEAN Arm64MapVirtualMemory(ULONGLONG VirtualAddress,
     UINT64 pa = PhysicalAddress;
     UINT64 end = VirtualAddress + Size;
     UINT64 attrs;
+    BOOLEAN executable = (Attributes & ARM64_MAP_ATTR_EXECUTE) != 0;
+    ULONG mem_type = Attributes & ARM64_MAP_ATTR_TYPE_MASK;
 
     TRACE("ARM64: Map VA=0x%016llx -> PA=0x%016llx, Size=0x%016llx, Attr=0x%lx\n",
           VirtualAddress, PhysicalAddress, Size, Attributes);
 
     /* Only support 1GB block mappings with alignment for now */
-    if (((va | pa | Size) & 0x3FFFFFFFULL) != 0)
+    if (((va | pa | Size) & ARM64_BLOCK_MASK_1G) != 0)
     {
         TRACE("ARM64: Map only supports 1GB-aligned blocks\n");
         return FALSE;
     }
 
     /* Translate Attributes (memory type index) into block attributes */
-    attrs = PTE_BLOCK_MEMTYPE(Attributes) | PTE_BLOCK_INNER_SHARE | PTE_BLOCK_AF |
-            PTE_BLOCK_PXN | PTE_BLOCK_UXN;
+    attrs = PTE_BLOCK_MEMTYPE(mem_type) | PTE_BLOCK_INNER_SHARE | PTE_BLOCK_AF;
+    if (!executable)
+    {
+        attrs |= PTE_BLOCK_PXN | PTE_BLOCK_UXN;
+    }
 
     while (va < end)
     {
         UINT64 l0 = (va >> 39) & 0x1FF;
         UINT64 l1 = (va >> 30) & 0x1FF;
         UINT64 *l1_table;
+        BOOLEAN kernel_va = (va >= ARM64_KSEG0_BASE);
 
-        if (l0 >= 4)
+        if (kernel_va)
         {
-            TRACE("ARM64: L0 index out of range for VA 0x%llx\n", va);
-            return FALSE;
+            if (l0 < ARM64_KSEG0_L0_INDEX)
+            {
+                TRACE("ARM64: Kernel VA below supported base 0x%llx (l0=0x%llx)\n", va, l0);
+                return FALSE;
+            }
+
+            UINT64 kernel_slot = l0 - ARM64_KSEG0_L0_INDEX;
+            if (kernel_slot >= ARM64_KERNEL_L1_TABLES)
+            {
+                TRACE("ARM64: Kernel L0 index out of range for VA 0x%llx (slot=%llu)\n", va, (unsigned long long)kernel_slot);
+                return FALSE;
+            }
+            l1_table = arm64_kernel_l1_tables[kernel_slot];
+        }
+        else
+        {
+            if (l0 >= ARM64_USER_L1_TABLES)
+            {
+                TRACE("ARM64: User L0 index out of range for VA 0x%llx (l0=0x%llx)\n", va, l0);
+                return FALSE;
+            }
+            l1_table = arm64_l1_page_tables[l0];
         }
 
-        l1_table = arm64_l1_page_tables[l0];
-        l1_table[l1] = (pa & ~0x3FFFFFFFULL) | PTE_TYPE_VALID | PTE_TYPE_BLOCK | attrs;
+        l1_table[l1] = (pa & ~ARM64_BLOCK_MASK_1G) |
+                       PTE_TYPE_VALID | PTE_TYPE_BLOCK | attrs;
 
-        va += 0x40000000ULL;
-        pa += 0x40000000ULL;
+        TRACE("ARM64:   L0=0x%llx L1=0x%llx -> entry=0x%016llx (kernel=%d)\n",
+              l0, l1, l1_table[l1], kernel_va);
+
+        va += ARM64_BLOCK_SIZE_1G;
+        pa += ARM64_BLOCK_SIZE_1G;
     }
 
+    TRACE("ARM64: Done mapping VA range 0x%016llx-0x%016llx\n", VirtualAddress, end);
     Arm64FlushTlbRange(VirtualAddress, Size);
     return TRUE;
 }
@@ -373,7 +451,7 @@ BOOLEAN Arm64UnmapVirtualMemory(ULONGLONG VirtualAddress, ULONGLONG Size)
 
     TRACE("ARM64: Unmap VA=0x%016llx, Size=0x%016llx\n", VirtualAddress, Size);
 
-    if (((va | Size) & 0x3FFFFFFFULL) != 0)
+    if (((va | Size) & ARM64_BLOCK_MASK_1G) != 0)
     {
         TRACE("ARM64: Unmap only supports 1GB-aligned blocks\n");
         return FALSE;
@@ -383,12 +461,30 @@ BOOLEAN Arm64UnmapVirtualMemory(ULONGLONG VirtualAddress, ULONGLONG Size)
     {
         UINT64 l0 = (va >> 39) & 0x1FF;
         UINT64 l1 = (va >> 30) & 0x1FF;
-        if (l0 < 4)
+        BOOLEAN kernel_va = (va >= ARM64_KSEG0_BASE);
+
+        if (kernel_va)
         {
-            UINT64 *l1_table = arm64_l1_page_tables[l0];
-            l1_table[l1] = 0;
+            if (l0 >= ARM64_KSEG0_L0_INDEX)
+            {
+                UINT64 kernel_slot = l0 - ARM64_KSEG0_L0_INDEX;
+                if (kernel_slot < ARM64_KERNEL_L1_TABLES)
+                {
+                    arm64_kernel_l1_tables[kernel_slot][l1] = 0;
+                }
+            }
         }
-        va += 0x40000000ULL;
+        else if (l0 < ARM64_USER_L1_TABLES)
+        {
+            arm64_l1_page_tables[l0][l1] = 0;
+        }
+        else
+        {
+            TRACE("ARM64: L0 index out of range for VA 0x%llx\n", va);
+            return FALSE;
+        }
+
+        va += ARM64_BLOCK_SIZE_1G;
     }
 
     Arm64FlushTlbRange(VirtualAddress, Size);
@@ -493,19 +589,19 @@ ULONG Arm64GetMemoryAttributes(ULONGLONG Address)
                 switch (MemoryMap[i].MemoryType) {
                     case LoaderFirmwarePermanent:
                     case LoaderFirmwareTemporary:
-                        return MT_DEVICE_NGNRNE;
+                        return ARM64_MEM_ATTR_DEVICE_nGnRnE;
                     case LoaderFree:
                     case LoaderLoadedProgram:
                     case LoaderOsloaderHeap:
                     case LoaderOsloaderStack:
                     default:
-                        return MT_NORMAL;
+                        return ARM64_MEM_ATTR_NORMAL_WB;
                 }
             }
         }
     }
     
-    return MT_NORMAL;  /* Default to normal memory */
+    return ARM64_MEM_ATTR_NORMAL_WB;  /* Default to normal memory */
 }
 
 /* Flush TLB for specific address range */
@@ -514,12 +610,20 @@ VOID Arm64FlushTlbRange(ULONGLONG VirtualAddress, ULONGLONG Size)
     ULONGLONG end = VirtualAddress + Size;
     ULONGLONG addr;
     
-    /* Flush TLB entries for each page in the range */
-    for (addr = VirtualAddress & ~0xFFFULL; 
-         addr < end; 
-         addr += 0x1000ULL)
+    /* Use global invalidation when the range is coarse (>= 1 GB) */
+    if (Size >= ARM64_BLOCK_SIZE_1G)
     {
-        __asm__ volatile ("tlbi vaae1, %0" :: "r" (addr >> 12));
+        __asm__ volatile ("tlbi vmalle1" ::: "memory");
+    }
+    else
+    {
+        /* Flush TLB entries for each page in the range */
+        for (addr = VirtualAddress & ~0xFFFULL;
+             addr < end;
+             addr += 0x1000ULL)
+        {
+            __asm__ volatile ("tlbi vaae1, %0" :: "r" (addr >> 12));
+        }
     }
     
     ARM64_DSB_SY();
