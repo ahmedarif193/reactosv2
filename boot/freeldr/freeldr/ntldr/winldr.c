@@ -1481,6 +1481,70 @@ LoadAndBootWindowsCommon(
     TRACE("ARM64: Transferring to kernel at %p with LoaderBlock %p\n",
           KiSystemStartup,
           LoaderBlockVA);
+
+    /* Emit detailed debug information via UART before handoff */
+    {
+        static const CHAR Message[] = "ARM64 FreeLoader: Kernel handoff - Entry: 0x";
+        const CHAR *Current = Message;
+        volatile ULONG *const Pl011Dr = (volatile ULONG *)0x09000000;
+        ULONG_PTR Address = (ULONG_PTR)KiSystemStartup;
+        ULONG i;
+
+        /* Print the message */
+        while (*Current != '\0')
+        {
+            *Pl011Dr = (UCHAR)(*Current++);
+            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
+                __asm__ __volatile__("nop");
+        }
+
+        /* Print kernel entry point address in hex */
+        for (i = 0; i < 16; i++)
+        {
+            UCHAR nibble = (UCHAR)((Address >> (60 - i * 4)) & 0xF);
+            UCHAR hexChar = (nibble < 10) ? ('0' + nibble) : ('A' + nibble - 10);
+            *Pl011Dr = hexChar;
+            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
+                __asm__ __volatile__("nop");
+        }
+
+        *Pl011Dr = '\r';
+        *Pl011Dr = '\n';
+
+        /* Print LoaderBlock address */
+        static const CHAR LoaderMsg[] = "LoaderBlock: 0x";
+        Current = LoaderMsg;
+        while (*Current != '\0')
+        {
+            *Pl011Dr = (UCHAR)(*Current++);
+            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
+                __asm__ __volatile__("nop");
+        }
+
+        Address = (ULONG_PTR)LoaderBlockVA;
+        for (i = 0; i < 16; i++)
+        {
+            UCHAR nibble = (UCHAR)((Address >> (60 - i * 4)) & 0xF);
+            UCHAR hexChar = (nibble < 10) ? ('0' + nibble) : ('A' + nibble - 10);
+            *Pl011Dr = hexChar;
+            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
+                __asm__ __volatile__("nop");
+        }
+
+        *Pl011Dr = '\r';
+        *Pl011Dr = '\n';
+
+        /* Indicate about to call kernel */
+        static const CHAR CallMsg[] = "Calling kernel now...\r\n";
+        Current = CallMsg;
+        while (*Current != '\0')
+        {
+            *Pl011Dr = (UCHAR)(*Current++);
+            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
+                __asm__ __volatile__("nop");
+        }
+    }
+
     (*KiSystemStartup)(LoaderBlockVA);
 
     UNREACHABLE; // return ESUCCESS;

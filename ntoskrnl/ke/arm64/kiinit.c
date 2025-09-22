@@ -358,17 +358,92 @@ KiSystemStartupBootStack(
     IN PLOADER_PARAMETER_BLOCK LoaderBlock
 )
 {
+    /* Emit early debug message to track kernel handoff */
+    {
+        static const CHAR Message[] = "ARM64: KiSystemStartupBootStack entry - LoaderBlock: 0x";
+        const CHAR *Current = Message;
+        volatile ULONG *const Pl011Dr = (volatile ULONG *)0x09000000;
+        ULONG_PTR Address = (ULONG_PTR)LoaderBlock;
+        ULONG i;
+
+        /* Print the message */
+        while (*Current != '\0')
+        {
+            *Pl011Dr = (UCHAR)(*Current++);
+            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
+                __asm__ __volatile__("nop");
+        }
+
+        /* Print LoaderBlock address in hex */
+        for (i = 0; i < 16; i++)
+        {
+            UCHAR nibble = (UCHAR)((Address >> (60 - i * 4)) & 0xF);
+            UCHAR hexChar = (nibble < 10) ? ('0' + nibble) : ('A' + nibble - 10);
+            *Pl011Dr = hexChar;
+            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
+                __asm__ __volatile__("nop");
+        }
+
+        *Pl011Dr = '\r';
+        *Pl011Dr = '\n';
+    }
+
     DPRINT("ARM64: System startup - LoaderBlock at 0x%p\n", LoaderBlock);
-    
+
+    /* Validate LoaderBlock pointer */
+    if (!LoaderBlock)
+    {
+        static const CHAR ErrorMsg[] = "ARM64: FATAL - NULL LoaderBlock\r\n";
+        const CHAR *Current = ErrorMsg;
+        volatile ULONG *const Pl011Dr = (volatile ULONG *)0x09000000;
+
+        while (*Current != '\0')
+        {
+            *Pl011Dr = (UCHAR)(*Current++);
+            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
+                __asm__ __volatile__("nop");
+        }
+
+        KeBugCheck(PHASE0_INITIALIZATION_FAILED);
+    }
+
     /* Disable interrupts during initialization */
     ARM64_DISABLE_INTERRUPTS();
-    
+
+    /* Emit debug checkpoint */
+    {
+        static const CHAR Message[] = "ARM64: Starting kernel initialization\r\n";
+        const CHAR *Current = Message;
+        volatile ULONG *const Pl011Dr = (volatile ULONG *)0x09000000;
+
+        while (*Current != '\0')
+        {
+            *Pl011Dr = (UCHAR)(*Current++);
+            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
+                __asm__ __volatile__("nop");
+        }
+    }
+
     /* Early kernel initialization */
     KiInitializeKernel(NULL, NULL, NULL, NULL, 0, LoaderBlock);
-    
+
+    /* Emit debug checkpoint */
+    {
+        static const CHAR Message[] = "ARM64: Calling KiSystemStartup\r\n";
+        const CHAR *Current = Message;
+        volatile ULONG *const Pl011Dr = (volatile ULONG *)0x09000000;
+
+        while (*Current != '\0')
+        {
+            *Pl011Dr = (UCHAR)(*Current++);
+            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
+                __asm__ __volatile__("nop");
+        }
+    }
+
     /* Call generic kernel startup */
     KiSystemStartup(LoaderBlock);
-    
+
     /* Should never reach here */
     KeBugCheck(PHASE0_INITIALIZATION_FAILED);
 }

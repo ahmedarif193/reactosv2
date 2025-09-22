@@ -134,7 +134,35 @@ VOID
 WinLdrSetProcessorContext(
     _In_ USHORT OperatingSystemVersion)
 {
+    /* Emit debug message before processor context configuration */
+    {
+        static const CHAR Message[] = "ARM64: WinLdrSetProcessorContext called\r\n";
+        const CHAR *Current = Message;
+        volatile ULONG *const Pl011Dr = (volatile ULONG *)0x09000000;
+
+        while (*Current != '\0')
+        {
+            *Pl011Dr = (UCHAR)(*Current++);
+            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
+                __asm__ __volatile__("nop");
+        }
+    }
+
     Arm64ConfigureProcessorContext(OperatingSystemVersion);
+
+    /* Emit debug message after processor context configuration */
+    {
+        static const CHAR Message[] = "ARM64: WinLdrSetProcessorContext completed\r\n";
+        const CHAR *Current = Message;
+        volatile ULONG *const Pl011Dr = (volatile ULONG *)0x09000000;
+
+        while (*Current != '\0')
+        {
+            *Pl011Dr = (UCHAR)(*Current++);
+            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
+                __asm__ __volatile__("nop");
+        }
+    }
 }
 
 /* Provide the machine-dependent setup entry used by the generic NT loader path */
