@@ -463,12 +463,19 @@ UefiSetBootpath(VOID)
    TRACE("UefiSetBootpath: Setting up boot path\n");
    GlobalSystemTable->BootServices->HandleProtocol(handles[UefiBootRootIdentifier], &bioGuid, (void**)&bio);
    FrldrBootDrive = (FIRST_BIOS_DISK + PublicBootArcDisk);
-   if (bio->Media->RemovableMedia == TRUE && bio->Media->BlockSize == 2048)
+
+   /* Check if this is a CD-ROM. UEFI may expose hybrid ISOs differently:
+    * - Traditional: RemovableMedia with 2048 byte blocks
+    * - Hybrid ISO: May appear as fixed disk with partitions
+    * For hybrid ISOs, partition 3 often contains the ISO9660 filesystem */
+   if ((bio->Media->RemovableMedia == TRUE && bio->Media->BlockSize == 2048) ||
+       (OffsetToBoot - UefiBootRootIdentifier == 3))  /* Partition 3 is typically ISO9660 on hybrid */
    {
         /* Boot Partition 0xFF is the magic value that indicates booting from CD-ROM (see isoboot.S) */
         FrldrBootPartition = 0xFF;
         RtlStringCbPrintfA(FrLdrBootPath, sizeof(FrLdrBootPath),
                            "multi(0)disk(0)cdrom(%u)", PublicBootArcDisk);
+        TRACE("Detected CD-ROM boot (partition %d)\n", OffsetToBoot - UefiBootRootIdentifier);
    }
    else
    {
@@ -494,26 +501,48 @@ BOOLEAN
 UefiInitializeBootDevices(VOID)
 {
     ULONG i = 0;
+    BOOLEAN IsCdBoot;
 
     DiskReadBufferSize = EFI_PAGE_SIZE;
     DiskReadBuffer = MmAllocateMemoryWithType(DiskReadBufferSize, LoaderFirmwareTemporary);
     UefiSetupBlockDevices();
     UefiSetBootpath();
-    
+
     // AGENT-MODIFIED: Enumerate all ARC disks for proper Windows boot support
     UefiEnumerateArcDisks();
 
     /* Add it, if it's a cdrom */
     GlobalSystemTable->BootServices->HandleProtocol(handles[UefiBootRootIdentifier], &bioGuid, (void**)&bio);
-    if (bio->Media->RemovableMedia == TRUE && bio->Media->BlockSize == 2048)
+    IsCdBoot = (FrldrBootPartition == 0xFF);
+
+    if (IsCdBoot ||
+        (bio->Media->RemovableMedia == TRUE && bio->Media->BlockSize == 2048))
     {
         PMASTER_BOOT_RECORD Mbr;
         PULONG Buffer;
         ULONG Checksum = 0;
         ULONG Signature;
+        ULONG BlockSize;
+        ULONG SectorsToRead;
+        ULONG BytesAvailable;
+        ULONG ChecksumBytes;
+
+        BlockSize = bio->Media->BlockSize;
+        if (BlockSize == 0)
+        {
+            /* Fallback to the ISO9660 logical block size */
+            BlockSize = 2048;
+        }
+
+        /* Ensure we read enough data to cover the ISO primary descriptor */
+        SectorsToRead = (2048 + BlockSize - 1) / BlockSize;
+        if (SectorsToRead == 0)
+        {
+            SectorsToRead = 1;
+        }
 
         /* Read the MBR */
-        if (!MachDiskReadLogicalSectors(FrldrBootDrive, 16ULL, 1, DiskReadBuffer))
+        if (!MachDiskReadLogicalSectors(FrldrBootDrive, 16ULL, SectorsToRead, DiskReadBuffer))
         {
             ERR("Reading MBR failed\n");
             return FALSE;
@@ -526,7 +555,9 @@ UefiInitializeBootDevices(VOID)
         TRACE("Signature: %x\n", Signature);
 
         /* Calculate the MBR checksum */
-        for (i = 0; i < 2048 / sizeof(ULONG); i++)
+        BytesAvailable = SectorsToRead * BlockSize;
+        ChecksumBytes = min(BytesAvailable, (ULONG)2048);
+        for (i = 0; i < ChecksumBytes / sizeof(ULONG); i++)
         {
             Checksum += Buffer[i];
         }

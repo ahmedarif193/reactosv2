@@ -862,6 +862,7 @@ PeLdrLoadImageEx(
     PIMAGE_SECTION_HEADER SectionHeader;
     ULONG VirtualSize, SizeOfRawData, NumberOfSections;
     ARC_STATUS Status;
+    ARC_STATUS RelocStatus = ESUCCESS;
     LARGE_INTEGER Position;
     ULONG i, BytesRead;
 
@@ -1021,14 +1022,19 @@ PeLdrLoadImageEx(
     if (NtHeaders->OptionalHeader.ImageBase != (ULONG_PTR)VirtualBase)
     {
         WARN("Relocating %p -> %p\n", NtHeaders->OptionalHeader.ImageBase, VirtualBase);
-        Status = LdrRelocateImageWithBias(PhysicalBase,
-                                          (ULONG_PTR)VirtualBase - (ULONG_PTR)PhysicalBase,
-                                          "FreeLdr",
-                                          ESUCCESS,
-                                          ESUCCESS, /* In case of conflict still return success */
-                                          ENOEXEC);
-        if (Status != ESUCCESS)
+        RelocStatus = LdrRelocateImageWithBias(PhysicalBase,
+                                               (ULONG_PTR)VirtualBase - (ULONG_PTR)PhysicalBase,
+                                               "FreeLdr",
+                                               ESUCCESS,
+                                               ESUCCESS, /* In case of conflict still return success */
+                                               ENOEXEC);
+        if (RelocStatus != ESUCCESS)
+        {
+            ERR("LdrRelocateImageWithBias(%s) failed: Status %u, PhysicalBase %p, VirtualBase %p\n",
+                FilePath, RelocStatus, PhysicalBase, VirtualBase);
+            Status = RelocStatus;
             goto Failure;
+        }
     }
 
     /* Fill output parameters */
@@ -1038,6 +1044,11 @@ PeLdrLoadImageEx(
     return TRUE;
 
 Failure:
+    if (Status != ESUCCESS || RelocStatus != ESUCCESS)
+    {
+        ERR("PeLdrLoadImage('%s') aborting, Status=%u RelocStatus=%u\n",
+            FilePath, Status, RelocStatus);
+    }
     /* Cleanup and bail out */
     MmFreeMemory(PhysicalBase);
     return FALSE;
