@@ -61,6 +61,10 @@ AddMemoryDescriptor(
 EFI_MEMORY_DESCRIPTOR *EfiMemoryMap = NULL;
 UINT32                 FreeldrDescCount = 0;
 
+static PFREELDR_MEMORY_DESCRIPTOR CachedFreeldrMem = NULL;
+static ULONG                     CachedFreeldrDescCount = 0;
+static BOOLEAN                   BootServicesExited = FALSE;
+
 PVOID     OsLoaderBase;
 SIZE_T    OsLoaderSize;
 EFI_HANDLE PublicBootHandle;
@@ -254,6 +258,22 @@ UefiMemGetMemoryMap(_Out_ ULONG *MemoryMapSize /* OUT: number of entries */)
     EFI_STATUS Status;
     PFREELDR_MEMORY_DESCRIPTOR FreeldrMem = NULL;
 
+    TRACE("ARM64:  UefiMemGetMemoryMap 0\n");
+
+    if (BootServicesExited || GlobalSystemTable == NULL ||
+        GlobalSystemTable->BootServices == NULL)
+    {
+        TRACE("ARM64:  UefiMemGetMemoryMap returning cached map (BootServices unavailable)\n");
+        if (CachedFreeldrMem != NULL)
+        {
+            *MemoryMapSize = CachedFreeldrDescCount;
+            return CachedFreeldrMem;
+        }
+
+        TRACE("ARM64:  No cached memory map available!\n");
+        return NULL;
+    }
+
     FreeldrDescCount = 0;
     EfiMemoryMap = NULL;
 
@@ -261,6 +281,8 @@ UefiMemGetMemoryMap(_Out_ ULONG *MemoryMapSize /* OUT: number of entries */)
     Status = GlobalSystemTable->BootServices->HandleProtocol(GlobalImageHandle,
                                                              &EfiLoadedImageProtocol,
                                                              (VOID **)&LoadedImage);
+    TRACE("ARM64:  UefiMemGetMemoryMap 1\n");
+
     if (EFI_ERROR(Status) || !LoadedImage)
     {
         TRACE("HandleProtocol(LOADED_IMAGE) failed: %lx\n", (UINTN)Status);
@@ -391,6 +413,8 @@ UefiMemGetMemoryMap(_Out_ ULONG *MemoryMapSize /* OUT: number of entries */)
     TRACE("ARM64: Memory map translation complete, FreeldrDescCount=%u\n", FreeldrDescCount);
 #endif
     *MemoryMapSize = FreeldrDescCount;
+    CachedFreeldrMem = FreeldrMem;
+    CachedFreeldrDescCount = FreeldrDescCount;
     return FreeldrMem;
 }
 
@@ -428,6 +452,11 @@ UefiExitBootServices(VOID)
     else
     {
         TRACE("Exited boot services\n");
+        BootServicesExited = TRUE;
+        if (GlobalSystemTable)
+        {
+            GlobalSystemTable->BootServices = NULL;
+        }
         /* AGENT-MODIFIED: Mark boot services as exited for console fallback to GOP */
         UefiConsMarkBootServicesExited();
     }

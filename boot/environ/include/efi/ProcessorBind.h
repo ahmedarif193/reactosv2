@@ -1,5 +1,5 @@
 /** @file
-Processor or Compiler specific defines and types for IA-32 architecture.
+Processor or Compiler specific defines and types for multiple architectures.
 
 Copyright (c) 2006 - 2011, Intel Corporation. All rights reserved.<BR>
 This program and the accompanying materials are licensed and made available under
@@ -18,7 +18,20 @@ WITHOUT WARRANTIES OR REPRESENTATIONS OF ANY KIND, EITHER EXPRESS OR IMPLIED.
 ///
 /// Define the processor type so other code can make processor based choices.
 ///
-#define MDE_CPU_IA32
+#if defined(_ARM64_) || defined(__aarch64__) || defined(_M_ARM64)
+  #define MDE_CPU_AARCH64
+#elif defined(_AMD64_) || defined(__x86_64__) || defined(_M_AMD64)
+  #define MDE_CPU_X64
+#elif defined(_ARM_) || defined(__arm__) || defined(_M_ARM)
+  #define MDE_CPU_ARM
+#elif defined(__ia64__) || defined(_M_IA64)
+  #define MDE_CPU_IPF
+#elif defined(__EBC__) || defined(_M_EBC)
+  #define MDE_CPU_EBC
+#else
+  /* Default to IA-32 for backward compatibility */
+  #define MDE_CPU_IA32
+#endif
 
 //
 // Make sure we are using the correct packing rules per EFI specification
@@ -197,18 +210,7 @@ typedef signed char         CHAR8;
 typedef signed char         INT8;
 #endif
 
-#ifndef _WIN64
-///
-/// Unsigned value of native width.  (4 bytes on supported 32-bit processor instructions;
-/// 8 bytes on supported 64-bit processor instructions.)
-///
-typedef UINT32  UINTN;
-///
-/// Signed value of native width.  (4 bytes on supported 32-bit processor instructions;
-/// 8 bytes on supported 64-bit processor instructions.)
-///
-typedef INT32   INTN;
-#else
+#if defined(MDE_CPU_AARCH64) || defined(MDE_CPU_X64) || defined(MDE_CPU_IPF)
 ///
 /// Unsigned value of native width.  (4 bytes on supported 32-bit processor instructions;
 /// 8 bytes on supported 64-bit processor instructions.)
@@ -219,30 +221,83 @@ typedef UINT64  UINTN;
 /// 8 bytes on supported 64-bit processor instructions.)
 ///
 typedef INT64   INTN;
+#else
+///
+/// Unsigned value of native width.  (4 bytes on supported 32-bit processor instructions;
+/// 8 bytes on supported 64-bit processor instructions.)
+///
+typedef UINT32  UINTN;
+///
+/// Signed value of native width.  (4 bytes on supported 32-bit processor instructions;
+/// 8 bytes on supported 64-bit processor instructions.)
+///
+typedef INT32   INTN;
 #endif
 
 //
 // Processor specific defines
 //
 
-///
-/// A value of native width with the highest bit set.
-///
-#define MAX_BIT     0x80000000
-///
-/// A value of native width with the two highest bits set.
-///
-#define MAX_2_BITS  0xC0000000
-
-///
-/// Maximum legal IA-32 address.
-///
-#define MAX_ADDRESS   0xFFFFFFFF
-
-///
-/// The stack alignment required for IA-32.
-///
-#define CPU_STACK_ALIGNMENT   sizeof(UINTN)
+#if defined(MDE_CPU_AARCH64) || defined(MDE_CPU_X64) || defined(MDE_CPU_IPF)
+  ///
+  /// A value of native width with the highest bit set.
+  ///
+  #define MAX_BIT     0x8000000000000000ULL
+  ///
+  /// A value of native width with the two highest bits set.
+  ///
+  #define MAX_2_BITS  0xC000000000000000ULL
+  ///
+  /// Maximum legal 64-bit address space.
+  ///
+  #define MAX_ADDRESS   0xFFFFFFFFFFFFFFFFULL
+  ///
+  /// The stack alignment required for 64-bit ABIs we target.
+  ///
+  #define CPU_STACK_ALIGNMENT   16
+#elif defined(MDE_CPU_ARM)
+  ///
+  /// A value of native width with the highest bit set.
+  ///
+  #define MAX_BIT     0x80000000
+  ///
+  /// A value of native width with the two highest bits set.
+  ///
+  #define MAX_2_BITS  0xC0000000
+  ///
+  /// Maximum legal 32-bit address for ARM.
+  ///
+  #define MAX_ADDRESS   0xFFFFFFFF
+  ///
+  /// The stack alignment required for ARM (AAPCS mandates 8-byte alignment).
+  ///
+  #define CPU_STACK_ALIGNMENT   8
+#elif defined(MDE_CPU_EBC)
+  ///
+  /// EBC is a 32-bit virtual machine architecture.
+  ///
+  #define MAX_BIT     0x80000000
+  #define MAX_2_BITS  0xC0000000
+  #define MAX_ADDRESS 0xFFFFFFFF
+  #define CPU_STACK_ALIGNMENT   sizeof(UINTN)
+#else
+  ///
+  /// A value of native width with the highest bit set.
+  ///
+  #define MAX_BIT     0x80000000
+  ///
+  /// A value of native width with the two highest bits set.
+  ///
+  #define MAX_2_BITS  0xC0000000
+  ///
+  /// Maximum legal IA-32 address.
+  ///
+  #define MAX_ADDRESS   0xFFFFFFFF
+  ///
+  /// The stack alignment required for IA-32.
+  ///
+  #define CPU_STACK_ALIGNMENT   sizeof(UINTN)
+#endif
 
 //
 // Modifier to ensure that all protocol member functions and EFI intrinsics
@@ -250,25 +305,50 @@ typedef INT64   INTN;
 // EFI intrinsics are required to modify their member functions with EFIAPI.
 //
 #ifdef EFIAPI
-///
-/// If EFIAPI is already defined, then we use that definition.
-///
+  ///
+  /// If EFIAPI is already defined, then we use that definition.
+  ///
+#elif defined(MDE_CPU_AARCH64)
+  ///
+  /// ARM64/AArch64 uses the AAPCS64 calling convention by default.
+  /// No special attribute needed - the standard ABI is correct for UEFI.
+  ///
+  #define EFIAPI
+#elif defined(MDE_CPU_X64)
+  #if defined(_MSC_EXTENSIONS)
+    ///
+    /// Microsoft* compiler specific method for EFIAPI calling convention on x64.
+    ///
+    #define EFIAPI __cdecl
+  #elif defined(__GNUC__)
+    ///
+    /// GCC x64 uses System V AMD64 ABI by default which matches UEFI.
+    ///
+    #define EFIAPI
+  #else
+    #define EFIAPI
+  #endif
 #elif defined(_MSC_EXTENSIONS)
-///
-/// Microsoft* compiler specific method for EFIAPI calling convention.
-/// 
-#define EFIAPI __cdecl  
+  ///
+  /// Microsoft* compiler specific method for EFIAPI calling convention on IA-32.
+  ///
+  #define EFIAPI __cdecl
+#elif defined(MDE_CPU_ARM)
+  ///
+  /// ARM ELF toolchains use AAPCS by default.
+  ///
+  #define EFIAPI
 #elif defined(__GNUC__)
-///
-/// GCC specific method for EFIAPI calling convention.
-/// 
-#define EFIAPI __attribute__((cdecl))  
+  ///
+  /// GCC specific method for EFIAPI calling convention on IA-32.
+  ///
+  #define EFIAPI __attribute__((cdecl))
 #else
-///
-/// The default for a non Microsoft* or GCC compiler is to assume the EFI ABI
-/// is the standard. 
-///
-#define EFIAPI
+  ///
+  /// The default for a non Microsoft* or GCC compiler is to assume the EFI ABI
+  /// is the standard.
+  ///
+  #define EFIAPI
 #endif
 
 #if defined(__GNUC__)
@@ -281,7 +361,7 @@ typedef INT64   INTN;
 
 /**
 Return the pointer to the first instruction of a function given a function pointer.
-On IA-32 CPU architectures, these two pointer values are the same,
+On ARM64/AArch64 and x64 CPU architectures, these two pointer values are the same,
 so the implementation of this macro is very simple.
 
 @param  FunctionPointer   A pointer to a function.
@@ -292,4 +372,3 @@ so the implementation of this macro is very simple.
 #define FUNCTION_ENTRY_POINT(FunctionPointer) (VOID *)(UINTN)(FunctionPointer)
 
 #endif
-

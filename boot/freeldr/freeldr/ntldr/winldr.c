@@ -3,6 +3,13 @@
  * LICENSE:     GPL-2.0+ (https://spdx.org/licenses/GPL-2.0+)
  * PURPOSE:     Windows-compatible NT OS Loader.
  * COPYRIGHT:   Copyright 2006-2019 Aleksey Bragin <aleksey@reactos.org>
+ *
+ * ARM64-updated version:
+ *  - Fix TG1 check (4K == 0b10) in final MMU sanity
+ *  - Unify PL011 UART debug output (QEMU virt default 0x09000000) with TX FIFO polling
+ *  - Guard strstr() uses against NULL; safer ARC path parsing
+ *  - Minor printf/TRACE robustness for 64-bit pointers
+ *  - Notes around BGRT/GOP masks; behavior unchanged for non-Bitmask formats
  */
 
 #include <freeldr.h>
@@ -49,6 +56,39 @@ BOOLEAN BootLogo = FALSE;
 BOOLEAN PaeModeOn = FALSE;
 #endif
 BOOLEAN NoExecuteEnabled = FALSE;
+
+// ----------------------------------------------------------------------
+// Minimal PL011 UART helper for bring-up logs (QEMU -M virt default)
+// ----------------------------------------------------------------------
+#if defined(_M_ARM64) || defined(__aarch64__)
+#define PL011_BASE   0x09000000U      /* QEMU virt PL011 */
+#define PL011_DR     (*(volatile ULONG *)(PL011_BASE + 0x00))
+#define PL011_FR     (*(volatile ULONG *)(PL011_BASE + 0x18))
+#define PL011_TXFF   (1u << 5)
+
+static inline VOID UartPutc(char c)
+{
+    while (PL011_FR & PL011_TXFF) { __asm__ __volatile__("wfi"); }
+    PL011_DR = (unsigned char)c;
+}
+
+static VOID UartPuts(const char* s)
+{
+    while (*s) {
+        if (*s == '\n') UartPutc('\r');
+        UartPutc(*s++);
+    }
+}
+
+static VOID UartPutHex64(ULONGLONG v)
+{
+    for (int i = 0; i < 16; ++i) {
+        UCHAR nibble = (UCHAR)((v >> (60 - i * 4)) & 0xF);
+        UCHAR ch = (nibble < 10) ? (UCHAR)('0' + nibble) : (UCHAR)('A' + (nibble - 10));
+        UartPutc((char)ch);
+    }
+}
+#endif
 
 // debug stuff
 VOID DumpMemoryAllocMap(VOID);
@@ -163,7 +203,7 @@ WinLdrInitializePhase1(PLOADER_PARAMETER_BLOCK LoaderBlock,
     CHAR  ArcBoot[MAX_PATH+1];
     CHAR  MiscFiles[MAX_PATH+1];
     ULONG i;
-    ULONG_PTR PathSeparator;
+    ULONG_PTR PathSeparatorLen = 0;
     PLOADER_PARAMETER_EXTENSION Extension;
 
     // AGENT-MODIFIED: Use UEFI-specific boot partition detection if running under UEFI
@@ -172,7 +212,7 @@ WinLdrInitializePhase1(PLOADER_PARAMETER_BLOCK LoaderBlock,
     {
         ULONG RDiskNumber = 0;
         ULONG PartitionNumber = 1;
-        
+
         /* Get boot partition info from UEFI */
         if (UefiGetBootPartitionInfo(&RDiskNumber, &PartitionNumber, ArcBoot, sizeof(ArcBoot)))
         {
@@ -181,17 +221,35 @@ WinLdrInitializePhase1(PLOADER_PARAMETER_BLOCK LoaderBlock,
         else
         {
             /* Fallback to parsing the BootPath */
-            PathSeparator = strstr(BootPath, "\\") - BootPath;
-            RtlStringCbCopyNA(ArcBoot, sizeof(ArcBoot), BootPath, PathSeparator);
-            TRACE("Using fallback ArcBoot: '%s'\n", ArcBoot);
+            const char* bs = strstr(BootPath, "\\");
+            if (bs)
+            {
+                PathSeparatorLen = (ULONG_PTR)(bs - BootPath);
+                RtlStringCbCopyNA(ArcBoot, sizeof(ArcBoot), BootPath, PathSeparatorLen);
+                TRACE("Using fallback ArcBoot: '%s'\n", ArcBoot);
+            }
+            else
+            {
+                /* Last-resort fallback */
+                RtlStringCbCopyA(ArcBoot, sizeof(ArcBoot), BootPath);
+                TRACE("Using whole BootPath as ArcBoot: '%s'\n", ArcBoot);
+            }
         }
     }
     else
 #endif
     {
         /* Construct SystemRoot and ArcBoot from SystemPath */
-        PathSeparator = strstr(BootPath, "\\") - BootPath;
-        RtlStringCbCopyNA(ArcBoot, sizeof(ArcBoot), BootPath, PathSeparator);
+        const char* bs = strstr(BootPath, "\\");
+        if (bs)
+        {
+            PathSeparatorLen = (ULONG_PTR)(bs - BootPath);
+            RtlStringCbCopyNA(ArcBoot, sizeof(ArcBoot), BootPath, PathSeparatorLen);
+        }
+        else
+        {
+            RtlStringCbCopyA(ArcBoot, sizeof(ArcBoot), BootPath);
+        }
     }
 
     TRACE("ArcBoot: '%s'\n", ArcBoot);
@@ -329,7 +387,7 @@ WinLdrInitializePhase1(PLOADER_PARAMETER_BLOCK LoaderBlock,
     {
         extern REACTOS_INTERNAL_BGCONTEXT framebufferData;
         extern PBGRT_TABLE GetBgrtTable(VOID); // AGENT-MODIFIED: Get BGRT table from UEFI hardware detection
-        
+
         if (framebufferData.BaseAddress != 0)
         {
             Extension->GopFramebuffer.FrameBufferBase.QuadPart = framebufferData.BaseAddress;
@@ -338,11 +396,11 @@ WinLdrInitializePhase1(PLOADER_PARAMETER_BLOCK LoaderBlock,
             Extension->GopFramebuffer.VerticalResolution = framebufferData.ScreenHeight;
             Extension->GopFramebuffer.PixelsPerScanLine = framebufferData.PixelsPerScanLine;
             Extension->GopFramebuffer.PixelFormat = framebufferData.PixelFormat;
-            /* Note: RedMask, GreenMask, BlueMask are only needed for PixelFormat==2 (Bitmask) */
+            /* Note: RedMask/GreenMask/BlueMask are used only for PixelFormat==2 (Bitmask). Leave 0 otherwise. */
             Extension->GopFramebuffer.RedMask = 0;
             Extension->GopFramebuffer.GreenMask = 0;
             Extension->GopFramebuffer.BlueMask = 0;
-            
+
             TRACE("AGENT-MODIFIED: GOP Framebuffer passed to kernel:\n");
             TRACE("  BaseAddress: 0x%llx\n", Extension->GopFramebuffer.FrameBufferBase.QuadPart);
             TRACE("  Size: 0x%x\n", Extension->GopFramebuffer.FrameBufferSize);
@@ -351,19 +409,18 @@ WinLdrInitializePhase1(PLOADER_PARAMETER_BLOCK LoaderBlock,
             TRACE("  PixelsPerScanLine: %d\n", Extension->GopFramebuffer.PixelsPerScanLine);
             TRACE("  PixelFormat: %d\n", Extension->GopFramebuffer.PixelFormat);
         }
-        
+
         // AGENT-MODIFIED: Pass BGRT info to kernel for seamless boot logo
         PBGRT_TABLE Bgrt = GetBgrtTable();
         if (Bgrt)
         {
             Extension->BgrtInfo.Valid = TRUE;
             Extension->BgrtInfo.ImageType = Bgrt->ImageType;
-            Extension->BgrtInfo.ImageAddress = Bgrt->LogoAddress;
-            // Calculate image size from BMP header if needed (for now set to 0)
-            Extension->BgrtInfo.ImageSize = 0; // Will be determined later from BMP header
+            Extension->BgrtInfo.ImageAddress = Bgrt->LogoAddress; /* Physical address as per ACPI BGRT */
+            Extension->BgrtInfo.ImageSize = 0; // Will be determined later from BMP header if needed
             Extension->BgrtInfo.ImageOffsetX = Bgrt->OffsetX;
             Extension->BgrtInfo.ImageOffsetY = Bgrt->OffsetY;
-            
+
             TRACE("[AGENT] BGRT Info passed to kernel:\n");
             TRACE("  ImageType: %u\n", Extension->BgrtInfo.ImageType);
             TRACE("  ImageAddress: 0x%llx\n", Extension->BgrtInfo.ImageAddress);
@@ -521,8 +578,8 @@ WinLdrLoadBootDrivers(PLOADER_PARAMETER_BLOCK LoaderBlock,
         /* Get the next list entry as we may remove the current one on failure */
         NextBd = BootDriver->Link.Flink;
 
-        TRACE("BootDriver %wZ DTE %08X RegPath: %wZ\n",
-              &BootDriver->FilePath, BootDriver->LdrEntry,
+        TRACE("BootDriver %wZ DTE %p RegPath: %wZ\n",
+              &BootDriver->FilePath, (PVOID)BootDriver->LdrEntry,
               &BootDriver->RegistryPath);
 
         // Paths are relative (FIXME: Are they always relative?)
@@ -612,7 +669,7 @@ WinLdrLoadModule(PCSTR ModuleName,
         return NULL;
     }
 
-    TRACE("Loaded %s at 0x%x with size 0x%x\n", ModuleName, PhysicalBase, FileSize);
+    TRACE("Loaded %s at %p with size 0x%x\n", ModuleName, PhysicalBase, FileSize);
 
     return PhysicalBase;
 }
@@ -1315,7 +1372,10 @@ LoadAndBootWindowsCommon(
 #endif
 
     /* Convert BootPath to SystemRoot */
-    SystemRoot = strstr(BootPath, "\\");
+    {
+        const char* bs = strstr(BootPath, "\\");
+        SystemRoot = bs ? bs : BootPath;
+    }
 
     /* Detect hardware */
     UiUpdateProgressBar(20, "Detecting hardware...");
@@ -1416,36 +1476,67 @@ LoadAndBootWindowsCommon(
 
     TRACE("ARM64: Returned from WinLdrSetProcessorContext - preparing final handoff\n");
 
+#if defined(_M_ARM64)
+    /* CRITICAL: Setup kernel handoff MMU BEFORE accessing any KSEG0 addresses */
+    /* This ensures all loader regions are mapped in TTBR1 */
+    TRACE("ARM64: Setting up kernel handoff MMU before final operations...\n");
+    Arm64SetupKernelHandoffMMU();
+    TRACE("ARM64: Kernel handoff MMU setup complete\n");
+#endif
+
     /* Save final value of LoaderPagesSpanned */
     {
 #if defined(_M_ARM64)
         PLOADER_PARAMETER_EXTENSION ExtensionVA = LoaderBlock->Extension;
         ULONG LoaderPages = MmGetLoaderPagesSpanned();
-        ULONG_PTR ExtensionPA = 0;
+        PLOADER_PARAMETER_EXTENSION ExtensionPA = NULL;
 
         if (ExtensionVA != NULL)
         {
             ULONGLONG ExtAddr = (ULONGLONG)(ULONG_PTR)ExtensionVA;
+
+            /* Check if this is a KSEG0 virtual address */
             if (ExtAddr >= ARM64_KSEG0_BASE)
-                ExtensionPA = (ULONG_PTR)(ExtAddr - ARM64_KSEG0_BASE);
-            else
-                ExtensionPA = (ULONG_PTR)ExtensionVA;
-
-            TRACE("ARM64: Loader extension VA=%p PA=0x%p LoaderPages=0x%lx\n",
-                  ExtensionVA, (PVOID)ExtensionPA, LoaderPages);
-
-            if (ExtensionPA != 0)
             {
-                ((PLOADER_PARAMETER_EXTENSION)(ULONG_PTR)ExtensionPA)->LoaderPagesSpanned = LoaderPages;
+                /* Convert to physical address for safe write */
+                ExtensionPA = (PLOADER_PARAMETER_EXTENSION)(ULONG_PTR)(ExtAddr - ARM64_KSEG0_BASE);
 
-                if ((PVOID)(ULONG_PTR)ExtensionPA != ExtensionVA)
+                TRACE("ARM64: Loader extension VA=0x%p PA=0x%p LoaderPages=0x%lx\n",
+                      (PVOID)ExtensionVA, (PVOID)ExtensionPA, LoaderPages);
+
+                /* CRITICAL: Write via physical address first to avoid page fault */
+                /* The VA might not be mapped yet in TTBR1 */
+                if (ExtensionPA != NULL)
                 {
-                    TRACE("ARM64: LoaderPagesSpanned mirrored through physical mapping\n");
+                    ExtensionPA->LoaderPagesSpanned = LoaderPages;
+                    __asm__ __volatile__("dsb sy" ::: "memory");
+                    TRACE("ARM64: LoaderPagesSpanned written via PA (safer)\n");
+
+                    /* Ensure the high VA view is mapped before we touch it */
+                    ULONGLONG map_va = ((ULONGLONG)(ULONG_PTR)ExtensionVA) & ~(ULONGLONG)(MM_PAGE_SIZE - 1);
+                    ULONGLONG map_pa = ((ULONGLONG)(ULONG_PTR)ExtensionPA) & ~(ULONGLONG)(MM_PAGE_SIZE - 1);
+                    ULONGLONG map_end = ((ULONGLONG)(ULONG_PTR)ExtensionVA + sizeof(*ExtensionPA) + MM_PAGE_SIZE - 1) & ~(ULONGLONG)(MM_PAGE_SIZE - 1);
+                    ULONGLONG map_size = map_end - map_va;
+
+                    if (!Arm64MapVirtualMemory(map_va,
+                                               map_pa,
+                                               map_size,
+                                               ARM64_MAP_ATTR_NORMAL))
+                    {
+                        TRACE("ARM64: WARNING: Failed to map extension VA=0x%p\n",
+                              (PVOID)ExtensionVA);
+                    }
+
+                    /* Optional VA write skipped on current bring-up to avoid late faults */
+                    TRACE("ARM64: Skipping LoaderPagesSpanned VA update (PA write already done)\n");
                 }
             }
             else
             {
-                TRACE("ARM64: Unable to derive physical address for loader extension, skipping VA update\n");
+                /* Already a physical address, write directly */
+                ExtensionVA->LoaderPagesSpanned = LoaderPages;
+                __asm__ __volatile__("dsb sy" ::: "memory");
+                TRACE("ARM64: LoaderPagesSpanned written to PA=0x%p\n", (PVOID)ExtensionVA);
             }
         }
         else
@@ -1462,7 +1553,27 @@ LoadAndBootWindowsCommon(
     }
 
     TRACE("Hello from paged mode, KiSystemStartup %p, LoaderBlockVA %p!\n",
-          KiSystemStartup, LoaderBlockVA);
+          (PVOID)KiSystemStartup, (PVOID)LoaderBlockVA);
+
+    /* ARM64: Setup proper MMU configuration for kernel handoff */
+#if defined(_M_ARM64) || defined(__aarch64__)
+    /* MMU setup already done earlier before accessing KSEG0 addresses */
+    UartPuts("ARM64: Kernel handoff MMU already configured\n");
+
+    /* Verify TTBR1 is actually set */
+    {
+        UINT64 ttbr1_check;
+        __asm__ volatile("mrs %0, ttbr1_el1" : "=r" (ttbr1_check));
+
+        CHAR Message[96];
+        RtlStringCbPrintfA(Message, sizeof(Message),
+                          "ARM64: Before kernel jump - TTBR1_EL1=0x%llx\n",
+                          ttbr1_check);
+        UartPuts(Message);
+    }
+
+    TRACE("ARM64: Kernel handoff MMU configuration complete\n");
+#endif
 
     /* Zero KI_USER_SHARED_DATA page (x86/x64 only) */
 #if defined(_M_IX86) || defined(_M_AMD64)
@@ -1479,71 +1590,79 @@ LoadAndBootWindowsCommon(
 
     /* Pass control */
     TRACE("ARM64: Transferring to kernel at %p with LoaderBlock %p\n",
-          KiSystemStartup,
-          LoaderBlockVA);
+          (PVOID)KiSystemStartup,
+          (PVOID)LoaderBlockVA);
+
+#if defined(_M_ARM64)
+    /* ARM64: Verify kernel stack is virtual address */
+    TRACE("ARM64: Final kernel stack address in LoaderBlock: 0x%llx\n", LoaderBlockVA->KernelStack);
+    if (LoaderBlockVA->KernelStack < ARM64_KSEG0_BASE) {
+        ERR("ARM64: CRITICAL - Kernel stack is not virtual address: 0x%llx\n", LoaderBlockVA->KernelStack);
+    }
+#endif
 
     /* Emit detailed debug information via UART before handoff */
+#if defined(_M_ARM64) || defined(__aarch64__)
     {
-        static const CHAR Message[] = "ARM64 FreeLoader: Kernel handoff - Entry: 0x";
-        const CHAR *Current = Message;
-        volatile ULONG *const Pl011Dr = (volatile ULONG *)0x09000000;
-        ULONG_PTR Address = (ULONG_PTR)KiSystemStartup;
-        ULONG i;
+        UartPuts("ARM64 FreeLoader: Kernel handoff - Entry: 0x");
+        UartPutHex64((ULONGLONG)(ULONG_PTR)KiSystemStartup);
+        UartPuts("\nLoaderBlock: 0x");
+        UartPutHex64((ULONGLONG)(ULONG_PTR)LoaderBlockVA);
+        UartPuts("\nCalling kernel now...\n");
 
-        /* Print the message */
-        while (*Current != '\0')
+        /* ARM64: Final register state check before kernel jump */
         {
-            *Pl011Dr = (UCHAR)(*Current++);
-            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
-                __asm__ __volatile__("nop");
+            UINT64 ttbr0, ttbr1, tcr, sp_reg;
+            __asm__ volatile("mrs %0, ttbr0_el1" : "=r" (ttbr0));
+            __asm__ volatile("mrs %0, ttbr1_el1" : "=r" (ttbr1));
+            __asm__ volatile("mrs %0, tcr_el1"   : "=r" (tcr));
+            __asm__ volatile("mov %0, sp"        : "=r" (sp_reg));
+
+            CHAR RegMsg[256];
+            RtlStringCbPrintfA(RegMsg, sizeof(RegMsg),
+                              "ARM64: Final state - TTBR0=0x%llx, TTBR1=0x%llx, TCR=0x%llx, SP=0x%llx\n",
+                              ttbr0, ttbr1, tcr, sp_reg);
+            UartPuts(RegMsg);
+
+            RtlStringCbPrintfA(RegMsg, sizeof(RegMsg),
+                              "ARM64: LoaderBlock=0x%p, KernelStack in LB=0x%llx\n",
+                              LoaderBlockVA, LoaderBlockVA->KernelStack);
+            UartPuts(RegMsg);
         }
 
-        /* Print kernel entry point address in hex */
-        for (i = 0; i < 16; i++)
+        /* CRITICAL: Final MMU state verification before kernel jump */
         {
-            UCHAR nibble = (UCHAR)((Address >> (60 - i * 4)) & 0xF);
-            UCHAR hexChar = (nibble < 10) ? ('0' + nibble) : ('A' + nibble - 10);
-            *Pl011Dr = hexChar;
-            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
-                __asm__ __volatile__("nop");
-        }
+            UINT64 final_ttbr1, final_tcr, final_sctlr;
+            __asm__ volatile("mrs %0, ttbr1_el1" : "=r" (final_ttbr1));
+            __asm__ volatile("mrs %0, tcr_el1"   : "=r" (final_tcr));
+            __asm__ volatile("mrs %0, sctlr_el1" : "=r" (final_sctlr));
 
-        *Pl011Dr = '\r';
-        *Pl011Dr = '\n';
+            /* EPD1 bit (23): 0 == walks enabled for TTBR1 */
+            BOOLEAN epd1_clear = !(final_tcr & (1ULL << 23));
+            /* TG1 bits (31:30): 0b10 == 4KB */
+            UINT64 tg1_bits = (final_tcr >> 30) & 0x3;
+            BOOLEAN tg1_is_4k = (tg1_bits == 2);
+            BOOLEAN mmu_enabled = (final_sctlr & 1) ? TRUE : FALSE;
 
-        /* Print LoaderBlock address */
-        static const CHAR LoaderMsg[] = "LoaderBlock: 0x";
-        Current = LoaderMsg;
-        while (*Current != '\0')
-        {
-            *Pl011Dr = (UCHAR)(*Current++);
-            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
-                __asm__ __volatile__("nop");
-        }
+            CHAR FinalMsg[256];
+            RtlStringCbPrintfA(FinalMsg, sizeof(FinalMsg),
+                "CRITICAL: Final MMU check - TTBR1=0x%llx, TCR=0x%llx\n"
+                "  EPD1=%s (bit 23), TG1=%llu (%s), MMU=%s\n",
+                final_ttbr1, final_tcr,
+                epd1_clear ? "CLEAR-OK" : "SET-BAD",
+                tg1_bits, tg1_is_4k ? "4KB-OK" : "WRONG",
+                mmu_enabled ? "ON" : "OFF");
+            UartPuts(FinalMsg);
 
-        Address = (ULONG_PTR)LoaderBlockVA;
-        for (i = 0; i < 16; i++)
-        {
-            UCHAR nibble = (UCHAR)((Address >> (60 - i * 4)) & 0xF);
-            UCHAR hexChar = (nibble < 10) ? ('0' + nibble) : ('A' + nibble - 10);
-            *Pl011Dr = hexChar;
-            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
-                __asm__ __volatile__("nop");
-        }
-
-        *Pl011Dr = '\r';
-        *Pl011Dr = '\n';
-
-        /* Indicate about to call kernel */
-        static const CHAR CallMsg[] = "Calling kernel now...\r\n";
-        Current = CallMsg;
-        while (*Current != '\0')
-        {
-            *Pl011Dr = (UCHAR)(*Current++);
-            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
-                __asm__ __volatile__("nop");
+            /* Abort if critical settings are wrong */
+            if (!epd1_clear || !tg1_is_4k || final_ttbr1 == 0)
+            {
+                UartPuts("FATAL: MMU not configured correctly, aborting!\n");
+                while (1) { __asm__ __volatile__("wfi"); }
+            }
         }
     }
+#endif
 
     (*KiSystemStartup)(LoaderBlockVA);
 
@@ -1581,8 +1700,8 @@ WinLdrpDumpBootDriver(PLOADER_PARAMETER_BLOCK LoaderBlock)
     {
         BootDriver = CONTAINING_RECORD(NextBd, BOOT_DRIVER_LIST_ENTRY, Link);
 
-        TRACE("BootDriver %wZ DTE %08X RegPath: %wZ\n", &BootDriver->FilePath,
-            BootDriver->LdrEntry, &BootDriver->RegistryPath);
+        TRACE("BootDriver %wZ DTE %p RegPath: %wZ\n", &BootDriver->FilePath,
+            (PVOID)BootDriver->LdrEntry, &BootDriver->RegistryPath);
 
         NextBd = BootDriver->Link.Flink;
     }

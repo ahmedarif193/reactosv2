@@ -3,6 +3,11 @@
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 Windows NT Loader Functions
  * COPYRIGHT:   Copyright 2024 Ahmed ARIF (contact@eotics.com)
+ *
+ * Notes (2025-09):
+ * - Implements hierarchical mapper (1GB -> 2MB -> 4KB) instead of coarse 1GB-only.
+ * - Derives cache line sizes from CTR_EL0; keeps conservative L1/L2 capacities if topology probing is unavailable.
+ * - UART helper uses TXFF polling; uses WFI in the wait loop for efficiency.
  */
 
 #include <freeldr.h>
@@ -12,8 +17,131 @@
 #include <debug.h>
 DBG_DEFAULT_CHANNEL(WINDOWS);
 
+/* -------------------------------------------------------------------------- */
+/* Compatibility helpers                                                      */
+/* -------------------------------------------------------------------------- */
+#ifndef FORCEINLINE
+# if defined(_MSC_VER)
+#  define FORCEINLINE __forceinline
+# else
+#  define FORCEINLINE __attribute__((always_inline)) inline
+# endif
+#endif
+
+#ifndef ARM64_MAP_ATTR_UXN
+#define ARM64_MAP_ATTR_UXN 0
+#endif
+#ifndef ARM64_MAP_ATTR_PXN
+#define ARM64_MAP_ATTR_PXN 0
+#endif
+
+/* If your arch headers don't provide these, define them here */
+#ifndef ARM64_BLOCK_SIZE_1G
+#define ARM64_BLOCK_SIZE_1G (1ULL << 30)
+#endif
+#ifndef ARM64_BLOCK_MASK_1G
+#define ARM64_BLOCK_MASK_1G (ARM64_BLOCK_SIZE_1G - 1)
+#endif
+#ifndef ARM64_BLOCK_SIZE_2M
+#define ARM64_BLOCK_SIZE_2M (1ULL << 21)
+#endif
+#ifndef ARM64_BLOCK_MASK_2M
+#define ARM64_BLOCK_MASK_2M (ARM64_BLOCK_SIZE_2M - 1)
+#endif
+
+#define ALIGN_DOWN_16(x) ((ULONG_PTR)((x) & ~((ULONG_PTR)0xF)))
+#define ALIGN_DOWN(x, a) ((UINT64)((x) & ~((UINT64)(a) - 1)))
+#define IS_ALIGNED(x, a) (((x) & ((a) - 1)) == 0)
+
+/* -------------------------------------------------------------------------- */
+/* Minimal PL011 UART helper for bring-up logs (QEMU -M virt default)         */
+/* -------------------------------------------------------------------------- */
+#if defined(_M_ARM64) || defined(__aarch64__)
+#define PL011_BASE   0x09000000U      /* QEMU virt PL011 base */
+#define PL011_DR     (*(volatile ULONG *)(PL011_BASE + 0x00))
+#define PL011_FR     (*(volatile ULONG *)(PL011_BASE + 0x18))
+#define PL011_TXFF   (1u << 5)
+
+static inline VOID UartPutc(char c)
+{
+    /* Use WFI instead of busy NOP while TX FIFO is full. */
+    while (PL011_FR & PL011_TXFF) { __asm__ __volatile__("wfi"); }
+    PL011_DR = (unsigned char)c;
+}
+static VOID UartPuts(const char* s)
+{
+    while (*s) { if (*s == '\n') UartPutc('\r'); UartPutc(*s++); }
+}
+#endif
+
+/* -------------------------------------------------------------------------- */
+/* ARM64-specific data structures for kernel initialization                   */
+/* -------------------------------------------------------------------------- */
+typedef struct _ARM64_KERNEL_DATA
+{
+    CHAR KernelStack[KERNEL_STACK_SIZE];    /* Main kernel stack */
+    CHAR PanicStack[KERNEL_STACK_SIZE];     /* Panic/emergency stack */
+    CHAR InterruptStack[KERNEL_STACK_SIZE]; /* Interrupt handling stack */
+    CHAR InitialProcess[PAGE_SIZE];         /* Initial system process */
+    CHAR InitialThread[PAGE_SIZE];          /* Initial system thread */
+    CHAR Prcb[PAGE_SIZE];                   /* Processor Control Block */
+    CHAR Pcr[PAGE_SIZE];                    /* Processor Control Region */
+} ARM64_KERNEL_DATA, *PARM64_KERNEL_DATA;
+
+static PARM64_KERNEL_DATA KernelDataBlock = NULL;
+
 static BOOLEAN Arm64InitializeMemory(IN PLOADER_PARAMETER_BLOCK LoaderBlock);
-static VOID Arm64ConfigureProcessorContext(USHORT OperatingSystemVersion);
+static VOID    Arm64ConfigureProcessorContext(USHORT OperatingSystemVersion);
+static BOOLEAN Arm64AllocateKernelDataStructures(VOID);
+
+/* Low-level mapper provided by the platform */
+extern BOOLEAN Arm64MapVirtualMemory(ULONGLONG Va, ULONGLONG Pa, ULONGLONG Size, ULONG Attrs);
+
+/* -------------------------------------------------------------------------- */
+/* Hierarchical range mapping (1G -> 2M -> 4K)                                */
+/* -------------------------------------------------------------------------- */
+static BOOLEAN
+Arm64MapRangeHierarchical(ULONGLONG Va, ULONGLONG Pa, ULONGLONG Size, ULONG Attrs)
+{
+    while (Size)
+    {
+        if (IS_ALIGNED(Va, ARM64_BLOCK_SIZE_1G) &&
+            IS_ALIGNED(Pa, ARM64_BLOCK_SIZE_1G) &&
+            Size >= ARM64_BLOCK_SIZE_1G)
+        {
+            if (!Arm64MapVirtualMemory(Va, Pa, ARM64_BLOCK_SIZE_1G, Attrs))
+                return FALSE;
+            Va   += ARM64_BLOCK_SIZE_1G;
+            Pa   += ARM64_BLOCK_SIZE_1G;
+            Size -= ARM64_BLOCK_SIZE_1G;
+            continue;
+        }
+
+        if (IS_ALIGNED(Va, ARM64_BLOCK_SIZE_2M) &&
+            IS_ALIGNED(Pa, ARM64_BLOCK_SIZE_2M) &&
+            Size >= ARM64_BLOCK_SIZE_2M)
+        {
+            if (!Arm64MapVirtualMemory(Va, Pa, ARM64_BLOCK_SIZE_2M, Attrs))
+                return FALSE;
+            Va   += ARM64_BLOCK_SIZE_2M;
+            Pa   += ARM64_BLOCK_SIZE_2M;
+            Size -= ARM64_BLOCK_SIZE_2M;
+            continue;
+        }
+
+        /* Map a single 4KB page (fallback) */
+        if (!Arm64MapVirtualMemory(Va, Pa, MM_PAGE_SIZE, Attrs))
+            return FALSE;
+        Va   += MM_PAGE_SIZE;
+        Pa   += MM_PAGE_SIZE;
+        Size -= MM_PAGE_SIZE;
+    }
+    return TRUE;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Paging helpers (public API used by the loader)                              */
+/* -------------------------------------------------------------------------- */
 
 BOOLEAN
 MempSetupPaging(
@@ -21,84 +149,96 @@ MempSetupPaging(
     IN PFN_NUMBER NumberOfPages,
     IN BOOLEAN KernelMapping)
 {
-    ULONGLONG phys_start;
-    ULONGLONG phys_end;
-    ULONGLONG map_start;
-    ULONGLONG map_end;
-    ULONGLONG current;
-    BOOLEAN Status = TRUE;
-    const ULONGLONG block_size = ARM64_BLOCK_SIZE_1G;
-    const ULONGLONG block_mask = ARM64_BLOCK_MASK_1G;
-    const ULONG attrs = ARM64_MAP_ATTR_NORMAL | ARM64_MAP_ATTR_EXECUTE;
-
-    TRACE("ARM64: Setting up paging for StartPage=0x%lx, NumberOfPages=0x%lx, KernelMapping=%d\n",
-          (ULONG)StartPage, (ULONG)NumberOfPages, KernelMapping);
-
     if (NumberOfPages == 0)
         return TRUE;
 
-    phys_start = ((ULONGLONG)StartPage) << MM_PAGE_SHIFT;
-    phys_end = phys_start + (((ULONGLONG)NumberOfPages) << MM_PAGE_SHIFT);
+    ULONGLONG phys_start = ((ULONGLONG)StartPage) << MM_PAGE_SHIFT;
+    ULONGLONG phys_end   = phys_start + (((ULONGLONG)NumberOfPages) << MM_PAGE_SHIFT);
+    ULONGLONG length     = phys_end - phys_start;
 
-    /* Expand to 1GB boundaries because current mapper works at that granularity */
-    map_start = phys_start & ~block_mask;
-    map_end = (phys_end + block_mask) & ~block_mask;
+    /* Prefer non-exec identity mappings; exec only for kernel VA */
+    const ULONG attrs_id = ARM64_MAP_ATTR_NORMAL | ARM64_MAP_ATTR_UXN | ARM64_MAP_ATTR_PXN;
+    const ULONG attrs_kv = ARM64_MAP_ATTR_NORMAL | ARM64_MAP_ATTR_EXECUTE;
 
-    TRACE("ARM64: Paging span phys_start=0x%llx phys_end=0x%llx map_start=0x%llx map_end=0x%llx\n",
-          phys_start, phys_end, map_start, map_end);
+    TRACE("ARM64: MempSetupPaging StartPage=0x%lx, Pages=0x%lx, KernelMapping=%d\n",
+          (ULONG)StartPage, (ULONG)NumberOfPages, KernelMapping);
+    TRACE("ARM64:   range PA [0x%llx, 0x%llx) len=0x%llx\n",
+          (unsigned long long)phys_start,
+          (unsigned long long)phys_end,
+          (unsigned long long)length);
 
-    for (current = map_start; current < map_end; current += block_size)
+    /* TTBR0: identity map the exact range, using hierarchical granularity */
+    if (!Arm64MapRangeHierarchical(phys_start, phys_start, length, attrs_id))
     {
-        TRACE("ARM64:   TTBR0 map block @PA 0x%llx -> Size 0x%llx\n", current, block_size);
+        ERR("ARM64: Identity mapping failed for PA range 0x%llx..0x%llx\n",
+            (unsigned long long)phys_start, (unsigned long long)phys_end);
+        return FALSE;
+    }
 
-        if (!Arm64MapVirtualMemory(current, current, block_size, attrs))
+    /* TTBR1: KSEG0 mirror for the same range, executable (code fetch) if requested */
+    if (KernelMapping)
+    {
+        ULONGLONG kva = ARM64_KSEG0_BASE + phys_start;
+        if (!Arm64MapRangeHierarchical(kva, phys_start, length, attrs_kv))
         {
-            ERR("ARM64: Failed to identity map PA 0x%llx\n", current);
-            Status = FALSE;
-            break;
-        }
-
-        TRACE("ARM64:   TTBR0 map success for 0x%llx\n", current);
-
-        if (KernelMapping)
-        {
-            ULONGLONG kernel_va = ARM64_KSEG0_BASE + current;
-            TRACE("ARM64:   TTBR1 map block @VA 0x%llx -> PA 0x%llx\n", kernel_va, current);
-            if (!Arm64MapVirtualMemory(kernel_va, current, block_size, attrs))
-            {
-                ERR("ARM64: Failed to map kernel VA 0x%llx -> PA 0x%llx\n", kernel_va, current);
-                Status = FALSE;
-                break;
-            }
-
-            TRACE("ARM64:   TTBR1 map success for VA 0x%llx\n", kernel_va);
+            ERR("ARM64: KSEG0 mapping failed for VA 0x%llx len 0x%llx\n",
+                (unsigned long long)kva, (unsigned long long)length);
+            return FALSE;
         }
     }
 
-    TRACE("ARM64: Paging setup result=%d for StartPage=0x%lx\n", Status, (ULONG)StartPage);
+    /* Ensure page table updates are visible before returning */
+    __asm__ __volatile__("dsb ish" ::: "memory");
+    __asm__ __volatile__("isb");
 
-    return Status;
+    return TRUE;
 }
 
 VOID
 MempUnmapPage(
     PFN_NUMBER Page)
 {
-    /* ARM64 page unmapping */
-    TRACE("ARM64: Unmapping page 0x%lx\n", (ULONG)Page);
-    
-    /* For UEFI ARM64, page unmapping is handled by UEFI/MMU */
-    /* Individual page unmapping is not typically needed in the bootloader */
+    /* ARM64 page unmapping - not typically used by the bootloader */
+    TRACE("ARM64: Unmapping page 0x%lx (not implemented in bootloader)\n", (ULONG)Page);
+    UNIMPLEMENTED;
 }
 
 VOID
 MempDump(VOID)
 {
-    /* ARM64 memory dump for debugging */
-    TRACE("ARM64: Memory dump requested\n");
-    
-    /* This would dump memory allocation information for debugging */
-    /* Implementation can be added when needed for debugging purposes */
+    TRACE("ARM64: Memory dump requested (no-op placeholder)\n");
+}
+
+/* -------------------------------------------------------------------------- */
+/* NT handoff preparation                                                     */
+/* -------------------------------------------------------------------------- */
+
+static VOID
+Arm64FillCacheInfoFromCtr(PLOADER_PARAMETER_BLOCK LoaderBlock)
+{
+    /*
+     * CTR_EL0:
+     *  - IminLine[3:0]   : log2(Number of words in smallest I-line)
+     *  - DminLine[19:16] : log2(Number of words in smallest D-line)
+     *  LineBytes = 4 * 2^(field)
+     */
+    UINT64 ctr_el0 = 0;
+    __asm__ volatile("mrs %0, ctr_el0" : "=r"(ctr_el0));
+
+    UINT64 IminLine = (ctr_el0 & 0xF);
+    UINT64 DminLine = ((ctr_el0 >> 16) & 0xF);
+
+    ULONG icache_line_bytes = (ULONG)(4ULL << IminLine);
+    ULONG dcache_line_bytes = (ULONG)(4ULL << DminLine);
+
+    /* Keep conservative capacities; set fill sizes accurately from hardware */
+    LoaderBlock->u.Arm64.FirstLevelDcacheFillSize  = dcache_line_bytes;
+    LoaderBlock->u.Arm64.FirstLevelIcacheFillSize  = icache_line_bytes;
+    LoaderBlock->u.Arm64.SecondLevelDcacheFillSize = dcache_line_bytes; /* heuristic */
+    LoaderBlock->u.Arm64.SecondLevelIcacheFillSize = icache_line_bytes; /* heuristic */
+
+    TRACE("ARM64: Cache line sizes from CTR_EL0: I=%lu B, D=%lu B\n",
+          icache_line_bytes, dcache_line_bytes);
 }
 
 BOOLEAN
@@ -109,23 +249,74 @@ Arm64SetupForNt(
     IN ULONG *TssBasePage)
 {
     TRACE("ARM64: Setting up for NT kernel\n");
-    
+
     /* ARM64 doesn't use GDT/IDT or TSS like x86 */
     *GdtIdt = NULL;
     *PcrBasePage = 0;
     *TssBasePage = 0;
-    
-    /* Setup ARM64 specific structures for NT */
-    /* Initialize ARM64 exception vectors if needed */
-    /* The kernel will set up its own exception handling */
-    
+
+    /* Allocate kernel data structures including stacks */
+    if (!Arm64AllocateKernelDataStructures())
+    {
+        ERR("ARM64: Failed to allocate kernel data structures\n");
+        return FALSE;
+    }
+
+    /*
+     * Populate LoaderBlock with stack and structure pointers.
+     * MmAllocateMemoryWithType returns a physical allocation; convert to VA.
+     */
+    ULONG_PTR KernelStackPA     = (ULONG_PTR)KernelDataBlock->KernelStack + KERNEL_STACK_SIZE;
+    ULONG_PTR PanicStackPA      = (ULONG_PTR)KernelDataBlock->PanicStack + KERNEL_STACK_SIZE;
+    ULONG_PTR InterruptStackPA  = (ULONG_PTR)KernelDataBlock->InterruptStack + KERNEL_STACK_SIZE;
+    ULONG_PTR PcrPA             = (ULONG_PTR)KernelDataBlock->Pcr;
+    ULONG_PTR PrcbPA            = (ULONG_PTR)KernelDataBlock->Prcb;
+    ULONG_PTR ProcessPA         = (ULONG_PTR)KernelDataBlock->InitialProcess;
+    ULONG_PTR ThreadPA          = (ULONG_PTR)KernelDataBlock->InitialThread;
+
+    /* Ensure 16-byte alignment for SP as per AArch64 ABI */
+    KernelStackPA    = ALIGN_DOWN_16(KernelStackPA);
+    PanicStackPA     = ALIGN_DOWN_16(PanicStackPA);
+    InterruptStackPA = ALIGN_DOWN_16(InterruptStackPA);
+
+    /* Convert to kernel VA (KSEG0) if still physical */
+    LoaderBlock->KernelStack             = (KernelStackPA     < ARM64_KSEG0_BASE) ? (KernelStackPA     + ARM64_KSEG0_BASE) : KernelStackPA;
+    LoaderBlock->u.Arm64.PanicStack      = (PanicStackPA      < ARM64_KSEG0_BASE) ? (PanicStackPA      + ARM64_KSEG0_BASE) : PanicStackPA;
+    LoaderBlock->u.Arm64.InterruptStack  = (InterruptStackPA  < ARM64_KSEG0_BASE) ? (InterruptStackPA  + ARM64_KSEG0_BASE) : InterruptStackPA;
+    LoaderBlock->u.Arm64.PcrPage         = (PcrPA             < ARM64_KSEG0_BASE) ? (PcrPA             + ARM64_KSEG0_BASE) : PcrPA;
+    LoaderBlock->u.Arm64.PdrPage         = 0; /* Not used on ARM64 */
+    LoaderBlock->Prcb                     = (PrcbPA           < ARM64_KSEG0_BASE) ? (PrcbPA            + ARM64_KSEG0_BASE) : PrcbPA;
+    LoaderBlock->Process                  = (ProcessPA        < ARM64_KSEG0_BASE) ? (ProcessPA         + ARM64_KSEG0_BASE) : ProcessPA;
+    LoaderBlock->Thread                   = (ThreadPA         < ARM64_KSEG0_BASE) ? (ThreadPA          + ARM64_KSEG0_BASE) : ThreadPA;
+
+    TRACE("ARM64: Populated LoaderBlock - KernelStack=0x%llx (VA), PanicStack=0x%llx (VA), InterruptStack=0x%llx (VA)\n",
+          (unsigned long long)LoaderBlock->KernelStack,
+          (unsigned long long)LoaderBlock->u.Arm64.PanicStack,
+          (unsigned long long)LoaderBlock->u.Arm64.InterruptStack);
+    TRACE("ARM64: Physical addresses - KernelStack=0x%llx, PanicStack=0x%llx, InterruptStack=0x%llx\n",
+          (unsigned long long)KernelStackPA,
+          (unsigned long long)PanicStackPA,
+          (unsigned long long)InterruptStackPA);
+    TRACE("ARM64: VA conversion check - KSEG0_BASE=0x%llx\n",
+          (unsigned long long)ARM64_KSEG0_BASE);
+
+    /* Initialize ARM64 cache configuration information */
+    /* Conservative capacities; fill sizes from hardware (CTR_EL0) */
+    LoaderBlock->u.Arm64.FirstLevelDcacheSize       = 32768;   /* 32KB default */
+    LoaderBlock->u.Arm64.FirstLevelIcacheSize       = 32768;   /* 32KB default */
+    LoaderBlock->u.Arm64.SecondLevelDcacheSize      = 262144;  /* 256KB default */
+    LoaderBlock->u.Arm64.SecondLevelIcacheSize      = 262144;  /* 256KB default */
+    Arm64FillCacheInfoFromCtr(LoaderBlock);
+
+    /* Any additional exception vector setup is expected to be done by the kernel */
+
     /* Ensure memory is properly prepared */
     if (!Arm64InitializeMemory(LoaderBlock))
     {
         ERR("ARM64: Failed to initialize memory for NT\n");
         return FALSE;
     }
-    
+
     TRACE("ARM64: Successfully set up for NT kernel\n");
     return TRUE;
 }
@@ -134,35 +325,15 @@ VOID
 WinLdrSetProcessorContext(
     _In_ USHORT OperatingSystemVersion)
 {
-    /* Emit debug message before processor context configuration */
-    {
-        static const CHAR Message[] = "ARM64: WinLdrSetProcessorContext called\r\n";
-        const CHAR *Current = Message;
-        volatile ULONG *const Pl011Dr = (volatile ULONG *)0x09000000;
-
-        while (*Current != '\0')
-        {
-            *Pl011Dr = (UCHAR)(*Current++);
-            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
-                __asm__ __volatile__("nop");
-        }
-    }
+#if defined(_M_ARM64) || defined(__aarch64__)
+    UartPuts("ARM64: WinLdrSetProcessorContext called\n");
+#endif
 
     Arm64ConfigureProcessorContext(OperatingSystemVersion);
 
-    /* Emit debug message after processor context configuration */
-    {
-        static const CHAR Message[] = "ARM64: WinLdrSetProcessorContext completed\r\n";
-        const CHAR *Current = Message;
-        volatile ULONG *const Pl011Dr = (volatile ULONG *)0x09000000;
-
-        while (*Current != '\0')
-        {
-            *Pl011Dr = (UCHAR)(*Current++);
-            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
-                __asm__ __volatile__("nop");
-        }
-    }
+#if defined(_M_ARM64) || defined(__aarch64__)
+    UartPuts("ARM64: WinLdrSetProcessorContext completed\n");
+#endif
 }
 
 /* Provide the machine-dependent setup entry used by the generic NT loader path */
@@ -178,29 +349,23 @@ WinLdrSetupMachineDependent(
     (void)Arm64SetupForNt(LoaderBlock, &GdtIdt, &PcrBasePage, &TssBasePage);
 }
 
-/* ARM64 specific memory setup */
+/* -------------------------------------------------------------------------- */
+/* ARM64 specific memory & CPU setup                                          */
+/* -------------------------------------------------------------------------- */
+
 BOOLEAN
 Arm64InitializeMemory(
     IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
     TRACE("ARM64: Initializing memory management structures\n");
-    
-    /* Validate loader parameter block */
+
     if (!LoaderBlock)
     {
         ERR("ARM64: Invalid LoaderBlock\n");
         return FALSE;
     }
-    
-    /* Note: Memory descriptor list will be populated later by WinLdrSetupMemoryLayout() */
-    /* For now, just ensure the LoaderBlock is valid - the list may still be empty at this point */
 
-    /* Memory descriptors will be dumped later after WinLdrSetupMemoryLayout() */
-    
-    /* ARM64 specific memory initialization */
-    /* The UEFI firmware has already set up basic memory management */
-    /* Additional ARM64 specific setup can be added here if needed */
-    
+    /* Memory descriptors are built later by WinLdrSetupMemoryLayout(). */
     TRACE("ARM64: Memory management structures initialized\n");
     return TRUE;
 }
@@ -213,13 +378,10 @@ Arm64ConfigureProcessorContext(USHORT OperatingSystemVersion)
     TRACE("ARM64: WinLdrSetProcessorContext\n");
 
     /*
-     * UEFI firmware already leaves the CPU in EL1 with MMU enabled and the
-     * kernel is expected to reset the environment. We currently rely on the
-     * identity mapping established by the firmware/boot manager, so there is
-     * nothing mandatory to program here yet.
-     *
-     * Hook for future enhancements: switch stacks, adjust translation base,
-     * or clean caches before transferring control to the kernel.
+     * UEFI typically leaves us in EL1 with MMU on. For now, we rely on
+     * the existing identity mapping and the mappings we establish during
+     * handoff; further tuning (clean/invalidate caches, switch TTBRs, etc.)
+     * can be added here if needed.
      */
     /* Nothing to do yet. */
 }
@@ -239,4 +401,32 @@ WinLdrCheckForLoadedDll(
     return PeLdrCheckForLoadedDll(&LoaderBlock->LoadOrderListHead,
                                   DllName,
                                   LoadedEntry);
+}
+
+/* ARM64 specific allocation of kernel data structures */
+static BOOLEAN
+Arm64AllocateKernelDataStructures(VOID)
+{
+    TRACE("ARM64: Allocating kernel data structures\n");
+
+    /* Allocate the ARM64 kernel data block which contains all stacks and structures.
+       This returns a physical allocation in the loader's address space. */
+    KernelDataBlock = MmAllocateMemoryWithType(sizeof(ARM64_KERNEL_DATA), LoaderMemoryData);
+    if (!KernelDataBlock)
+    {
+        ERR("ARM64: Failed to allocate kernel data block of size %zu bytes\n",
+            sizeof(ARM64_KERNEL_DATA));
+        return FALSE;
+    }
+
+    /* Zero out the entire data block for clean initialization */
+    RtlZeroMemory(KernelDataBlock, sizeof(ARM64_KERNEL_DATA));
+
+    TRACE("ARM64: Successfully allocated kernel data structures at %p\n", KernelDataBlock);
+    TRACE("ARM64: KernelStack at %p, PanicStack at %p, InterruptStack at %p\n",
+          KernelDataBlock->KernelStack, KernelDataBlock->PanicStack, KernelDataBlock->InterruptStack);
+    TRACE("ARM64: Prcb at %p, Process at %p, Thread at %p\n",
+          KernelDataBlock->Prcb, KernelDataBlock->InitialProcess, KernelDataBlock->InitialThread);
+
+    return TRUE;
 }

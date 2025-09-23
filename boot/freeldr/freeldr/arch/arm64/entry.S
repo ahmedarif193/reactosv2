@@ -7,7 +7,7 @@
 
 /* No x86 asm includes on ARM64 */
 
-.extern BootMain
+.extern EfiEntry
 .extern FrldrBootDrive
 .extern FrldrBootPartition
 .extern Arm64InitializeExceptions
@@ -24,11 +24,15 @@
 .globl RealEntryPoint
 RealEntryPoint:
     /* x0 = ImageHandle, x1 = SystemTable (UEFI parameters) */
-    
-    /* Save UEFI parameters on stack */
+
+    /* Save UEFI parameters on stack for later use */
     stp x29, x30, [sp, #-32]!
     stp x0, x1, [sp, #16]
     mov x29, sp
+
+    /* Preserve UEFI parameters in callee-saved registers */
+    mov x19, x0  /* ImageHandle */
+    mov x20, x1  /* SystemTable */
     
     /* Disable interrupts during initialization */
     msr daifset, #0xF
@@ -60,15 +64,16 @@ bss_done:
     /* Initialize cache and memory management */
     bl Arm64InitializeCache
     bl Arm64InitializeMMU
-    
-    /* Set up parameters for BootMain (command line = NULL for now) */
-    mov x0, #0
-    
-    /* Enable interrupts before calling BootMain */
+
+    /* Restore UEFI parameters for EfiEntry */
+    mov x0, x19  /* ImageHandle */
+    mov x1, x20  /* SystemTable */
+
+    /* Enable interrupts before calling EfiEntry */
     msr daifclr, #0xF
-    
-    /* Call BootMain */
-    bl BootMain
+
+    /* Call EfiEntry with UEFI parameters */
+    bl EfiEntry
     
     /* Should never return, but if it does, loop */
 stop:

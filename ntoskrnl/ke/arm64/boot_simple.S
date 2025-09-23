@@ -18,8 +18,8 @@
 
 /*
  * ARM64 Kernel Entry Point from FreeLDR
- * This is just a trampoline to the C function
  * x0 - LoaderBlock pointer
+ * x1 - Initial stack pointer
  */
     .globl KiSystemStartup
 KiSystemStartup:
@@ -31,21 +31,16 @@ KiSystemStartup:
     msr     SPSel, #1
     isb
 
-    /* Validate LoaderBlock parameter */
+    /* Validate parameters */
     cbz     x0, KiSystemStartup_InvalidParams
-
-    /* Load kernel stack from LoaderBlock->KernelStack (offset 0x30) */
-    ldr     x1, [x0, #0x30]
     cbz     x1, KiSystemStartup_InvalidParams
 
     /* Set up stack */
     mov     sp, x1
 
-    /* Align stack to 16 bytes */
-    mov     x2, sp
-    mov     x3, #0xFFFFFFFFFFFFFFF0
-    and     x2, x2, x3
-    mov     sp, x2
+    /* Align stack to 16 bytes using bitmask */
+    mov     x2, #0xFFFFFFFFFFFFFFF0
+    and     sp, sp, x2
 
     /* Preserve LoaderBlock */
     mov     x19, x0
@@ -69,7 +64,7 @@ KiSystemStartup_InvalidParams:
 1:  wfi
     b       1b
 
-/* Legacy entry point - also points to KiSystemStartup */
+/* Legacy entry point */
     .globl _start
 _start:
     b       KiSystemStartup
@@ -79,10 +74,8 @@ _start:
 KiSwitchToBootStack:
     msr     SPSel, #1
     mov     sp, x0
-    mov     x1, sp
-    mov     x2, #0xFFFFFFFFFFFFFFF0
-    and     x1, x1, x2
-    mov     sp, x1
+    mov     x1, #0xFFFFFFFFFFFFFFF0
+    and     sp, sp, x1
     b       KiSystemStartupBootStack
 
 /* Exception Vector Table */
@@ -144,16 +137,8 @@ KiExceptionVectors:
 /* Initialize exception vectors */
     .globl KiInitializeExceptionVectors
 KiInitializeExceptionVectors:
-    /* Get virtual address of exception vectors for TTBR1 mapping */
     adrp    x0, KiExceptionVectors
     add     x0, x0, :lo12:KiExceptionVectors
-
-    /* Convert to kernel virtual address if in physical space */
-    mov     x1, #0xFFFF800000000000  /* ARM64_KSEG0_BASE */
-    cmp     x0, x1
-    b.hs    1f                      /* Already virtual, skip conversion */
-    add     x0, x0, x1              /* Convert PA to VA */
-1:
     msr     vbar_el1, x0
     isb
     ret
@@ -214,6 +199,6 @@ KiUnexpectedInterrupt:
 KiStartupMsg:
     .asciz "ARM64 ReactOS Kernel Entry\r\n"
 KiErrorMsg:
-    .asciz "ARM64 Kernel: Invalid LoaderBlock or KernelStack\r\n"
+    .asciz "ARM64 Kernel: Invalid parameters\r\n"
 
     .end

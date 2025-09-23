@@ -15,6 +15,13 @@
 #define PCR_MAJOR_VERSION       1
 #define PCR_MINOR_VERSION       1
 
+/* FORWARD DECLARATIONS *****************************************************/
+
+DECLSPEC_NORETURN
+VOID
+NTAPI
+KiSystemStartupReal(IN PLOADER_PARAMETER_BLOCK LoaderBlock);
+
 /* GLOBALS *******************************************************************/
 
 /* ARM64 processor information */
@@ -442,7 +449,7 @@ KiSystemStartupBootStack(
     }
 
     /* Call generic kernel startup */
-    KiSystemStartup(LoaderBlock);
+    KiSystemStartupReal(LoaderBlock);
 
     /* Should never reach here */
     KeBugCheck(PHASE0_INITIALIZATION_FAILED);
@@ -455,11 +462,11 @@ CODE_SEG("INIT")
 DECLSPEC_NORETURN
 VOID
 NTAPI
-KiSystemStartup(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
+KiSystemStartupReal(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
     CCHAR Cpu;
 
-    DPRINT("ARM64: KiSystemStartup - LoaderBlock at 0x%p\n", LoaderBlock);
+    DPRINT("ARM64: KiSystemStartupReal - LoaderBlock at 0x%p\n", LoaderBlock);
 
     /* Emit a serial banner so automated tests can confirm kernel entry. */
     {
@@ -497,7 +504,7 @@ KiSystemStartup(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 
     /* TODO: For now, just loop to prevent returning */
     /* Real implementation would initialize the system and start the scheduler */
-    DPRINT1("ARM64: KiSystemStartup not yet implemented - bugchecking to avoid hang\n");
+    DPRINT1("ARM64: KiSystemStartupReal not yet implemented - bugchecking to avoid hang\n");
 
     /* Fail fast until full bring-up is implemented */
     ARM64_DISABLE_INTERRUPTS();
