@@ -14,24 +14,67 @@
 
 #ifdef _M_AMD64
 
-/* Simple byte-by-byte operations without aggressive optimizations */
+/* Helpers to perform word-sized operations without relying on SSE */
+static VOID
+FrLdrCopyForwardQwords(
+    _Out_writes_bytes_all_(Length) UCHAR* Dest,
+    _In_reads_bytes_(Length) const UCHAR* Src,
+    _In_ SIZE_T Length)
+{
+    SIZE_T Count;
+
+    /* Align both pointers to 8 bytes */
+    while (Length && ((((ULONG_PTR)Dest) | ((ULONG_PTR)Src)) & 7))
+    {
+        *Dest++ = *Src++;
+        Length--;
+    }
+
+    Count = Length / sizeof(ULONGLONG);
+    while (Count--)
+    {
+        *((ULONGLONG*)Dest) = *((const ULONGLONG*)Src);
+        Dest += sizeof(ULONGLONG);
+        Src  += sizeof(ULONGLONG);
+    }
+
+    Length &= sizeof(ULONGLONG) - 1;
+    while (Length--)
+    {
+        *Dest++ = *Src++;
+    }
+}
+
 VOID
 NTAPI
 FrLdrZeroMemory(
     _Out_writes_bytes_all_(Length) PVOID Destination,
     _In_ SIZE_T Length)
 {
-    volatile UCHAR* Dest = (volatile UCHAR*)Destination;
-    SIZE_T i;
-    
-    /* Safety check */
-    if (Destination == NULL || Length == 0)
+    UCHAR *Dest = (UCHAR*)Destination;
+    SIZE_T Count;
+
+    if (Dest == NULL || Length == 0)
         return;
-    
-    /* Simple byte-by-byte zeroing to avoid alignment issues */
-    for (i = 0; i < Length; i++)
+
+    /* Align destination */
+    while ((((ULONG_PTR)Dest) & 7) && Length)
     {
-        Dest[i] = 0;
+        *Dest++ = 0;
+        Length--;
+    }
+
+    Count = Length / sizeof(ULONGLONG);
+    while (Count--)
+    {
+        *((ULONGLONG*)Dest) = 0ULL;
+        Dest += sizeof(ULONGLONG);
+    }
+
+    Length &= sizeof(ULONGLONG) - 1;
+    while (Length--)
+    {
+        *Dest++ = 0;
     }
 }
 
@@ -42,14 +85,10 @@ FrLdrCopyMemory(
     _In_reads_bytes_(Length) const VOID* Source,
     _In_ SIZE_T Length)
 {
-    UCHAR* Dest = (UCHAR*)Destination;
-    const UCHAR* Src = (const UCHAR*)Source;
-    SIZE_T i;
-    
-    for (i = 0; i < Length; i++)
-    {
-        Dest[i] = Src[i];
-    }
+    if (Length == 0 || Destination == Source)
+        return;
+
+    FrLdrCopyForwardQwords((UCHAR*)Destination, (const UCHAR*)Source, Length);
 }
 
 VOID
@@ -59,12 +98,35 @@ FrLdrFillMemory(
     _In_ SIZE_T Length,
     _In_ UCHAR Fill)
 {
-    UCHAR* Dest = (UCHAR*)Destination;
-    SIZE_T i;
-    
-    for (i = 0; i < Length; i++)
+    UCHAR *Dest = (UCHAR*)Destination;
+    ULONGLONG Pattern;
+    SIZE_T Count;
+
+    if (Dest == NULL || Length == 0)
+        return;
+
+    Pattern = (ULONGLONG)Fill;
+    Pattern |= Pattern << 8;
+    Pattern |= Pattern << 16;
+    Pattern |= Pattern << 32;
+
+    while ((((ULONG_PTR)Dest) & 7) && Length)
     {
-        Dest[i] = Fill;
+        *Dest++ = Fill;
+        Length--;
+    }
+
+    Count = Length / sizeof(ULONGLONG);
+    while (Count--)
+    {
+        *((ULONGLONG*)Dest) = Pattern;
+        Dest += sizeof(ULONGLONG);
+    }
+
+    Length &= sizeof(ULONGLONG) - 1;
+    while (Length--)
+    {
+        *Dest++ = Fill;
     }
 }
 
@@ -75,25 +137,42 @@ FrLdrMoveMemory(
     _In_reads_bytes_(Length) const VOID* Source,
     _In_ SIZE_T Length)
 {
-    UCHAR* Dest = (UCHAR*)Destination;
-    const UCHAR* Src = (const UCHAR*)Source;
-    SIZE_T i;
-    
-    /* Handle overlapping memory regions */
-    if (Dest > Src && Dest < Src + Length)
+    UCHAR *Dest = (UCHAR*)Destination;
+    const UCHAR *Src = (const UCHAR*)Source;
+
+    if (Length == 0 || Destination == Source)
+        return;
+
+    if (Dest < Src || Dest >= Src + Length)
     {
-        /* Copy backwards */
-        for (i = Length; i > 0; i--)
-        {
-            Dest[i - 1] = Src[i - 1];
-        }
+        FrLdrCopyForwardQwords(Dest, Src, Length);
     }
     else
     {
-        /* Copy forwards */
-        for (i = 0; i < Length; i++)
+        /* Copy backwards for overlapping regions */
+        SIZE_T Count;
+
+        Dest += Length;
+        Src  += Length;
+
+        while (Length && ((((ULONG_PTR)Dest) | ((ULONG_PTR)Src)) & 7))
         {
-            Dest[i] = Src[i];
+            *(--Dest) = *(--Src);
+            Length--;
+        }
+
+        Count = Length / sizeof(ULONGLONG);
+        while (Count--)
+        {
+            Dest -= sizeof(ULONGLONG);
+            Src  -= sizeof(ULONGLONG);
+            *((ULONGLONG*)Dest) = *((const ULONGLONG*)Src);
+        }
+
+        Length &= sizeof(ULONGLONG) - 1;
+        while (Length--)
+        {
+            *(--Dest) = *(--Src);
         }
     }
 }
@@ -146,15 +225,7 @@ FrLdrMoveMemory(
 #ifdef _M_AMD64
 void* memset(void* dest, int ch, size_t count)
 {
-    volatile unsigned char* p = (volatile unsigned char*)dest;
-    unsigned char c = (unsigned char)ch;
-    size_t i;
-    
-    for (i = 0; i < count; i++)
-    {
-        p[i] = c;
-    }
-    
+    FrLdrFillMemory(dest, count, (UCHAR)ch);
     return dest;
 }
 #endif

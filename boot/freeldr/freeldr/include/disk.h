@@ -122,6 +122,8 @@ VOID __cdecl DiskStopFloppyMotor(VOID);
 extern PVOID DiskReadBuffer;
 extern SIZE_T DiskReadBufferSize;
 
+SIZE_T FrLdrGetRecommendedDiskBufferSize(SIZE_T MaximumBufferSize);
+
 
 /* ARC path of the boot drive and partition */
 extern CCHAR FrLdrBootPath[MAX_PATH];

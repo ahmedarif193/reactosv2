@@ -10,6 +10,7 @@
 #include <uefildr.h>
 // AGENT-MODIFIED: Include header for UefiEnumerateArcDisks
 #include <uefi/uefiarcname.h>
+#include <disk.h>
 
 #include <debug.h>
 DBG_DEFAULT_CHANNEL(WARNING);
@@ -503,8 +504,19 @@ UefiInitializeBootDevices(VOID)
     ULONG i = 0;
     BOOLEAN IsCdBoot;
 
-    DiskReadBufferSize = EFI_PAGE_SIZE;
-    DiskReadBuffer = MmAllocateMemoryWithType(DiskReadBufferSize, LoaderFirmwareTemporary);
+    /* Use a larger bouncing buffer than a single EFI page to speed up ISO reads */
+    {
+        SIZE_T PreferredBufferSize = FrLdrGetRecommendedDiskBufferSize(0);
+        DiskReadBufferSize = PreferredBufferSize;
+        DiskReadBuffer = MmAllocateMemoryWithType(DiskReadBufferSize, LoaderFirmwareTemporary);
+    }
+    if (!DiskReadBuffer)
+    {
+        /* Fall back to a single page if the large buffer cannot be allocated */
+        DiskReadBufferSize = EFI_PAGE_SIZE;
+        DiskReadBuffer = MmAllocateMemoryWithType(DiskReadBufferSize, LoaderFirmwareTemporary);
+    }
+    ASSERT(DiskReadBuffer != NULL);
     UefiSetupBlockDevices();
     UefiSetBootpath();
 
@@ -523,9 +535,10 @@ UefiInitializeBootDevices(VOID)
         ULONG Checksum = 0;
         ULONG Signature;
         ULONG BlockSize;
-        ULONG SectorsToRead;
-        ULONG BytesAvailable;
+        ULONG BlocksToRead;
         ULONG ChecksumBytes;
+        EFI_STATUS Status;
+        EFI_BLOCK_IO* BootBlockIo;
 
         BlockSize = bio->Media->BlockSize;
         if (BlockSize == 0)
@@ -535,28 +548,63 @@ UefiInitializeBootDevices(VOID)
         }
 
         /* Ensure we read enough data to cover the ISO primary descriptor */
-        SectorsToRead = (2048 + BlockSize - 1) / BlockSize;
-        if (SectorsToRead == 0)
+        BlocksToRead = (2048 + BlockSize - 1) / BlockSize;
+        if (BlocksToRead == 0)
         {
-            SectorsToRead = 1;
+            BlocksToRead = 1;
         }
 
-        /* Read the MBR */
-        if (!MachDiskReadLogicalSectors(FrldrBootDrive, 16ULL, SectorsToRead, DiskReadBuffer))
+        /* Obtain the block protocol for the boot handle */
+        Status = GlobalSystemTable->BootServices->HandleProtocol(
+            handles[UefiBootRootIdentifier], &bioGuid, (VOID**)&BootBlockIo);
+        if (EFI_ERROR(Status) || BootBlockIo == NULL)
         {
-            ERR("Reading MBR failed\n");
+            ERR("Failed to query block protocol for boot device (Status=%lx)\n", (ULONG_PTR)Status);
             return FALSE;
         }
 
-        Buffer = (ULONG*)DiskReadBuffer;
-        Mbr = (PMASTER_BOOT_RECORD)DiskReadBuffer;
+        /* Sanity-check read buffer size */
+        PVOID ReadBuffer;
+        BOOLEAN TempBufferAllocated = FALSE;
+
+        if (BlocksToRead * BlockSize > DiskReadBufferSize)
+        {
+            ULONG NewSize = BlocksToRead * BlockSize;
+            ReadBuffer = FrLdrTempAlloc(NewSize, TAG_HW_DISK_CONTEXT);
+            if (!ReadBuffer)
+            {
+                ERR("Failed to allocate %lu bytes for CD checksum\n", NewSize);
+                return FALSE;
+            }
+            TempBufferAllocated = TRUE;
+        }
+        else
+        {
+            ReadBuffer = DiskReadBuffer;
+        }
+
+        /* Read the ISO primary volume descriptor (at logical block 16) */
+        Status = BootBlockIo->ReadBlocks(BootBlockIo,
+                                         BootBlockIo->Media->MediaId,
+                                         16ULL,
+                                         BlocksToRead * BlockSize,
+                                         ReadBuffer);
+        if (EFI_ERROR(Status))
+        {
+            ERR("ReadBlocks for CD checksum failed (Status=%lx)\n", (ULONG_PTR)Status);
+            if (TempBufferAllocated)
+                FrLdrTempFree(ReadBuffer, TAG_HW_DISK_CONTEXT);
+            return FALSE;
+        }
+
+        Buffer = (ULONG*)ReadBuffer;
+        Mbr = (PMASTER_BOOT_RECORD)ReadBuffer;
 
         Signature = Mbr->Signature;
         TRACE("Signature: %x\n", Signature);
 
         /* Calculate the MBR checksum */
-        BytesAvailable = SectorsToRead * BlockSize;
-        ChecksumBytes = min(BytesAvailable, (ULONG)2048);
+        ChecksumBytes = min(BlocksToRead * BlockSize, (ULONG)2048);
         for (i = 0; i < ChecksumBytes / sizeof(ULONG); i++)
         {
             Checksum += Buffer[i];
@@ -566,6 +614,9 @@ UefiInitializeBootDevices(VOID)
 
         /* Fill out the ARC disk block */
         AddReactOSArcDiskInfo(FrLdrBootPath, Signature, Checksum, TRUE);
+
+        if (TempBufferAllocated)
+            FrLdrTempFree(ReadBuffer, TAG_HW_DISK_CONTEXT);
 
         FsRegisterDevice(FrLdrBootPath, &UefiDiskVtbl);
         PcBiosDiskCount++; // This is not accounted for in the number of pre-enumerated BIOS drives!

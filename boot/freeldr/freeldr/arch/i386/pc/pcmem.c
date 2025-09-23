@@ -553,6 +553,7 @@ PcMemFinalizeMemoryMap(
     PFREELDR_MEMORY_DESCRIPTOR MemoryMap)
 {
     ULONG i;
+    const SIZE_T PreferredBufferSize = FrLdrGetRecommendedDiskBufferSize(MAX_DISKREADBUFFER_SIZE);
 
     /* Reserve some static ranges for freeldr */
     ReserveMemory(MemoryMap, 0x1000, STACKLOW - 0x1000, LoaderFirmwareTemporary, "BIOS area");
@@ -561,7 +562,7 @@ PcMemFinalizeMemoryMap(
 
     /* Default to 1 page above freeldr for the disk read buffer */
     DiskReadBuffer = (PUCHAR)ALIGN_UP_BY(FREELDR_BASE + FrLdrImageSize, PAGE_SIZE);
-    DiskReadBufferSize = PAGE_SIZE;
+    DiskReadBufferSize = (PreferredBufferSize < PAGE_SIZE) ? PreferredBufferSize : PAGE_SIZE;
 
     /* Scan for free range above freeldr image */
     for (i = 0; i < PcMapCount; i++)
@@ -571,8 +572,10 @@ PcMemFinalizeMemoryMap(
         {
             /* Use this range for the disk read buffer */
             DiskReadBuffer = (PVOID)(MemoryMap[i].BasePage * PAGE_SIZE);
-            DiskReadBufferSize = min(MemoryMap[i].PageCount * PAGE_SIZE,
-                                     MAX_DISKREADBUFFER_SIZE);
+            {
+                SIZE_T AvailableBytes = MemoryMap[i].PageCount * PAGE_SIZE;
+                DiskReadBufferSize = (AvailableBytes < PreferredBufferSize) ? AvailableBytes : PreferredBufferSize;
+            }
             break;
         }
     }
