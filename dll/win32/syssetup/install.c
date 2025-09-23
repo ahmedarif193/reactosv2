@@ -616,13 +616,15 @@ EnableUserModePnpManager(VOID)
     DWORD BytesNeeded, WaitTime;
     DWORD dwError;
 
+    DPRINT1("EnableUserModePnpManager: attempting to open SCM (access mask 0x%lx)\n",
+            SC_MANAGER_ENUMERATE_SERVICE);
+
     hSCManager = OpenSCManagerW(NULL, NULL, SC_MANAGER_ENUMERATE_SERVICE);
     if (hSCManager == NULL)
     {
         dwError = GetLastError();
-        DPRINT1("Unable to open the service control manager.\n");
-        DPRINT1("Last Error %d\n", dwError);
-        
+        DPRINT1("EnableUserModePnpManager: OpenSCManagerW failed with status %lu\n", dwError);
+
         /* For LiveCD, service manager might not be available yet */
         /* ERROR_ACCESS_DENIED (5) is common during early LiveCD boot */
         if (dwError == ERROR_ACCESS_DENIED || dwError == ERROR_SERVICE_DATABASE_LOCKED)
@@ -639,7 +641,8 @@ EnableUserModePnpManager(VOID)
                             SERVICE_CHANGE_CONFIG | SERVICE_START | SERVICE_QUERY_STATUS);
     if (hService == NULL)
     {
-        DPRINT1("Unable to open PlugPlay service\n");
+        DPRINT1("EnableUserModePnpManager: OpenServiceW(\"PlugPlay\") failed with %lu\n",
+                GetLastError());
         goto cleanup;
     }
 
@@ -651,16 +654,20 @@ EnableUserModePnpManager(VOID)
                                 NULL, NULL, NULL, NULL);
     if (!bRet)
     {
-        DPRINT1("Unable to change the service configuration\n");
+        DPRINT1("EnableUserModePnpManager: ChangeServiceConfigW failed with %lu\n",
+                GetLastError());
         goto cleanup;
     }
 
     bRet = StartServiceW(hService, 0, NULL);
     if (!bRet && (GetLastError() != ERROR_SERVICE_ALREADY_RUNNING))
     {
-        DPRINT1("Unable to start service\n");
+        DPRINT1("EnableUserModePnpManager: StartServiceW failed with %lu\n",
+                GetLastError());
         goto cleanup;
     }
+
+    DPRINT1("EnableUserModePnpManager: PlugPlay start request issued\n");
 
     while (TRUE)
     {
@@ -671,7 +678,8 @@ EnableUserModePnpManager(VOID)
                                     &BytesNeeded);
         if (!bRet)
         {
-            DPRINT1("QueryServiceStatusEx() failed for PlugPlay service (error 0x%x)\n", GetLastError());
+            DPRINT1("EnableUserModePnpManager: QueryServiceStatusEx failed with %lu\n",
+                    GetLastError());
             goto cleanup;
         }
 
@@ -687,10 +695,12 @@ EnableUserModePnpManager(VOID)
     if (ServiceStatus.dwCurrentState != SERVICE_RUNNING)
     {
         bRet = FALSE;
-        DPRINT1("Failed to start PlugPlay service\n");
+        DPRINT1("EnableUserModePnpManager: PlugPlay service stuck in state %lu\n",
+                ServiceStatus.dwCurrentState);
         goto cleanup;
     }
 
+    DPRINT1("EnableUserModePnpManager: PlugPlay service is running\n");
     bRet = TRUE;
 
 cleanup:
