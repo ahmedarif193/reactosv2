@@ -791,7 +791,26 @@ PiCallDriverAddDevice(
         {
             if (NT_SUCCESS(Status))
             {
-                PDEVICE_OBJECT fdo = IoGetAttachedDeviceReference(DeviceNode->PhysicalDeviceObject);
+                PDEVICE_OBJECT pdo;
+                PDEVICE_OBJECT fdo;
+
+                pdo = DeviceNode->PhysicalDeviceObject;
+                if (pdo == NULL)
+                {
+                    PiSetDevNodeProblem(DeviceNode, CM_PROB_FAILED_ADD);
+                    PiSetDevNodeState(DeviceNode, DeviceNodeAwaitingQueuedRemoval);
+                    Status = STATUS_NO_SUCH_DEVICE;
+                    break;
+                }
+
+                fdo = IoGetAttachedDeviceReference(pdo);
+                if (fdo == NULL)
+                {
+                    PiSetDevNodeProblem(DeviceNode, CM_PROB_FAILED_ADD);
+                    PiSetDevNodeState(DeviceNode, DeviceNodeAwaitingQueuedRemoval);
+                    Status = STATUS_UNSUCCESSFUL;
+                    break;
+                }
 
                 // HACK: Check if we have a ACPI device (needed for power management)
                 if (fdo->DeviceType == FILE_DEVICE_ACPI)

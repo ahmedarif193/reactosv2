@@ -1340,7 +1340,25 @@ CreatePortConfig:
             }
         }
 
-        FdoCallHWInitialize(DeviceExtension);
+        DPRINT1("FdoCallHWInitialize: Bus %lu Slot 0x%x Level=%lu Vector=%lu Level2=%lu Vector2=%lu Interface=%d\n",
+            PortConfig->SystemIoBusNumber,
+            PortConfig->SlotNumber,
+            PortConfig->BusInterruptLevel,
+            PortConfig->BusInterruptVector,
+            PortConfig->BusInterruptLevel2,
+            PortConfig->BusInterruptVector2,
+            PortConfig->AdapterInterfaceType);
+
+        Status = FdoCallHWInitialize(DeviceExtension);
+
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("FdoCallHWInitialize failed: Status 0x%x (Level=%lu Vector=%lu)\n",
+                Status,
+                PortConfig->BusInterruptLevel,
+                PortConfig->BusInterruptVector);
+            break;
+        }
 
         Status = FdoStartAdapter(DeviceExtension);
 
@@ -1975,6 +1993,146 @@ SpiGetPciConfigData(IN PDRIVER_OBJECT DriverObject,
             SpiResourceToConfig(HwInitializationData,
                                 ResourceList->List,
                                 PortConfig);
+
+            DPRINT1("PCI fallback decision: hw=%lu port=%lu res=%lu vec=%lu lvl=%lu\n",
+                    HwInitializationData->AdapterInterfaceType,
+                    PortConfig->AdapterInterfaceType,
+                    ResourceList->List[0].InterfaceType,
+                    PortConfig->BusInterruptVector,
+                    PortConfig->BusInterruptLevel);
+
+            if (PortConfig->BusInterruptVector == 0)
+            {
+                DPRINT1("PCI fallback IRQ lookup: bus %lu slot 0x%lx iface=%lu resIface=%lu\n",
+                        PortConfig->SystemIoBusNumber,
+                        SlotNumber.u.AsULONG,
+                        PortConfig->AdapterInterfaceType,
+                        ResourceList->List[0].InterfaceType);
+                PCI_COMMON_CONFIG FullConfig;
+                UCHAR InterruptLine = 0;
+                UCHAR InterruptPin = 0;
+                ULONG ConfigType = PCI_DEVICE_TYPE;
+
+                RtlZeroMemory(&FullConfig, sizeof(FullConfig));
+
+                DataSize = HalGetBusData(PCIConfiguration,
+                                         BusNumber,
+                                         SlotNumber.u.AsULONG,
+                                         &FullConfig,
+                                         sizeof(FullConfig));
+
+                if (DataSize >= FIELD_OFFSET(PCI_COMMON_CONFIG, HeaderType) + sizeof(FullConfig.HeaderType))
+                {
+                    ConfigType = PCI_CONFIGURATION_TYPE(&FullConfig);
+
+                    switch (ConfigType)
+                    {
+                        case PCI_DEVICE_TYPE:
+                            if (DataSize >= FIELD_OFFSET(PCI_COMMON_CONFIG, u.type0.InterruptPin) + sizeof(UCHAR))
+                            {
+                                InterruptLine = FullConfig.u.type0.InterruptLine;
+                                InterruptPin = FullConfig.u.type0.InterruptPin;
+                            }
+                            break;
+
+                        case PCI_BRIDGE_TYPE:
+                            if (DataSize >= FIELD_OFFSET(PCI_COMMON_CONFIG, u.type1.InterruptPin) + sizeof(UCHAR))
+                            {
+                                InterruptLine = FullConfig.u.type1.InterruptLine;
+                                InterruptPin = FullConfig.u.type1.InterruptPin;
+                            }
+                            break;
+
+                        case PCI_CARDBUS_BRIDGE_TYPE:
+                            if (DataSize >= FIELD_OFFSET(PCI_COMMON_CONFIG, u.type2.InterruptPin) + sizeof(UCHAR))
+                            {
+                                InterruptLine = FullConfig.u.type2.InterruptLine;
+                                InterruptPin = FullConfig.u.type2.InterruptPin;
+                            }
+                            break;
+
+                        default:
+                            break;
+                    }
+                }
+
+                if (InterruptPin != 0 &&
+                    InterruptLine != 0 &&
+                    InterruptLine != 0xFF)
+                {
+                    if (PortConfig->BusInterruptLevel == 0)
+                        PortConfig->BusInterruptLevel = InterruptLine;
+
+                    PortConfig->BusInterruptVector = InterruptLine;
+                    PortConfig->InterruptMode = LevelSensitive;
+
+                    PortConfig->AdapterInterfaceType = PCIBus;
+                    PortConfig->SystemIoBusNumber = BusNumber;
+
+                    DPRINT1("PCI fallback IRQ provisioning: line %u pin %u for slot %lu\n",
+                            InterruptLine,
+                            InterruptPin,
+                            SlotNumber.u.AsULONG);
+                }
+                else
+                {
+                    DPRINT1("PCI fallback IRQ unavailable (line=%u pin=%u size=%lu type=%lu)\n",
+                            InterruptLine,
+                            InterruptPin,
+                            DataSize,
+                            ConfigType);
+                }
+            }
+
+            if (PortConfig->BusInterruptVector == 0 &&
+                PortConfig->BusInterruptLevel != 0)
+            {
+                KIRQL TempDirql;
+                KAFFINITY TempAffinity;
+                ULONG MappedVector;
+                INTERFACE_TYPE FallbackInterface = PCIBus;
+                ULONG FallbackBusNumber = BusNumber;
+
+                PortConfig->AdapterInterfaceType = PCIBus;
+                PortConfig->SystemIoBusNumber = BusNumber;
+
+                MappedVector = HalGetInterruptVector(FallbackInterface,
+                                                     FallbackBusNumber,
+                                                     PortConfig->BusInterruptLevel,
+                                                     PortConfig->BusInterruptLevel,
+                                                     &TempDirql,
+                                                     &TempAffinity);
+
+                if (MappedVector != 0)
+                {
+                    PortConfig->BusInterruptVector = MappedVector;
+                    PortConfig->InterruptMode = LevelSensitive;
+
+                    DPRINT1("HAL vector fallback: level %lu mapped to %lu (interface=%lu bus=%lu)\n",
+                            PortConfig->BusInterruptLevel,
+                            MappedVector,
+                            FallbackInterface,
+                            FallbackBusNumber);
+                }
+                else
+                {
+                    DPRINT1("HAL vector fallback unavailable (level=%lu bus=%lu)\n",
+                            PortConfig->BusInterruptLevel,
+                            FallbackBusNumber);
+                }
+            }
+
+            if (PortConfig->BusInterruptVector == 0 &&
+                PortConfig->BusInterruptLevel != 0)
+            {
+                PortConfig->BusInterruptVector = PortConfig->BusInterruptLevel;
+                PortConfig->AdapterInterfaceType = PCIBus;
+                PortConfig->SystemIoBusNumber = BusNumber;
+
+                DPRINT1("Last-chance IRQ fallback: using level %lu as vector for slot %lu\n",
+                        PortConfig->BusInterruptLevel,
+                        SlotNumber.u.AsULONG);
+            }
 
             /* Free the resource list */
             ExFreePool(ResourceList);

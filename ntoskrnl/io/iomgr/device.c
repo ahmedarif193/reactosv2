@@ -1405,6 +1405,12 @@ PDEVICE_OBJECT
 NTAPI
 IoGetAttachedDeviceReference(PDEVICE_OBJECT DeviceObject)
 {
+    if (DeviceObject == NULL)
+        return NULL;
+
+    if (!MmIsAddressValid(DeviceObject))
+        return NULL;
+
     /* Reference the Attached Device */
     DeviceObject = IoGetAttachedDevice(DeviceObject);
     ObReferenceObject(DeviceObject);

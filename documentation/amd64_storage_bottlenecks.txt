@@ -1,0 +1,23 @@
+AMD64 Storage Boot Bottlenecks (2024-09-24)
+==========================================
+
+1. BusLogic/ATAPI miniports never receive a valid interrupt vector.
+   - Evidence: Serial log shows repeated "FdoCallHWInitialize ... Vector=0" and immediate failure (STATUS_INVALID_PARAMETER).
+   - Root cause: ACPI HAL reports the controller as ISA, so `HalAssignSlotResources` leaves BusInterruptVector at 0. The existing PCI fallback is not mapping the IRQ to an x64 vector, so scsiport cannot connect interrupts. Without a connected ISR the miniport bails out.
+   - Fix direction: Force the PCI fallback to run whenever the vector is zero, treat the device as PCI for vector translation, and use `HalGetInterruptVector` to compute a usable vector when we at least know the level/line.
+
+2. PnP retries crash in `IoGetAttachedDeviceReference` after the storage miniport fails.
+   - Evidence: Crash stack terminates in ntoskrnl/io/iomgr/device.c:1408 (`IoGetAttachedDeviceReference`) with c0000005.
+   - Root cause: The device stack is never built (no FDO), yet `IopSynchronousCall` blindly dereferences the top device. When the PDO is stale/NULL we end up walking an invalid pointer.
+   - Fix direction: Gracefully handle missing PDO/FDO in `IoGetAttachedDeviceReference`, `IopSynchronousCall`, and callers (Pi queue) to avoid bugchecks and flag the device node as failed instead.
+
+3. Repeated PnP class-key failures on the LiveCD spam logs and mask real errors.
+   - Evidence: Multiple "Failed to open class key" warnings (status c0000034) flood the log before the crash.
+   - Root cause: LiveCD registry hives are read-only; services keep retrying. Not a crash source but increases boot time and obscures critical errors.
+   - Fix direction: Defer class-key creation when running from LiveCD or short-circuit the probes to reduce noise (lower priority once interrupts work).
+
+Work plan
+---------
+   a. Make the interrupt fallback bullet-proof so storage miniports start on amd64.
+   b. Harden PnP core routines against missing device stacks to avoid kernel bugcheck while diagnosing storage issues.
+   c. Revisit LiveCD registry access patterns once storage stack stabilises.

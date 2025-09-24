@@ -24,8 +24,17 @@ IopSynchronousCall(
     PDEVICE_OBJECT TopDeviceObject;
     PAGED_CODE();
 
+    if (DeviceObject == NULL)
+    {
+        return STATUS_NO_SUCH_DEVICE;
+    }
+
     /* Call the top of the device stack */
     TopDeviceObject = IoGetAttachedDeviceReference(DeviceObject);
+    if (TopDeviceObject == NULL)
+    {
+        return STATUS_NO_SUCH_DEVICE;
+    }
 
     /* Allocate an IRP */
     Irp = IoAllocateIrp(TopDeviceObject->StackSize, FALSE);
