@@ -134,11 +134,14 @@ USBPORT_AllocateBandwidth(IN PDEVICE_OBJECT FdoDevice,
     {
         EndpointProperties->ScheduleOffset = ScheduleOffset;
 
-        Bandwidth = &FdoExtension->Bandwidth[ScheduleOffset * Factor];
-
-        for (Factor = USB2_FRAMES / Period; Factor; Factor--)
         {
-            FdoExtension->Bandwidth[ScheduleOffset * Factor] -= EndpointBandwidth;
+            ULONG FrameCount = USB2_FRAMES / Period;
+
+            for (ix = 0; ix < FrameCount; ix++)
+            {
+                ULONG Frame = (ScheduleOffset + ix * Period) % USB2_FRAMES;
+                FdoExtension->Bandwidth[Frame] -= EndpointBandwidth;
+            }
         }
 
         if (TransferType == USBPORT_TRANSFER_TYPE_INTERRUPT)
@@ -177,7 +180,7 @@ USBPORT_FreeBandwidth(IN PDEVICE_OBJECT FdoDevice,
     ULONG Offset;
     ULONG EndpointBandwidth;
     ULONG Period;
-    ULONG Factor;
+    ULONG ix;
     UCHAR Bit;
 
     DPRINT("USBPORT_FreeBandwidth: FdoDevice - %p, Endpoint - %p\n",
@@ -202,9 +205,14 @@ USBPORT_FreeBandwidth(IN PDEVICE_OBJECT FdoDevice,
     Period = Endpoint->EndpointProperties.Period;
     ASSERT(Period != 0);
 
-    for (Factor = USB2_FRAMES / Period; Factor; Factor--)
     {
-        FdoExtension->Bandwidth[Offset * Factor] += EndpointBandwidth;
+        ULONG FrameCount = USB2_FRAMES / Period;
+
+        for (ix = 0; ix < FrameCount; ix++)
+        {
+            ULONG Frame = (Offset + ix * Period) % USB2_FRAMES;
+            FdoExtension->Bandwidth[Frame] += EndpointBandwidth;
+        }
     }
 
     if (TransferType == USBPORT_TRANSFER_TYPE_INTERRUPT)
@@ -560,6 +568,13 @@ MiniportCloseEndpoint(IN PDEVICE_OBJECT FdoDevice,
     FdoExtension = FdoDevice->DeviceExtension;
     Packet = &FdoExtension->MiniPortInterface->Packet;
 
+    if (InterlockedExchange(&Endpoint->SoftRetryTimerActive, 0))
+    {
+        KeCancelTimer(&Endpoint->SoftRetryTimer);
+    }
+    Endpoint->SoftRetryNextFire.QuadPart = 0;
+    Endpoint->ConsecutiveNakCount = 0;
+
     KeAcquireSpinLock(&FdoExtension->MiniportSpinLock, &OldIrql);
 
     if (Endpoint->Flags & ENDPOINT_FLAG_OPENED)
@@ -827,6 +842,13 @@ USBPORT_OpenPipe(IN PDEVICE_OBJECT FdoDevice,
     Endpoint->FdoDevice = FdoDevice;
     Endpoint->DeviceHandle = DeviceHandle;
     Endpoint->LockCounter = -1;
+    KeInitializeTimerEx(&Endpoint->SoftRetryTimer, NotificationTimer);
+    KeInitializeDpc(&Endpoint->SoftRetryDpc,
+                    USBPORT_SoftRetryDpc,
+                    Endpoint);
+    Endpoint->SoftRetryTimerActive = 0;
+    Endpoint->SoftRetryNextFire.QuadPart = 0;
+    Endpoint->ConsecutiveNakCount = 0;
 
     Endpoint->TtExtension = DeviceHandle->TtExtension;
 

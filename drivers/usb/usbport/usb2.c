@@ -1814,9 +1814,7 @@ USBPORT_AllocateBandwidthUSB2(IN PDEVICE_OBJECT FdoDevice,
     ULONG AllocedBusTime;
     ULONG EndpointBandwidth;
     ULONG ScheduleOffset;
-    ULONG Factor;
     ULONG ix;
-    ULONG n;
     BOOLEAN Direction;
     UCHAR SMask;
     UCHAR CMask;
@@ -1983,21 +1981,21 @@ USBPORT_AllocateBandwidthUSB2(IN PDEVICE_OBJECT FdoDevice,
         EndpointProperties->ScheduleOffset = ScheduleOffset;
 
         ASSERT(ActualPeriod);
-        Factor = USB2_FRAMES / ActualPeriod;
-        n = ScheduleOffset * Factor;
+        {
+            ULONG FrameCount = USB2_FRAMES / ActualPeriod;
 
-        if (TtExtension)
-        {
-            for (ix = 0; ix < Factor; ix++)
+            for (ix = 0; ix < FrameCount; ix++)
             {
-                TtExtension->Bandwidth[n + ix] -= EndpointBandwidth;
-            }
-        }
-        else
-        {
-            for (ix = 1; ix < Factor; ix++)
-            {
-                FdoExtension->Bandwidth[n + ix] -= EndpointBandwidth;
+                ULONG Frame = (ScheduleOffset + ix * ActualPeriod) % USB2_FRAMES;
+
+                if (TtExtension)
+                {
+                    TtExtension->Bandwidth[Frame] -= EndpointBandwidth;
+                }
+                else
+                {
+                    FdoExtension->Bandwidth[Frame] -= EndpointBandwidth;
+                }
             }
         }
 
@@ -2024,6 +2022,7 @@ USBPORT_AllocateBandwidthUSB2(IN PDEVICE_OBJECT FdoDevice,
     }
 
     USBPORT_UpdateAllocatedBwTt(TtExtension);
+    USBPORT_TraceTtBudget(TtExtension, "allocate");
 
     for (ix = 0; ix < USB2_FRAMES; ix++)
     {
@@ -2048,9 +2047,7 @@ USBPORT_FreeBandwidthUSB2(IN PDEVICE_OBJECT FdoDevice,
     ULONG TransferType;
     PUSB2_REBALANCE Rebalance;
     ULONG RebalanceListEntries;
-    ULONG Factor;
     ULONG ix;
-    ULONG n;
     PUSB2_TT_EXTENSION TtExtension;
     PUSB2_TT_ENDPOINT RebalanceTtEndpoint;
 
@@ -2086,23 +2083,19 @@ USBPORT_FreeBandwidthUSB2(IN PDEVICE_OBJECT FdoDevice,
     RtlZeroMemory(Rebalance, sizeof(USB2_REBALANCE));
 
     ASSERT(Period != 0);
-    Factor = USB2_FRAMES / Period;
-    n = ScheduleOffset * Factor;
-
     TtExtension = Endpoint->TtExtension;
 
-    if (TtExtension)
     {
-        for (ix = 0; ix < Factor; ix++)
+        ULONG FrameCount = USB2_FRAMES / Period;
+
+        for (ix = 0; ix < FrameCount; ix++)
         {
-            TtExtension->Bandwidth[n + ix] += EndpointBandwidth;
-        }
-    }
-    else
-    {
-        for (ix = 1; ix < Factor; ix++)
-        {
-            FdoExtension->Bandwidth[n + ix] += EndpointBandwidth;
+            ULONG Frame = (ScheduleOffset + ix * Period) % USB2_FRAMES;
+
+            if (TtExtension)
+                TtExtension->Bandwidth[Frame] += EndpointBandwidth;
+            else
+                FdoExtension->Bandwidth[Frame] += EndpointBandwidth;
         }
     }
 
@@ -2146,6 +2139,7 @@ USBPORT_FreeBandwidthUSB2(IN PDEVICE_OBJECT FdoDevice,
     }
 
     USBPORT_UpdateAllocatedBwTt(TtExtension);
+    USBPORT_TraceTtBudget(TtExtension, "free");
 
     for (ix = 0; ix < USB2_FRAMES; ix++)
     {

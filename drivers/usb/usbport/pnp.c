@@ -702,6 +702,12 @@ USBPORT_StartDevice(IN PDEVICE_OBJECT FdoDevice,
                                 &SoftRetry,
                                 sizeof(SoftRetry));
 
+    FdoExtension->SoftRetryEnabled = (SoftRetry != 0);
+    FdoExtension->SoftRetryMaxAttempts = FdoExtension->SoftRetryEnabled ? 5 : 0;
+    FdoExtension->SoftRetryBaseDelayMs = 1;  /* start with 1ms */
+    FdoExtension->SoftRetryMaxDelayMs = 32;  /* cap at 32ms */
+    FdoExtension->DiagnosticsMask = USBPORT_DIAG_DEFAULT;
+
     USBPORT_GetRegistryKeyValueFullInfo(FdoDevice,
                                         FdoExtension->CommonExtension.LowerPdoDevice,
                                         TRUE,

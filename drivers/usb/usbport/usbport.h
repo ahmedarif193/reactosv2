@@ -137,6 +137,12 @@
 #define TRANSFER_FLAG_SPLITED    0x00000100
 #define TRANSFER_FLAG_COMPLETED  0x00000200
 #define TRANSFER_FLAG_PARENT     0x00000400
+#define TRANSFER_FLAG_SOFT_RETRY 0x00000800
+
+#define USBPORT_DIAG_QUEUE       0x00000001
+#define USBPORT_DIAG_URB         0x00000002
+#define USBPORT_DIAG_TT          0x00000004
+#define USBPORT_DIAG_DEFAULT    (USBPORT_DIAG_QUEUE | USBPORT_DIAG_URB)
 
 extern KSPIN_LOCK USBPORT_SpinLock;
 extern LIST_ENTRY USBPORT_MiniPortDrivers;
@@ -239,6 +245,11 @@ typedef struct _USBPORT_ENDPOINT {
   LIST_ENTRY FlushAbortLink;
   LIST_ENTRY TtLink;
   LIST_ENTRY RebalanceLink;
+  KTIMER SoftRetryTimer;
+  KDPC SoftRetryDpc;
+  LONG SoftRetryTimerActive;
+  LARGE_INTEGER SoftRetryNextFire;
+  ULONG ConsecutiveNakCount;
 } USBPORT_ENDPOINT, *PUSBPORT_ENDPOINT;
 
 typedef struct _USBPORT_ISO_BLOCK *PUSBPORT_ISO_BLOCK;
@@ -258,6 +269,10 @@ typedef struct _USBPORT_TRANSFER {
   LIST_ENTRY TransferLink;
   USBD_STATUS USBDStatus;
   ULONG CompletedTransferLen;
+  UCHAR SoftRetryCount;
+  UCHAR ReservedRetry;
+  USHORT SoftRetryDelayMs;
+  LARGE_INTEGER SoftRetryReadyTime;
   ULONG NumberOfMapRegisters;
   PVOID MapRegisterBase;
   ULONG TimeOut;
@@ -391,12 +406,18 @@ typedef struct _USBPORT_DEVICE_EXTENSION {
   PUSB2_HC_EXTENSION Usb2Extension;
   ULONG Bandwidth[32];
   KSPIN_LOCK TtSpinLock;
+  ULONG DiagnosticsMask;
+  ULONG SoftRetryMaxAttempts;
+  ULONG SoftRetryBaseDelayMs;
+  ULONG SoftRetryMaxDelayMs;
+  BOOLEAN SoftRetryEnabled;
+  UCHAR ReservedDiagnostic[3];
 
   /* Miniport extension should be aligned on 0x100 */
 #if !defined(_M_X64)
-  ULONG Padded[64];
+  ULONG Padded[59];
 #else
-  ULONG Padded[30];
+  ULONG Padded[25];
 #endif
 
 } USBPORT_DEVICE_EXTENSION, *PUSBPORT_DEVICE_EXTENSION;
@@ -1206,6 +1227,18 @@ USBPORT_InsertIrpInTable(
   IN PUSBPORT_IRP_TABLE IrpTable,
   IN PIRP Irp);
 
+VOID
+NTAPI
+USBPORT_CancelPendingTransferIrp(
+  IN PDEVICE_OBJECT DeviceObject,
+  IN PIRP Irp);
+
+VOID
+NTAPI
+USBPORT_CancelActiveTransferIrp(
+  IN PDEVICE_OBJECT DeviceObject,
+  IN PIRP Irp);
+
 PIRP
 NTAPI
 USBPORT_RemovePendingTransferIrp(
@@ -1278,6 +1311,50 @@ USBPORT_AbortEndpoint(
   IN PDEVICE_OBJECT FdoDevice,
   IN PUSBPORT_ENDPOINT Endpoint,
   IN PIRP Irp);
+
+BOOLEAN
+NTAPI
+USBPORT_HandleSoftRetry(
+  IN PUSBPORT_TRANSFER Transfer,
+  IN USBD_STATUS USBDStatus);
+
+VOID
+NTAPI
+USBPORT_ClearSoftRetryState(
+  IN PUSBPORT_TRANSFER Transfer);
+
+VOID
+NTAPI
+USBPORT_TraceEndpointQueue(
+    IN PUSBPORT_ENDPOINT Endpoint,
+    IN PCSTR Reason,
+    IN BOOLEAN LockOwned);
+
+VOID
+NTAPI
+USBPORT_TraceUrbLifecycle(
+  IN PURB Urb,
+  IN PCSTR Reason,
+  IN USBD_STATUS Status);
+
+VOID
+NTAPI
+USBPORT_TraceTtBudget(
+  IN PUSB2_TT_EXTENSION TtExtension,
+  IN PCSTR Reason);
+
+VOID
+NTAPI
+USBPORT_ScheduleEndpointSoftRetry(
+  IN PUSBPORT_ENDPOINT Endpoint);
+
+VOID
+NTAPI
+USBPORT_SoftRetryDpc(
+  IN PKDPC Dpc,
+  IN PVOID DeferredContext,
+  IN PVOID SystemArgument1,
+  IN PVOID SystemArgument2);
 
 /* roothub.c */
 VOID

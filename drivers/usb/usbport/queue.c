@@ -15,6 +15,405 @@
 #define NDEBUG_USBPORT_URB
 #include "usbdebug.h"
 
+static ULONG
+USBPORT_CountListEntries(IN PLIST_ENTRY List)
+{
+    ULONG Count = 0;
+    PLIST_ENTRY Entry = List->Flink;
+
+    while (Entry && Entry != List)
+    {
+        ++Count;
+        Entry = Entry->Flink;
+    }
+
+    return Count;
+}
+
+VOID
+NTAPI
+USBPORT_TraceEndpointQueue(IN PUSBPORT_ENDPOINT Endpoint,
+                           IN PCSTR Reason,
+                           IN BOOLEAN LockOwned)
+{
+#if DBG
+    PUSBPORT_DEVICE_EXTENSION FdoExtension = Endpoint->FdoDevice->DeviceExtension;
+
+    if (!(FdoExtension->DiagnosticsMask & USBPORT_DIAG_QUEUE))
+        return;
+
+    ULONG Pending;
+    ULONG Active;
+    ULONG Cancel;
+    ULONG Abort;
+
+    if (LockOwned)
+    {
+        Pending = USBPORT_CountListEntries(&Endpoint->PendingTransferList);
+        Active = USBPORT_CountListEntries(&Endpoint->TransferList);
+        Cancel = USBPORT_CountListEntries(&Endpoint->CancelList);
+        Abort = USBPORT_CountListEntries(&Endpoint->AbortList);
+    }
+    else
+    {
+        if (KeGetCurrentIrql() >= DISPATCH_LEVEL)
+        {
+            KeAcquireSpinLockAtDpcLevel(&Endpoint->EndpointSpinLock);
+            Pending = USBPORT_CountListEntries(&Endpoint->PendingTransferList);
+            Active = USBPORT_CountListEntries(&Endpoint->TransferList);
+            Cancel = USBPORT_CountListEntries(&Endpoint->CancelList);
+            Abort = USBPORT_CountListEntries(&Endpoint->AbortList);
+            KeReleaseSpinLockFromDpcLevel(&Endpoint->EndpointSpinLock);
+        }
+        else
+        {
+            KIRQL LockIrql;
+
+            KeAcquireSpinLock(&Endpoint->EndpointSpinLock, &LockIrql);
+            Pending = USBPORT_CountListEntries(&Endpoint->PendingTransferList);
+            Active = USBPORT_CountListEntries(&Endpoint->TransferList);
+            Cancel = USBPORT_CountListEntries(&Endpoint->CancelList);
+            Abort = USBPORT_CountListEntries(&Endpoint->AbortList);
+            KeReleaseSpinLock(&Endpoint->EndpointSpinLock, LockIrql);
+        }
+    }
+
+    DPRINT_CORE("USBPORT_TRACE_QUEUE[%s]: Ep=%p Addr=0x%02X Pending=%lu Active=%lu Cancel=%lu Abort=%lu\n",
+                Reason,
+                Endpoint,
+                Endpoint->EndpointProperties.EndpointAddress,
+                Pending,
+                Active,
+                Cancel,
+                Abort);
+#else
+    UNREFERENCED_PARAMETER(Endpoint);
+    UNREFERENCED_PARAMETER(Reason);
+    UNREFERENCED_PARAMETER(LockOwned);
+#endif
+}
+
+VOID
+NTAPI
+USBPORT_TraceUrbLifecycle(IN PURB Urb,
+                          IN PCSTR Reason,
+                          IN USBD_STATUS Status)
+{
+#if DBG
+    PUSBPORT_TRANSFER Transfer;
+    PUSBPORT_ENDPOINT Endpoint;
+    PUSBPORT_DEVICE_EXTENSION FdoExtension;
+
+    if (!Urb)
+        return;
+
+    Transfer = Urb->UrbControlTransfer.hca.Reserved8[0];
+
+    if (!Transfer)
+        return;
+
+    Endpoint = Transfer->Endpoint;
+
+    if (!Endpoint)
+        return;
+
+    FdoExtension = Endpoint->FdoDevice->DeviceExtension;
+
+    if (!(FdoExtension->DiagnosticsMask & USBPORT_DIAG_URB))
+        return;
+
+    DPRINT_CORE("USBPORT_TRACE_URB[%s]: Urb=%p Ep=0x%02X Status=0x%08lx Retry=%u\n",
+                Reason,
+                Urb,
+                Endpoint->EndpointProperties.EndpointAddress,
+                Status,
+                Transfer->SoftRetryCount);
+#else
+    UNREFERENCED_PARAMETER(Urb);
+    UNREFERENCED_PARAMETER(Reason);
+    UNREFERENCED_PARAMETER(Status);
+#endif
+}
+
+VOID
+NTAPI
+USBPORT_TraceTtBudget(IN PUSB2_TT_EXTENSION TtExtension,
+                      IN PCSTR Reason)
+{
+#if DBG
+    if (!TtExtension)
+        return;
+
+    PUSBPORT_DEVICE_EXTENSION FdoExtension = NULL;
+
+    if (TtExtension->RootHubPdo && TtExtension->RootHubPdo->DeviceExtension)
+    {
+        PUSBPORT_RHDEVICE_EXTENSION RhExtension;
+
+        RhExtension = (PUSBPORT_RHDEVICE_EXTENSION)TtExtension->RootHubPdo->DeviceExtension;
+
+        if (RhExtension->FdoDevice && RhExtension->FdoDevice->DeviceExtension)
+            FdoExtension = RhExtension->FdoDevice->DeviceExtension;
+    }
+
+    if (FdoExtension && !(FdoExtension->DiagnosticsMask & USBPORT_DIAG_TT))
+        return;
+
+    DPRINT_CORE("USBPORT_TRACE_TT[%s]: TtExtension=%p DeviceAddr=%u Tt=%u Max=%lu Min=%lu\n",
+                Reason,
+                TtExtension,
+                TtExtension->DeviceAddress,
+                TtExtension->TtNumber,
+                TtExtension->MaxBandwidth,
+                TtExtension->MinBandwidth);
+#else
+    UNREFERENCED_PARAMETER(TtExtension);
+    UNREFERENCED_PARAMETER(Reason);
+#endif
+}
+
+static BOOLEAN
+USBPORT_IsSoftRetryStatus(IN USBD_STATUS Status)
+{
+    switch (Status)
+    {
+        case USBD_STATUS_DEV_NOT_RESPONDING:
+        case USBD_STATUS_TIMEOUT:
+        case USBD_STATUS_XACT_ERROR:
+            return TRUE;
+        default:
+            return FALSE;
+    }
+}
+
+static VOID
+USBPORT_ProgramSoftRetryTimer(IN PUSBPORT_ENDPOINT Endpoint,
+                              IN LARGE_INTEGER ReadyTime)
+{
+    LARGE_INTEGER DueTime;
+    LARGE_INTEGER Now;
+    LONGLONG Delta;
+
+    KeQuerySystemTime(&Now);
+
+    Delta = ReadyTime.QuadPart - Now.QuadPart;
+
+    if (Delta <= 0)
+    {
+        DueTime.QuadPart = -1;
+    }
+    else
+    {
+        DueTime.QuadPart = -Delta;
+    }
+
+    Endpoint->SoftRetryNextFire = ReadyTime;
+
+    if (InterlockedExchange(&Endpoint->SoftRetryTimerActive, 1))
+    {
+        KeCancelTimer(&Endpoint->SoftRetryTimer);
+    }
+
+    KeSetTimerEx(&Endpoint->SoftRetryTimer,
+                 DueTime,
+                 0,
+                 &Endpoint->SoftRetryDpc);
+}
+
+VOID
+NTAPI
+USBPORT_ScheduleEndpointSoftRetry(IN PUSBPORT_ENDPOINT Endpoint)
+{
+    KIRQL OldIrql;
+    LARGE_INTEGER Earliest = {0};
+    BOOLEAN Found = FALSE;
+    PLIST_ENTRY Entry;
+
+    KeAcquireSpinLock(&Endpoint->EndpointSpinLock, &OldIrql);
+
+    Entry = Endpoint->PendingTransferList.Flink;
+
+    while (Entry && Entry != &Endpoint->PendingTransferList)
+    {
+        PUSBPORT_TRANSFER Transfer;
+
+        Transfer = CONTAINING_RECORD(Entry,
+                                     USBPORT_TRANSFER,
+                                     TransferLink);
+
+        if (Transfer->Flags & TRANSFER_FLAG_SOFT_RETRY)
+        {
+            if (!Found ||
+                Transfer->SoftRetryReadyTime.QuadPart < Earliest.QuadPart)
+            {
+                Earliest = Transfer->SoftRetryReadyTime;
+                Found = TRUE;
+            }
+        }
+
+        Entry = Transfer->TransferLink.Flink;
+    }
+
+    KeReleaseSpinLock(&Endpoint->EndpointSpinLock, OldIrql);
+
+    if (!Found)
+    {
+        if (InterlockedExchange(&Endpoint->SoftRetryTimerActive, 0))
+            KeCancelTimer(&Endpoint->SoftRetryTimer);
+
+        Endpoint->SoftRetryNextFire.QuadPart = 0;
+        return;
+    }
+
+    USBPORT_ProgramSoftRetryTimer(Endpoint, Earliest);
+}
+
+VOID
+NTAPI
+USBPORT_SoftRetryDpc(IN PKDPC Dpc,
+                     IN PVOID DeferredContext,
+                     IN PVOID SystemArgument1,
+                     IN PVOID SystemArgument2)
+{
+    PUSBPORT_ENDPOINT Endpoint;
+
+    UNREFERENCED_PARAMETER(Dpc);
+    UNREFERENCED_PARAMETER(SystemArgument1);
+    UNREFERENCED_PARAMETER(SystemArgument2);
+
+    Endpoint = (PUSBPORT_ENDPOINT)DeferredContext;
+
+    InterlockedExchange(&Endpoint->SoftRetryTimerActive, 0);
+    Endpoint->SoftRetryNextFire.QuadPart = 0;
+
+    USBPORT_ScheduleEndpointSoftRetry(Endpoint);
+
+    USBPORT_InvalidateEndpointHandler(Endpoint->FdoDevice,
+                                      Endpoint,
+                                      INVALIDATE_ENDPOINT_WORKER_THREAD);
+}
+
+static ULONG
+USBPORT_GetSoftRetryDelay(IN PUSBPORT_DEVICE_EXTENSION FdoExtension,
+                          IN PUSBPORT_TRANSFER Transfer)
+{
+    ULONG Delay;
+
+    Delay = FdoExtension->SoftRetryBaseDelayMs << (Transfer->SoftRetryCount - 1);
+
+    if (Delay > FdoExtension->SoftRetryMaxDelayMs)
+        Delay = FdoExtension->SoftRetryMaxDelayMs;
+
+    if (Delay == 0)
+        Delay = 1;
+
+    return Delay;
+}
+
+BOOLEAN
+NTAPI
+USBPORT_HandleSoftRetry(IN PUSBPORT_TRANSFER Transfer,
+                        IN USBD_STATUS USBDStatus)
+{
+    PUSBPORT_ENDPOINT Endpoint;
+    PUSBPORT_DEVICE_EXTENSION FdoExtension;
+    ULONG DelayMs;
+    LARGE_INTEGER ReadyTime;
+    KIRQL OldIrql;
+
+    Endpoint = Transfer->Endpoint;
+    FdoExtension = Endpoint->FdoDevice->DeviceExtension;
+
+    if (!FdoExtension->SoftRetryEnabled ||
+        !USBPORT_IsSoftRetryStatus(USBDStatus) ||
+        (Transfer->Flags & (TRANSFER_FLAG_ABORTED | TRANSFER_FLAG_CANCELED)))
+    {
+        return FALSE;
+    }
+
+    if (FdoExtension->SoftRetryMaxAttempts == 0 ||
+        Transfer->SoftRetryCount >= FdoExtension->SoftRetryMaxAttempts)
+    {
+        return FALSE;
+    }
+
+    Transfer->SoftRetryCount++;
+    Endpoint->ConsecutiveNakCount++;
+    Transfer->CompletedTransferLen = 0;
+    Transfer->SoftRetryDelayMs = 0;
+    Transfer->Flags &= ~TRANSFER_FLAG_COMPLETED;
+    Transfer->Flags &= ~TRANSFER_FLAG_SUBMITED;
+    Transfer->Flags |= TRANSFER_FLAG_SOFT_RETRY;
+
+    DelayMs = USBPORT_GetSoftRetryDelay(FdoExtension, Transfer);
+    Transfer->SoftRetryDelayMs = (USHORT)DelayMs;
+
+    KeQuerySystemTime(&ReadyTime);
+    Transfer->SoftRetryReadyTime = ReadyTime;
+    Transfer->SoftRetryReadyTime.QuadPart += (LONGLONG)DelayMs * 10000;
+
+    if (Transfer->Irp)
+    {
+        PIRP Irp = Transfer->Irp;
+        KIRQL CancelIrql;
+
+        IoAcquireCancelSpinLock(&CancelIrql);
+
+        if (Irp->Cancel)
+        {
+            IoReleaseCancelSpinLock(CancelIrql);
+            if (Transfer->SoftRetryCount)
+                Transfer->SoftRetryCount--;
+            if (Endpoint->ConsecutiveNakCount)
+                Endpoint->ConsecutiveNakCount--;
+            Transfer->Flags &= ~TRANSFER_FLAG_SOFT_RETRY;
+            Transfer->SoftRetryDelayMs = 0;
+            Transfer->SoftRetryReadyTime.QuadPart = 0;
+            return FALSE;
+        }
+
+        IoSetCancelRoutine(Irp, USBPORT_CancelPendingTransferIrp);
+        IoReleaseCancelSpinLock(CancelIrql);
+
+        USBPORT_RemoveActiveTransferIrp(Endpoint->FdoDevice, Irp);
+        USBPORT_InsertIrpInTable(FdoExtension->PendingIrpTable, Irp);
+    }
+
+    KeAcquireSpinLock(&Endpoint->EndpointSpinLock, &OldIrql);
+
+    if (!IsListEmpty(&Transfer->TransferLink))
+    {
+        RemoveEntryList(&Transfer->TransferLink);
+    }
+
+    InsertHeadList(&Endpoint->PendingTransferList,
+                   &Transfer->TransferLink);
+
+    KeReleaseSpinLock(&Endpoint->EndpointSpinLock, OldIrql);
+
+    USBPORT_ScheduleEndpointSoftRetry(Endpoint);
+    USBPORT_TraceEndpointQueue(Endpoint, "soft-retry", FALSE);
+    USBPORT_TraceUrbLifecycle(Transfer->Urb, "retry", USBDStatus);
+
+    return TRUE;
+}
+
+VOID
+NTAPI
+USBPORT_ClearSoftRetryState(IN PUSBPORT_TRANSFER Transfer)
+{
+    if (!(Transfer->Flags & TRANSFER_FLAG_SOFT_RETRY) && Transfer->SoftRetryCount == 0)
+        return;
+
+    Transfer->Flags &= ~TRANSFER_FLAG_SOFT_RETRY;
+    Transfer->SoftRetryCount = 0;
+    Transfer->SoftRetryDelayMs = 0;
+    Transfer->SoftRetryReadyTime.QuadPart = 0;
+    Transfer->Endpoint->ConsecutiveNakCount = 0;
+
+    USBPORT_ScheduleEndpointSoftRetry(Transfer->Endpoint);
+}
+
 VOID
 NTAPI
 USBPORT_InsertIdleIrp(IN PIO_CSQ Csq,
@@ -794,6 +1193,7 @@ USBPORT_FlushPendingTransfers(IN PUSBPORT_ENDPOINT Endpoint)
     PIRP Irp;
     KIRQL OldIrql;
     BOOLEAN Result;
+    BOOLEAN RescheduleSoftRetry;
 
     DPRINT_CORE("USBPORT_FlushPendingTransfers: Endpoint - %p\n", Endpoint);
 
@@ -805,6 +1205,8 @@ USBPORT_FlushPendingTransfers(IN PUSBPORT_ENDPOINT Endpoint)
         DPRINT_CORE("USBPORT_FlushPendingTransfers: Endpoint Locked \n");
         return;
     }
+
+    RescheduleSoftRetry = FALSE;
 
     while (TRUE)
     {
@@ -868,6 +1270,30 @@ USBPORT_FlushPendingTransfers(IN PUSBPORT_ENDPOINT Endpoint)
                                      USBPORT_TRANSFER,
                                      TransferLink);
 
+        if (Transfer->Flags & TRANSFER_FLAG_SOFT_RETRY)
+        {
+            LARGE_INTEGER Now;
+
+            KeQuerySystemTime(&Now);
+
+            if (Transfer->SoftRetryReadyTime.QuadPart > Now.QuadPart)
+            {
+                KeReleaseSpinLockFromDpcLevel(&Endpoint->EndpointSpinLock);
+                KeReleaseSpinLock(&FdoExtension->FlushPendingTransferSpinLock,
+                                  OldIrql);
+
+                USBPORT_ScheduleEndpointSoftRetry(Endpoint);
+
+                IsEnd = TRUE;
+                goto Next;
+            }
+
+            Transfer->Flags &= ~TRANSFER_FLAG_SOFT_RETRY;
+            Transfer->SoftRetryDelayMs = 0;
+            Transfer->SoftRetryReadyTime.QuadPart = 0;
+            RescheduleSoftRetry = TRUE;
+        }
+
         if (Transfer->Irp)
         {
             DPRINT_CORE("USBPORT_FlushPendingTransfers: Transfer->Irp->CancelRoutine - %p\n",
@@ -905,6 +1331,7 @@ USBPORT_FlushPendingTransfers(IN PUSBPORT_ENDPOINT Endpoint)
         RemoveEntryList(&Transfer->TransferLink);
         Transfer->TransferLink.Flink = NULL;
         Transfer->TransferLink.Blink = NULL;
+
 
         if (Irp)
         {
@@ -947,6 +1374,12 @@ USBPORT_FlushPendingTransfers(IN PUSBPORT_ENDPOINT Endpoint)
         }
 
 Worker:
+        if (RescheduleSoftRetry)
+        {
+            USBPORT_ScheduleEndpointSoftRetry(Endpoint);
+            RescheduleSoftRetry = FALSE;
+        }
+
         KeRaiseIrql(DISPATCH_LEVEL, &OldIrql);
         Result = USBPORT_EndpointWorker(Endpoint, FALSE);
         KeLowerIrql(OldIrql);
@@ -957,6 +1390,12 @@ Worker:
                                               INVALIDATE_ENDPOINT_WORKER_THREAD);
 
 Next:
+        if (RescheduleSoftRetry)
+        {
+            USBPORT_ScheduleEndpointSoftRetry(Endpoint);
+            RescheduleSoftRetry = FALSE;
+        }
+
         if (IsEnd)
         {
             InterlockedDecrement(&Endpoint->FlushPendingLock);
@@ -981,6 +1420,8 @@ USBPORT_QueuePendingUrbToEndpoint(IN PUSBPORT_ENDPOINT Endpoint,
     //FIXME USBPORT_ResetEndpointIdle();
     InsertTailList(&Endpoint->PendingTransferList, &Transfer->TransferLink);
     Urb->UrbHeader.Status = USBD_STATUS_PENDING;
+
+    USBPORT_TraceEndpointQueue(Endpoint, "queue-pending", FALSE);
 }
 
 BOOLEAN
@@ -1025,6 +1466,8 @@ USBPORT_QueueActiveUrbToEndpoint(IN PUSBPORT_ENDPOINT Endpoint,
         KeReleaseSpinLock(&Endpoint->EndpointSpinLock,
                           Endpoint->EndpointOldIrql);
 
+        USBPORT_TraceEndpointQueue(Endpoint, "queue-active", FALSE);
+
         //DPRINT_CORE("USBPORT_QueueActiveUrbToEndpoint: return FALSE\n");
         return FALSE;
     }
@@ -1039,6 +1482,8 @@ USBPORT_QueueActiveUrbToEndpoint(IN PUSBPORT_ENDPOINT Endpoint,
     InterlockedIncrement(&DeviceHandle->DeviceHandleLock);
 
     KeReleaseSpinLock(&FdoExtension->MapTransferSpinLock, OldIrql);
+
+    USBPORT_TraceEndpointQueue(Endpoint, "queue-map", FALSE);
 
     //DPRINT_CORE("USBPORT_QueueActiveUrbToEndpoint: return TRUE\n");
     return TRUE;
@@ -1100,6 +1545,13 @@ USBPORT_QueueTransferUrb(IN PURB Urb)
 
     Endpoint = Transfer->Endpoint;
     Endpoint->Flags &= ~ENDPOINT_FLAG_QUEUENE_EMPTY;
+
+    Transfer->SoftRetryCount = 0;
+    Transfer->SoftRetryDelayMs = 0;
+    Transfer->SoftRetryReadyTime.QuadPart = 0;
+    Transfer->Flags &= ~TRANSFER_FLAG_SOFT_RETRY;
+
+    USBPORT_TraceUrbLifecycle(Urb, "submit", USBD_STATUS_PENDING);
 
     Parameters->TransferBufferLength = Urb->UrbControlTransfer.TransferBufferLength;
     Parameters->TransferFlags = Urb->UrbControlTransfer.TransferFlags;

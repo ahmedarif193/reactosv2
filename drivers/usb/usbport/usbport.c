@@ -841,12 +841,27 @@ USBPORT_QueueDoneTransfer(IN PUSBPORT_TRANSFER Transfer,
 {
     PDEVICE_OBJECT FdoDevice;
     PUSBPORT_DEVICE_EXTENSION  FdoExtension;
+    PUSBPORT_ENDPOINT Endpoint;
+    BOOLEAN EndpointLockOwned = FALSE;
 
     DPRINT_CORE("USBPORT_QueueDoneTransfer: Transfer - %p, USBDStatus - %p\n",
                 Transfer,
                 USBDStatus);
 
-    FdoDevice = Transfer->Endpoint->FdoDevice;
+    Endpoint = Transfer->Endpoint;
+
+    USBPORT_ClearSoftRetryState(Transfer);
+
+    if (Endpoint && KeGetCurrentIrql() >= DISPATCH_LEVEL)
+    {
+        if (!KeTestSpinLock(&Endpoint->EndpointSpinLock))
+            EndpointLockOwned = TRUE;
+    }
+
+    USBPORT_TraceEndpointQueue(Endpoint, "complete", EndpointLockOwned);
+    USBPORT_TraceUrbLifecycle(Transfer->Urb, "complete", USBDStatus);
+
+    FdoDevice = Endpoint->FdoDevice;
     FdoExtension = FdoDevice->DeviceExtension;
 
     RemoveEntryList(&Transfer->TransferLink);
@@ -2011,6 +2026,8 @@ USBPORT_MiniportCompleteTransfer(IN PVOID MiniPortExtension,
     Transfer->Flags |= TRANSFER_FLAG_COMPLETED;
     Transfer->CompletedTransferLen = TransferLength;
 
+    USBPORT_TraceUrbLifecycle(Transfer->Urb, "miniport-done", USBDStatus);
+
     if (((Transfer->Flags & TRANSFER_FLAG_SPLITED) == 0) ||
         TransferLength >= Transfer->TransferParameters.TransferBufferLength)
     {
@@ -2048,6 +2065,9 @@ USBPORT_MiniportCompleteTransfer(IN PVOID MiniPortExtension,
     KeReleaseSpinLock(&ParentTransfer->TransferSpinLock, OldIrql);
 
 Exit:
+    if (USBPORT_HandleSoftRetry(Transfer, USBDStatus))
+        return;
+
     USBPORT_QueueDoneTransfer(Transfer, USBDStatus);
 }
 
@@ -2620,6 +2640,9 @@ USBPORT_AllocateTransfer(IN PDEVICE_OBJECT FdoDevice,
     Transfer->IsoBlockPtr = NULL;
     Transfer->Period = 0;
     Transfer->ParentTransfer = Transfer;
+    Transfer->SoftRetryCount = 0;
+    Transfer->SoftRetryDelayMs = 0;
+    Transfer->SoftRetryReadyTime.QuadPart = 0;
 
     if (IsoBlockLen)
     {
