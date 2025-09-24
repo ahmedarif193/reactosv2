@@ -82,7 +82,6 @@ extern EFI_SYSTEM_TABLE *GlobalSystemTable;
 
 #define ARM64_DSB_ISH()   __asm__ volatile("dsb ish" ::: "memory")
 #define ARM64_DSB_ISHST() __asm__ volatile("dsb ishst" ::: "memory")
-#define ARM64_ISB()       __asm__ volatile("isb" ::: "memory")
 
 /* Global/all-ASID TLBI */
 #define TLBI_VMALLE1IS()  __asm__ volatile("tlbi vmalle1is" ::: "memory")
@@ -115,6 +114,25 @@ static inline void tlbi_vaae1is_by_va(ULONGLONG va)
 #define PTE_BLOCK_PXN           (1ULL << 53)
 #define PTE_BLOCK_UXN           (1ULL << 54)
 #define PTE_BLOCK_RO            (1ULL << 7)
+
+#define PTE_BLOCK_MEMTYPE_MASK  (7ULL << 2)
+
+static inline UINT64
+sanitize_block_attrs(UINT64 attrs)
+{
+    UINT64 sanitized = attrs;
+
+    if ((sanitized & PTE_BLOCK_MEMTYPE_MASK) == 0)
+        sanitized |= PTE_BLOCK_MEMTYPE(ARM64_MEM_ATTR_NORMAL_WB);
+
+    if ((sanitized & PTE_BLOCK_AF) == 0)
+        sanitized |= PTE_BLOCK_AF;
+
+    if ((sanitized & (3ULL << 8)) == 0)
+        sanitized |= PTE_BLOCK_INNER_SHARE;
+
+    return sanitized;
+}
 
 #ifndef ARM64_BLOCK_SIZE_2M
 #define ARM64_BLOCK_SIZE_2M            (1ULL << 21)
@@ -168,6 +186,7 @@ static inline void tlbi_vaae1is_by_va(ULONGLONG va)
 /* UEFI memory management integration */
 extern FREELDR_MEMORY_DESCRIPTOR* UefiMemGetMemoryMap(PULONG MaxMemoryMapSize);
 static BOOLEAN identity_mapping_enabled = FALSE;
+static BOOLEAN page_tables_initialized = FALSE;
 
 #define ARM64_KSEG0_L0_INDEX      (((ULONGLONG)ARM64_KSEG0_BASE >> 39) & 0x1FFULL)
 #define ARM64_KERNEL_L1_TABLES    4U
@@ -209,6 +228,7 @@ static UINT64 get_tcr(UINT64 *pips, UINT64 *pva_bits);
 static int get_effective_el(VOID);
 static BOOLEAN use_el12_registers(VOID);
 static VOID setup_pgtables(VOID);
+static VOID ensure_page_tables_initialized(VOID);
 static VOID set_ttbr_tcr_mair(int el, UINT64 table0, UINT64 table1, UINT64 tcr, UINT64 attr);
 static VOID debug_dump_static_mapping(UINT64 va);
 
@@ -399,7 +419,7 @@ static UINT64* ensure_l2_table(BOOLEAN is_kernel, UINT64 l0_slot, UINT64 *l1_tab
         if (DESC_IS_LEAF(entry))
         {
             UINT64 block_base = entry & ~ARM64_BLOCK_MASK_1G;
-            UINT64 block_attrs = entry & ~((UINT64)ARM64_BLOCK_MASK_1G | PTE_TYPE_MASK);
+            UINT64 block_attrs = sanitize_block_attrs(entry & ~((UINT64)ARM64_BLOCK_MASK_1G | PTE_TYPE_MASK));
             UINT64 *split_table;
 
             if (is_kernel)
@@ -476,7 +496,7 @@ static UINT64* ensure_l3_table(BOOLEAN is_kernel, UINT64 l0_slot, UINT64 *l2_tab
         if (DESC_IS_LEAF(entry))
         {
             UINT64 block_base = entry & ~ARM64_BLOCK_MASK_2M;
-            UINT64 block_attrs = entry & ~((UINT64)ARM64_BLOCK_MASK_2M | PTE_TYPE_MASK);
+            UINT64 block_attrs = sanitize_block_attrs(entry & ~((UINT64)ARM64_BLOCK_MASK_2M | PTE_TYPE_MASK));
             UINT64 *split_table;
 
             if (is_kernel)
@@ -756,6 +776,15 @@ static VOID setup_pgtables(VOID)
     TRACE("ARM64:  setup_pgtables END\n");
 }
 
+static VOID ensure_page_tables_initialized(VOID)
+{
+    if (page_tables_initialized)
+        return;
+
+    setup_pgtables();
+    page_tables_initialized = TRUE;
+}
+
 /* ---------- Public MMU control ---------- */
 
 VOID Arm64InitializeMMU(VOID)
@@ -767,7 +796,7 @@ VOID Arm64InitializeMMU(VOID)
 
     TRACE("ARM64: Initializing MMU (EL%d)\n", el);
 
-    setup_pgtables();
+    ensure_page_tables_initialized();
 
     tcr = get_tcr(&ips, &va_bits);
     if (!tcr) {
@@ -815,9 +844,7 @@ VOID Arm64SetupKernelHandoffMMU(VOID)
 
     TRACE("ARM64: Setting up kernel handoff MMU (EL%d)\n", el);
 
-    if (!mmu_enabled) {
-        setup_pgtables();
-    }
+    ensure_page_tables_initialized();
 
     tcr = get_tcr(&ips, &va_bits);
     if (!tcr) {
@@ -1282,6 +1309,9 @@ VOID Arm64SetupKernelHandoffMMU(VOID)
         ARM64_ISB();
     }
 
+    mmu_enabled = TRUE;
+    identity_mapping_enabled = TRUE;
+
     TRACE("ARM64: Kernel handoff MMU configuration complete\n");
 }
 
@@ -1295,6 +1325,8 @@ BOOLEAN Arm64MapVirtualMemory(ULONGLONG VirtualAddress,
     UINT64 attrs;
     BOOLEAN executable = (Attributes & ARM64_MAP_ATTR_EXECUTE) != 0;
     ULONG mem_type = Attributes & ARM64_MAP_ATTR_TYPE_MASK;
+
+    ensure_page_tables_initialized();
 
     /* Too verbose - disable for now
     if (VirtualAddress >= ARM64_KSEG0_BASE) {
@@ -1331,6 +1363,8 @@ BOOLEAN Arm64UnmapVirtualMemory(ULONGLONG VirtualAddress, ULONGLONG Size)
     UINT64 end = VirtualAddress + Size;
 
     TRACE("ARM64: Unmap VA=0x%016llx, Size=0x%016llx\n", VirtualAddress, Size);
+
+    ensure_page_tables_initialized();
 
     if (((va | Size) & (PAGE_SIZE - 1)) != 0)
     {

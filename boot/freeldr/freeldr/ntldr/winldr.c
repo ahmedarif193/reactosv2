@@ -1648,6 +1648,16 @@ LoadAndBootWindowsCommon(
 
     }
 
+    {
+        ULONGLONG loader_block_va64 = (ULONGLONG)(ULONG_PTR)LoaderBlockVA;
+        ULONGLONG kernel_stack_va64 = LoaderBlock->KernelStack;
+
+        UartPuts("ARM64: Mapping sanity check before kernel jump\n");
+        Arm64DebugDumpMapping(loader_block_va64);
+        Arm64DebugDumpMapping(kernel_stack_va64);
+        Arm64DebugDumpMapping((ULONGLONG)(ULONG_PTR)KiSystemStartup);
+    }
+
     /* Skip the test read - it might be causing issues */
 #if 0
     /* Test that we can read from the kernel entry point */

@@ -428,5 +428,29 @@ Arm64AllocateKernelDataStructures(VOID)
     TRACE("ARM64: Prcb at %p, Process at %p, Thread at %p\n",
           KernelDataBlock->Prcb, KernelDataBlock->InitialProcess, KernelDataBlock->InitialThread);
 
+    /* Mirror the kernel data block into KSEG0 so the kernel stack & PCR are accessible */
+    {
+        ULONGLONG block_pa = (ULONGLONG)(ULONG_PTR)KernelDataBlock;
+        ULONGLONG block_va = block_pa;
+        ULONGLONG map_size = (ULONGLONG)((sizeof(ARM64_KERNEL_DATA) + MM_PAGE_SIZE - 1) & ~(MM_PAGE_SIZE - 1));
+        ULONG map_attrs = ARM64_MAP_ATTR_NORMAL | ARM64_MAP_ATTR_UXN | ARM64_MAP_ATTR_PXN;
+
+        if (block_pa < ARM64_KSEG0_BASE)
+            block_va = ARM64_KSEG0_BASE + block_pa;
+
+        if (!Arm64MapVirtualMemory(block_va, block_pa, map_size, map_attrs))
+        {
+            ERR("ARM64: Failed to map kernel data block (PA=0x%llx VA=0x%llx size=0x%llx)\n",
+                (unsigned long long)block_pa,
+                (unsigned long long)block_va,
+                (unsigned long long)map_size);
+            return FALSE;
+        }
+
+        TRACE("ARM64: Kernel data block mapped VA=0x%llx size=0x%llx\n",
+              (unsigned long long)block_va,
+              (unsigned long long)map_size);
+    }
+
     return TRUE;
 }
