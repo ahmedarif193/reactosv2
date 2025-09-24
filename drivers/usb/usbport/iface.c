@@ -558,8 +558,44 @@ USB_BUSIFFN
 USBHI_GetDeviceBusContext(IN PVOID BusContext,
                           IN PVOID DeviceHandle)
 {
-    DPRINT1("USBHI_GetDeviceBusContext: UNIMPLEMENTED. FIXME.\n");
-    return NULL;
+    PDEVICE_OBJECT PdoDevice;
+    PUSBPORT_RHDEVICE_EXTENSION PdoExtension;
+    PDEVICE_OBJECT FdoDevice;
+    PUSBPORT_DEVICE_EXTENSION FdoExtension;
+    PUSBPORT_DEVICE_HANDLE PortDeviceHandle;
+    BOOLEAN Valid;
+
+    PdoDevice = BusContext;
+    PdoExtension = PdoDevice->DeviceExtension;
+    FdoDevice = PdoExtension->FdoDevice;
+    FdoExtension = FdoDevice->DeviceExtension;
+    PortDeviceHandle = (PUSBPORT_DEVICE_HANDLE)DeviceHandle;
+
+    if (!PortDeviceHandle)
+        return NULL;
+
+    KeWaitForSingleObject(&FdoExtension->DeviceSemaphore,
+                          Executive,
+                          KernelMode,
+                          FALSE,
+                          NULL);
+
+    Valid = USBPORT_ValidateDeviceHandle(FdoDevice, PortDeviceHandle) &&
+            !(PortDeviceHandle->Flags & DEVICE_HANDLE_FLAG_REMOVED);
+
+    KeReleaseSemaphore(&FdoExtension->DeviceSemaphore,
+                       LOW_REALTIME_PRIORITY,
+                       1,
+                       FALSE);
+
+    if (!Valid)
+    {
+        DPRINT1("USBHI_GetDeviceBusContext: invalid device handle %p\n",
+                PortDeviceHandle);
+        return NULL;
+    }
+
+    return PortDeviceHandle;
 }
 
 NTSTATUS
@@ -617,13 +653,46 @@ USBHI_FlushTransfers(IN PVOID BusContext,
 {
     PDEVICE_OBJECT PdoDevice;
     PUSBPORT_RHDEVICE_EXTENSION PdoExtension;
+    PDEVICE_OBJECT FdoDevice;
+    PUSBPORT_DEVICE_EXTENSION FdoExtension;
+    PUSBPORT_DEVICE_HANDLE DeviceHandle;
+    BOOLEAN Handled;
 
     DPRINT("USBHI_FlushTransfers: ...\n");
 
     PdoDevice = BusContext;
     PdoExtension = PdoDevice->DeviceExtension;
+    FdoDevice = PdoExtension->FdoDevice;
+    FdoExtension = FdoDevice->DeviceExtension;
 
-    USBPORT_BadRequestFlush(PdoExtension->FdoDevice);
+    DeviceHandle = (PUSBPORT_DEVICE_HANDLE)UsbdDeviceHandle;
+    Handled = FALSE;
+
+    if (DeviceHandle)
+    {
+        KeWaitForSingleObject(&FdoExtension->DeviceSemaphore,
+                              Executive,
+                              KernelMode,
+                              FALSE,
+                              NULL);
+
+        if (USBPORT_ValidateDeviceHandle(FdoDevice, DeviceHandle) &&
+            !(DeviceHandle->Flags & DEVICE_HANDLE_FLAG_REMOVED))
+        {
+            USBPORT_AbortTransfers(FdoDevice, DeviceHandle);
+            Handled = TRUE;
+        }
+
+        KeReleaseSemaphore(&FdoExtension->DeviceSemaphore,
+                           LOW_REALTIME_PRIORITY,
+                           1,
+                           FALSE);
+    }
+
+    if (!Handled)
+    {
+        USBPORT_BadRequestFlush(FdoDevice);
+    }
 }
 
 VOID
@@ -632,7 +701,38 @@ USBHI_SetDeviceHandleData(IN PVOID BusContext,
                           IN PVOID DeviceHandle,
                           IN PDEVICE_OBJECT UsbDevicePdo)
 {
-    DPRINT1("USBHI_SetDeviceHandleData: UNIMPLEMENTED. FIXME.\n");
+    PDEVICE_OBJECT PdoDevice;
+    PUSBPORT_RHDEVICE_EXTENSION PdoExtension;
+    PDEVICE_OBJECT FdoDevice;
+    PUSBPORT_DEVICE_EXTENSION FdoExtension;
+    PUSBPORT_DEVICE_HANDLE PortDeviceHandle;
+
+    PdoDevice = BusContext;
+    PdoExtension = PdoDevice->DeviceExtension;
+    FdoDevice = PdoExtension->FdoDevice;
+    FdoExtension = FdoDevice->DeviceExtension;
+
+    PortDeviceHandle = (PUSBPORT_DEVICE_HANDLE)DeviceHandle;
+
+    if (!PortDeviceHandle)
+        return;
+
+    KeWaitForSingleObject(&FdoExtension->DeviceSemaphore,
+                          Executive,
+                          KernelMode,
+                          FALSE,
+                          NULL);
+
+    if (USBPORT_ValidateDeviceHandle(FdoDevice, PortDeviceHandle) &&
+        !(PortDeviceHandle->Flags & DEVICE_HANDLE_FLAG_REMOVED))
+    {
+        PortDeviceHandle->PdoDevice = UsbDevicePdo;
+    }
+
+    KeReleaseSemaphore(&FdoExtension->DeviceSemaphore,
+                       LOW_REALTIME_PRIORITY,
+                       1,
+                       FALSE);
 }
 
 /* USB bus driver Interface functions */

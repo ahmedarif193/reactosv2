@@ -769,13 +769,16 @@ USBPORT_AddDeviceHandle(IN PDEVICE_OBJECT FdoDevice,
                         IN PUSBPORT_DEVICE_HANDLE DeviceHandle)
 {
     PUSBPORT_DEVICE_EXTENSION FdoExtension;
+    KIRQL OldIrql;
 
     DPRINT("USBPORT_AddDeviceHandle: ... \n");
 
     FdoExtension = FdoDevice->DeviceExtension;
 
+    KeAcquireSpinLock(&FdoExtension->DeviceHandleSpinLock, &OldIrql);
     InsertTailList(&FdoExtension->DeviceHandleList,
                    &DeviceHandle->DeviceHandleLink);
+    KeReleaseSpinLock(&FdoExtension->DeviceHandleSpinLock, OldIrql);
 }
 
 VOID
@@ -1588,6 +1591,8 @@ USBPORT_RemoveDevice(IN PDEVICE_OBJECT FdoDevice,
     PUSB2_TT_EXTENSION TtExtension;
     ULONG ix;
     KIRQL OldIrql;
+    BOOLEAN InList;
+    BOOLEAN AlreadyRemoved;
 
     DPRINT("USBPORT_RemoveDevice: DeviceHandle - %p, Flags - %x\n",
            DeviceHandle,
@@ -1607,20 +1612,40 @@ USBPORT_RemoveDevice(IN PDEVICE_OBJECT FdoDevice,
                           FALSE,
                           NULL);
 
-    if (!USBPORT_ValidateDeviceHandle(FdoDevice, DeviceHandle))
+    InList = USBPORT_ValidateDeviceHandle(FdoDevice, DeviceHandle);
+    AlreadyRemoved = (DeviceHandle->Flags & DEVICE_HANDLE_FLAG_REMOVED) != 0;
+
+    if (!InList)
+    {
+        if (AlreadyRemoved)
+        {
+            KeReleaseSemaphore(&FdoExtension->DeviceSemaphore,
+                               LOW_REALTIME_PRIORITY,
+                               1,
+                               FALSE);
+
+            return STATUS_SUCCESS;
+        }
+
+        DPRINT1("USBPORT_RemoveDevice: stale device handle %p\n", DeviceHandle);
+    }
+    else
+    {
+        USBPORT_RemoveDeviceHandle(FdoDevice, DeviceHandle);
+    }
+
+    if (AlreadyRemoved)
     {
         KeReleaseSemaphore(&FdoExtension->DeviceSemaphore,
                            LOW_REALTIME_PRIORITY,
                            1,
                            FALSE);
 
-        DPRINT1("USBPORT_RemoveDevice: Not valid device handle\n");
-        return STATUS_DEVICE_NOT_CONNECTED;
+        return STATUS_SUCCESS;
     }
 
-    USBPORT_RemoveDeviceHandle(FdoDevice, DeviceHandle);
-
     DeviceHandle->Flags |= DEVICE_HANDLE_FLAG_REMOVED;
+    DeviceHandle->PdoDevice = NULL;
 
     USBPORT_AbortTransfers(FdoDevice, DeviceHandle);
 

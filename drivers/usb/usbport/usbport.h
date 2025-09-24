@@ -193,6 +193,7 @@ typedef struct _USBPORT_DEVICE_HANDLE {
   LIST_ENTRY PipeHandleList;
   PUSBPORT_CONFIGURATION_HANDLE ConfigHandle;
   struct _USBPORT_DEVICE_HANDLE *HubDeviceHandle;
+  PDEVICE_OBJECT PdoDevice;
   USB_DEVICE_DESCRIPTOR DeviceDescriptor;
   LIST_ENTRY DeviceHandleLink;
   LONG DeviceHandleLock;
@@ -832,6 +833,18 @@ USBPORT_RemoveDeviceHandle(
 BOOLEAN
 NTAPI
 USBPORT_ValidateDeviceHandle(
+  IN PDEVICE_OBJECT FdoDevice,
+  IN PUSBPORT_DEVICE_HANDLE DeviceHandle);
+
+BOOLEAN
+NTAPI
+USBPORT_DeviceHasTransfers(
+  IN PDEVICE_OBJECT FdoDevice,
+  IN PUSBPORT_DEVICE_HANDLE DeviceHandle);
+
+VOID
+NTAPI
+USBPORT_AbortTransfers(
   IN PDEVICE_OBJECT FdoDevice,
   IN PUSBPORT_DEVICE_HANDLE DeviceHandle);
 
