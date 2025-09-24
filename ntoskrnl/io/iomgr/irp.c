@@ -1707,7 +1707,7 @@ IoFreeIrp(IN PIRP Irp)
             "%s - Freeing IRPs %p\n",
             __FUNCTION__,
             Irp);
-
+    
     /* Make sure the Thread IRP list is empty and that it OK to free it */
     ASSERT(Irp->Type == IO_TYPE_IRP);
     ASSERT(IsListEmpty(&Irp->ThreadListEntry));

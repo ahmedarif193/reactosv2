@@ -9,6 +9,73 @@
 #include <arch/arm64/arm64.h>
 #include <debug.h>
 
+#if defined(UEFIBOOT)
+#include <uefildr.h>
+VOID
+UefiArm64PrintBacktrace(
+    ULONG_PTR FramePointer,
+    ULONG_PTR StackTop,
+    ULONG_PTR StackBottom);
+#endif
+
+#define PL011_BASE   0x09000000U
+#define PL011_FR     (*(volatile ULONG *)(PL011_BASE + 0x18))
+#define PL011_DR     (*(volatile ULONG *)(PL011_BASE + 0x00))
+#define PL011_TXFF   (1u << 5)
+
+static VOID TrapUartPutc(char Ch)
+{
+    while (PL011_FR & PL011_TXFF)
+    {
+        __asm__ __volatile__("wfi");
+    }
+    PL011_DR = (unsigned char)Ch;
+}
+
+static VOID TrapUartPuts(const char *String)
+{
+    while (*String)
+    {
+        if (*String == '\n')
+            TrapUartPutc('\r');
+        TrapUartPutc(*String++);
+    }
+}
+
+static VOID TrapUartPutHex(ULONGLONG Value, ULONG Nibbles)
+{
+    static const char HexDigits[] = "0123456789ABCDEF";
+
+    for (LONG Index = (LONG)Nibbles - 1; Index >= 0; --Index)
+    {
+        ULONG Shift = (ULONG)Index * 4;
+        TrapUartPutc(HexDigits[(Value >> Shift) & 0xFULL]);
+    }
+}
+
+static VOID TrapUartPutDec(ULONG Value)
+{
+    char Buffer[10];
+    ULONG Pos = 0;
+
+    if (Value == 0)
+    {
+        TrapUartPutc('0');
+        return;
+    }
+
+    while (Value && Pos < RTL_NUMBER_OF(Buffer))
+    {
+        Buffer[Pos++] = (char)('0' + (Value % 10));
+        Value /= 10;
+    }
+
+    while (Pos)
+    {
+        TrapUartPutc(Buffer[--Pos]);
+    }
+}
+
 DBG_DEFAULT_CHANNEL(WARNING);
 
 /* Exception syndrome register bits */
@@ -89,13 +156,96 @@ static const char* Arm64FaultStatusNames[] = {
     "Permission fault (level 0)", "Permission fault (level 1)", "Permission fault (level 2)", "Permission fault (level 3)"
 };
 
+static VOID TrapDescribeAbort(ULONG ExceptionClass, ULONG ISS, ULONGLONG FaultAddr)
+{
+    ULONG FaultStatus = ISS & ESR_ELx_DFSC_MASK;
+    BOOLEAN Stage1Walk = (ISS & ESR_ELx_S1PTW) != 0;
+    const char *FaultName = (FaultStatus < ARRAYSIZE(Arm64FaultStatusNames)) ?
+                            Arm64FaultStatusNames[FaultStatus] : "Unknown fault";
+    BOOLEAN IsInstrAbort = (ExceptionClass == ESR_ELx_EC_IABT_CUR || ExceptionClass == ESR_ELx_EC_IABT_LOW);
+    BOOLEAN IsWrite = (ISS & ESR_ELx_WNR) != 0;
+
+    ERR("Detail: %s abort at 0x%016llx (%s)%s [DFSC=0x%02lx]\n",
+        IsInstrAbort ? "Instruction" : (IsWrite ? "Data (write)" : "Data (read)"),
+        FaultAddr,
+        FaultName,
+        Stage1Walk ? " via table walk" : "",
+        FaultStatus);
+
+    TrapUartPuts("Detail: ");
+    TrapUartPuts(IsInstrAbort ? "Instruction" : (IsWrite ? "Data (write)" : "Data (read)"));
+    TrapUartPuts(" abort @0x");
+    TrapUartPutHex(FaultAddr, 16);
+    TrapUartPuts(" ");
+    TrapUartPuts(FaultName);
+    if (Stage1Walk)
+        TrapUartPuts(" walk");
+    TrapUartPuts(" DFSC=0x");
+    TrapUartPutHex(FaultStatus, 2);
+    TrapUartPuts("\n");
+}
+
+static VOID TrapDumpBacktrace(PARM64_CONTEXT Context)
+{
+#if defined(UEFIBOOT)
+    ULONG_PTR FramePointer = (ULONG_PTR)Context->X[29];
+    ULONG_PTR StackPointer = (ULONG_PTR)Context->SP;
+    ULONG_PTR StackBottom = StackPointer & ~0xFFFFULL;
+    ULONG_PTR StackTop    = StackBottom + 0x10000ULL;
+
+    if (FramePointer < StackBottom || FramePointer >= StackTop)
+        FramePointer = StackPointer;
+
+    TrapUartPuts("Backtrace (UART)\n");
+    {
+        ULONG_PTR fp_walk = FramePointer;
+        ULONG frames = 0;
+        const ULONG max_frames = 32;
+
+        while (frames < max_frames)
+        {
+            if ((fp_walk & 0xF) != 0)
+                break;
+            if (fp_walk < StackBottom || fp_walk + 16 > StackTop)
+                break;
+
+            ULONG_PTR *slot = (ULONG_PTR *)fp_walk;
+            ULONG_PTR next_fp = slot[0];
+            ULONG_PTR lr = slot[1];
+
+            if (lr == 0 || next_fp <= fp_walk)
+                break;
+
+            TrapUartPuts("    0x");
+            TrapUartPutHex(lr, 16);
+            TrapUartPuts("\n");
+
+            fp_walk = next_fp;
+            frames++;
+        }
+    }
+
+    UefiArm64PrintBacktrace(FramePointer, StackTop, StackBottom);
+#else
+    UNREFERENCED_PARAMETER(Context);
+#endif
+}
+
 VOID Arm64DumpContext(PARM64_CONTEXT Context)
 {
     ULONG i;
     
     ERR("ARM64 Exception Context:\n");
+    TrapUartPuts("ARM64 Exception Context\n");
     ERR("PC: 0x%016llx  SP: 0x%016llx  PSTATE: 0x%016llx\n", 
         Context->PC, Context->SP, Context->PSTATE);
+    TrapUartPuts("PC: 0x");
+    TrapUartPutHex(Context->PC, 16);
+    TrapUartPuts("  SP: 0x");
+    TrapUartPutHex(Context->SP, 16);
+    TrapUartPuts("  PSTATE: 0x");
+    TrapUartPutHex(Context->PSTATE, 16);
+    TrapUartPuts("\n");
     
     for (i = 0; i < 31; i += 2)
     {
@@ -103,10 +253,24 @@ VOID Arm64DumpContext(PARM64_CONTEXT Context)
         {
             ERR("X%02lu: 0x%016llx  X%02lu: 0x%016llx\n",
                 i, Context->X[i], i + 1, Context->X[i + 1]);
+            TrapUartPuts("X");
+            TrapUartPutDec(i);
+            TrapUartPuts(": 0x");
+            TrapUartPutHex(Context->X[i], 16);
+            TrapUartPuts("  X");
+            TrapUartPutDec(i + 1);
+            TrapUartPuts(": 0x");
+            TrapUartPutHex(Context->X[i + 1], 16);
+            TrapUartPuts("\n");
         }
         else
         {
             ERR("X%02lu: 0x%016llx\n", i, Context->X[i]);
+            TrapUartPuts("X");
+            TrapUartPutDec(i);
+            TrapUartPuts(": 0x");
+            TrapUartPutHex(Context->X[i], 16);
+            TrapUartPuts("\n");
         }
     }
 }
@@ -128,7 +292,21 @@ VOID Arm64HandleSynchronousException(PARM64_CONTEXT Context, ULONGLONG Esr, ULON
     }
     
     ERR("ARM64 Synchronous Exception: %s (EC=0x%02lx)\n", ExceptionName, ExceptionClass);
-    ERR("ESR: 0x%016llx  FAR: 0x%016llx  ELR: 0x%016llx\n", Esr, FaultAddr, PC);
+    ERR("ESR: 0x%016llx  FAR: 0x%016llx  ELR: 0x%016llx  ISS: 0x%08lx  IL=%u\n",
+        Esr, FaultAddr, PC, ISS, (Esr & ESR_ELx_IL) ? 1 : 0);
+    TrapUartPuts("ARM64 FreeLDR Trap: ");
+    TrapUartPuts(ExceptionName);
+    TrapUartPuts(" (EC=0x");
+    TrapUartPutHex(ExceptionClass, 2);
+    TrapUartPuts(")\nESR=0x");
+    TrapUartPutHex(Esr, 16);
+    TrapUartPuts(" FAR=0x");
+    TrapUartPutHex(FaultAddr, 16);
+    TrapUartPuts(" ELR=0x");
+    TrapUartPutHex(PC, 16);
+    TrapUartPuts(" ISS=0x");
+    TrapUartPutHex(ISS, 8);
+    TrapUartPuts("\n");
     
     switch (ExceptionClass)
     {
@@ -155,6 +333,7 @@ VOID Arm64HandleSynchronousException(PARM64_CONTEXT Context, ULONGLONG Esr, ULON
                 IsWrite ? "Write" : "Read", FaultAddr,
                 (FaultStatus < ARRAYSIZE(Arm64FaultStatusNames)) ? 
                 Arm64FaultStatusNames[FaultStatus] : "Unknown fault");
+            TrapDescribeAbort(ExceptionClass, ISS, FaultAddr);
             break;
         }
         
@@ -166,6 +345,7 @@ VOID Arm64HandleSynchronousException(PARM64_CONTEXT Context, ULONGLONG Esr, ULON
             ERR("Instruction Abort at 0x%016llx (%s)\n", FaultAddr,
                 (FaultStatus < ARRAYSIZE(Arm64FaultStatusNames)) ? 
                 Arm64FaultStatusNames[FaultStatus] : "Unknown fault");
+            TrapDescribeAbort(ExceptionClass, ISS, FaultAddr);
             break;
         }
         
@@ -194,6 +374,7 @@ VOID Arm64HandleSynchronousException(PARM64_CONTEXT Context, ULONGLONG Esr, ULON
     
     /* Dump register context */
     Arm64DumpContext(Context);
+    TrapDumpBacktrace(Context);
     
     /* For now, halt on any exception */
     ERR("ARM64: Halting due to unhandled exception\n");
@@ -263,30 +444,15 @@ VOID Arm64HandleSerror(PARM64_CONTEXT Context, ULONGLONG Esr)
 }
 
 /* Initialize ARM64 exception handling */
+extern VOID arm64_exception_vectors(VOID);
+
 VOID Arm64InitializeExceptions(VOID)
 {
-    TRACE("ARM64: Initializing exception handling\n");
+    TRACE("ARM64: Programming exception vectors\n");
 
-    /* Exception vectors are set up in entry.S */
-    /* Additional initialization can be done here */
+    UINT64 vector_base = (UINT64)(uintptr_t)&arm64_exception_vectors;
+    __asm__ volatile("msr vbar_el1, %0" :: "r"(vector_base) : "memory");
+    ARM64_ISB();
 
-    /* Skip system register access under UEFI to avoid traps */
-    /* These will be enabled after ExitBootServices */
-#if 0
-    /* Enable floating point if present */
-    ULONGLONG cpacr = ARM64_READ_SYSREG(cpacr_el1);
-    cpacr |= (3ULL << 20); /* FPEN bits - enable FP/SIMD at EL1 and EL0 */
-    ARM64_WRITE_SYSREG(cpacr_el1, cpacr);
-
-    /* Enable cycle counter if present */
-    ULONGLONG pmcr = ARM64_READ_SYSREG(pmcr_el0);
-    pmcr |= (1ULL << 0);   /* Enable all counters */
-    pmcr |= (1ULL << 1);   /* Reset all counters */
-    pmcr |= (1ULL << 2);   /* Clock divider */
-    ARM64_WRITE_SYSREG(pmcr_el0, pmcr);
-
-    /* Initialize interrupt controller (stub) */
-    Arm64GicInitialize();
-#endif
-    TRACE("ARM64: Exception handling initialized (deferred under UEFI)\n");
+    TRACE("ARM64: VBAR_EL1 set to 0x%llx\n", (unsigned long long)vector_base);
 }

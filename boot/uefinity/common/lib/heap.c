@@ -158,14 +158,33 @@ FrLdrHeapDestroy(
     Block = (PHEAP_BLOCK)ROUND_UP((ULONG_PTR)Heap + sizeof(HEAP), sizeof(HEAP_BLOCK));
     while (Block < (PHEAP_BLOCK)((ULONG_PTR)Heap + Heap->MaximumSize))
     {
-        /* Check if this block is still allocated */
         if (Block->Tag != 0)
         {
-            /* Verify size and redzones */
             ASSERT(*REDZONE_SIZE(Block) <= Block->Size * sizeof(HEAP_BLOCK));
             ASSERT(*REDZONE_LOW(Block) == REDZONE_MARK);
             ASSERT(*REDZONE_HI(Block) == REDZONE_MARK);
-            continue;
+        }
+
+        Block = Block + 1 + Block->Size;
+    }
+}
+
+VOID
+FrLdrHeapVerify(
+    PVOID HeapHandle)
+{
+    PHEAP Heap = HeapHandle;
+    PHEAP_BLOCK Block;
+
+    for (Block = &Heap->Blocks;
+         Block->Size != 0;
+         Block = Block + 1 + Block->Size)
+    {
+        if (Block->Tag != 0)
+        {
+            ASSERT(*REDZONE_SIZE(Block) <= Block->Size * sizeof(HEAP_BLOCK));
+            ASSERT(*REDZONE_LOW(Block) == REDZONE_MARK);
+            ASSERT(*REDZONE_HI(Block) == REDZONE_MARK);
         }
     }
 }

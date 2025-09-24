@@ -151,8 +151,6 @@ static VOID Arm64Beep(VOID)
 }
 #endif
 
-#if 0
-/* This function is actually used after ExitBootServices */
 static VOID Arm64PrepareForReactOS(VOID)
 {
     TRACE("ARM64: Preparing for ReactOS kernel handoff\n");
@@ -168,28 +166,22 @@ static VOID Arm64PrepareForReactOS(VOID)
     
     /* Use UEFI preparation which exits boot services */
     UefiPrepareForReactOS();
-    
-    /* Post-ExitBootServices: it is safer to touch timer/GIC here. */
+
+    /* Post-ExitBootServices: it is now safe to install our vectors/timer */
     TRACE("ARM64: Post-ExitBootServices initialization\n");
-    
+
+    /* Install FreeLDR synchronous trap handlers so we log detailed faults */
+    Arm64InitializeExceptions();
+
     /* Initialize generic timer for timekeeping/delays */
     Arm64InitializeTimer();
-    
-    /* GIC system register interface can still trap on some platforms.
-       Defer enabling it unless explicitly required. */
-    TRACE("ARM64: Skipping GIC enable (post-EBS) to avoid traps\n");
-    
-    /* ARM64 specific final preparation */
-    /* Keep MMU enabled with identity mapping for kernel handoff. The kernel
-       will install its own page tables early during startup. */
-    
+
     /* Final memory barriers */
     Arm64DataMemoryBarrier();
     Arm64InstructionBarrier();
-    
+
     TRACE("ARM64: Ready for kernel handoff\n");
 }
-#endif
 
 /* ARM64 memory management - using UEFI implementation */
 #if 0
@@ -639,7 +631,7 @@ VOID Arm64MachInit(const char *CmdLine)
         GlobalSystemTable->ConOut->OutputString(GlobalSystemTable->ConOut, L"ARM64: Setting system functions\r\n");
 
     MachVtbl.Beep = UefiPcBeep;
-    MachVtbl.PrepareForReactOS = UefiPrepareForReactOS;
+    MachVtbl.PrepareForReactOS = Arm64PrepareForReactOS;
     MachVtbl.GetMemoryMap = UefiMemGetMemoryMap;
     MachVtbl.GetExtendedBIOSData = UefiGetExtendedBIOSData;
     MachVtbl.GetFloppyCount = UefiGetFloppyCount;

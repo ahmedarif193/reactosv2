@@ -11,6 +11,51 @@
 
 DBG_DEFAULT_CHANNEL(WARNING);
 
+/* Simple UART output for critical debugging during MMU switches */
+#define PL011_BASE   0x09000000U
+#define PL011_FR     (*(volatile ULONG *)(PL011_BASE + 0x18))
+#define PL011_DR     (*(volatile ULONG *)(PL011_BASE + 0x00))
+#define PL011_TXFF   (1u << 5)
+
+static inline VOID UartPutc(char Ch)
+{
+    while (PL011_FR & PL011_TXFF)
+    {
+        __asm__ __volatile__("wfi");
+    }
+    PL011_DR = (unsigned char)Ch;
+}
+
+static inline VOID UartPuts(const char *String)
+{
+    while (*String)
+    {
+        if (*String == '\n')
+            UartPutc('\r');
+        UartPutc(*String++);
+    }
+}
+
+static inline VOID UartPutHex64(ULONGLONG Value)
+{
+    static const char HexDigits[] = "0123456789ABCDEF";
+    for (LONG Index = 15; Index >= 0; --Index)
+    {
+        ULONG Shift = (ULONG)Index * 4;
+        UartPutc(HexDigits[(Value >> Shift) & 0xFULL]);
+    }
+}
+
+static inline VOID UartPutHex32(ULONG Value)
+{
+    static const char HexDigits[] = "0123456789ABCDEF";
+    for (LONG Index = 7; Index >= 0; --Index)
+    {
+        ULONG Shift = (ULONG)Index * 4;
+        UartPutc(HexDigits[(Value >> Shift) & 0xFUL]);
+    }
+}
+
 /* ARRAYSIZE fallback if not defined */
 #ifndef ARRAYSIZE
 #define ARRAYSIZE(a) (sizeof(a) / sizeof((a)[0]))
@@ -22,6 +67,13 @@ DBG_DEFAULT_CHANNEL(WARNING);
 /* Presently identity too; use when turning PA from a PTE into a C pointer */
 #ifndef PA_TO_VA
 #define PA_TO_VA(x) ((UINT64)(x))
+#endif
+
+#ifndef ARM64_MAP_ATTR_UXN
+#define ARM64_MAP_ATTR_UXN 0
+#endif
+#ifndef ARM64_MAP_ATTR_PXN
+#define ARM64_MAP_ATTR_PXN 0
 #endif
 
 extern EFI_SYSTEM_TABLE *GlobalSystemTable;
@@ -200,6 +252,7 @@ static BOOLEAN use_el12_registers(VOID)
 static inline void pte_write(UINT64 *entry, UINT64 val)
 {
     *entry = val;
+    Arm64CleanDataCacheToPoC((ULONGLONG)(uintptr_t)entry);
     ARM64_DSB_ISHST(); /* Ensure PTE store is visible before we invalidate TLBs */
 }
 
@@ -339,43 +392,47 @@ static UINT64* ensure_l2_table(BOOLEAN is_kernel, UINT64 l0_slot, UINT64 *l1_tab
 {
     UINT64 entry = l1_table[l1_index];
 
-    if (DESC_IS_TABLE(entry))
-        return (UINT64 *)PA_TO_VA(entry & ~0xFFFULL);
+    if (DESC_VALID(entry)) {
+        if (DESC_IS_TABLE(entry))
+            return (UINT64 *)PA_TO_VA(entry & ~0xFFFULL);
 
-    if (DESC_IS_LEAF(entry))
-    {
-        UINT64 block_base = entry & ~ARM64_BLOCK_MASK_1G;
-        UINT64 block_attrs = entry & ~(UINT64)ARM64_BLOCK_MASK_1G;
-        block_attrs &= ~PTE_TYPE_MASK;
-
-        UINT64 *new_table;
-
-        if (is_kernel)
+        if (DESC_IS_LEAF(entry))
         {
-            if (l0_slot >= ARM64_KERNEL_L1_TABLES) return NULL;
-            if (arm64_l2_next_index[l0_slot] >= ARM64_L2_TABLES_PER_L1) return NULL;
-            UINT64 index = arm64_l2_next_index[l0_slot]++;
-            new_table = arm64_kernel_l2_tables[l0_slot][index];
-            RtlZeroMemory(new_table, PAGE_SIZE);
-        }
-        else
-        {
-            if (l0_slot >= ARM64_USER_L1_TABLES) return NULL;
-            if (arm64_user_l2_next_index[l0_slot] >= ARM64_L2_TABLES_PER_L1) return NULL;
-            UINT64 index = arm64_user_l2_next_index[l0_slot]++;
-            new_table = arm64_user_l2_tables[l0_slot][index];
-            RtlZeroMemory(new_table, PAGE_SIZE);
+            UINT64 block_base = entry & ~ARM64_BLOCK_MASK_1G;
+            UINT64 block_attrs = entry & ~((UINT64)ARM64_BLOCK_MASK_1G | PTE_TYPE_MASK);
+            UINT64 *split_table;
+
+            if (is_kernel)
+            {
+                if (l0_slot >= ARM64_KERNEL_L1_TABLES) return NULL;
+                if (arm64_l2_next_index[l0_slot] >= ARM64_L2_TABLES_PER_L1) return NULL;
+                UINT64 index = arm64_l2_next_index[l0_slot]++;
+                split_table = arm64_kernel_l2_tables[l0_slot][index];
+            }
+            else
+            {
+                if (l0_slot >= ARM64_USER_L1_TABLES) return NULL;
+                if (arm64_user_l2_next_index[l0_slot] >= ARM64_L2_TABLES_PER_L1) return NULL;
+                UINT64 index = arm64_user_l2_next_index[l0_slot]++;
+                split_table = arm64_user_l2_tables[l0_slot][index];
+            }
+
+            RtlZeroMemory(split_table, PAGE_SIZE);
+            for (ULONG i = 0; i < 512; ++i)
+            {
+                UINT64 pa = block_base + ((UINT64)i << 21);
+                split_table[i] = pa | PTE_TYPE_VALID | PTE_TYPE_BLOCK | block_attrs;
+            }
+
+            pte_replace_break_before_make(&l1_table[l1_index],
+                                          VA_TO_PA(split_table) | PTE_TYPE_VALID | PTE_TYPE_TABLE);
+            return split_table;
         }
 
-        for (ULONG i = 0; i < 512; ++i)
-        {
-            UINT64 pa = block_base + ((UINT64)i << 21);
-            new_table[i] = pa | PTE_TYPE_VALID | PTE_TYPE_BLOCK | block_attrs;
-        }
-
-        pte_replace_break_before_make(&l1_table[l1_index],
-                                      VA_TO_PA(new_table) | PTE_TYPE_VALID | PTE_TYPE_TABLE);
-        entry = l1_table[l1_index];
+        TRACE("ARM64: ensure_l2_table unexpected descriptor L1[%llu]=0x%llx\n",
+              (unsigned long long)l1_index,
+              (unsigned long long)entry);
+        return NULL;
     }
 
     if (is_kernel) {
@@ -410,76 +467,64 @@ static UINT64 get_l2_slot_index(BOOLEAN is_kernel, UINT64 l0_slot, UINT64 *l2_ta
 static UINT64* ensure_l3_table(BOOLEAN is_kernel, UINT64 l0_slot, UINT64 *l2_table, UINT64 l2_index)
 {
     UINT64 entry = l2_table[l2_index];
+    UINT64 l2_slot = get_l2_slot_index(is_kernel, l0_slot, l2_table);
 
-    if (DESC_IS_TABLE(entry))
-        return (UINT64 *)PA_TO_VA(entry & ~0xFFFULL);
+    if (DESC_VALID(entry)) {
+        if (DESC_IS_TABLE(entry))
+            return (UINT64 *)PA_TO_VA(entry & ~0xFFFULL);
 
-    if (DESC_IS_LEAF(entry))
-    {
-        UINT64 block_base = entry & ~ARM64_BLOCK_MASK_2M;
-        UINT64 block_attrs = entry & ~(UINT64)ARM64_BLOCK_MASK_2M;
-        block_attrs &= ~PTE_TYPE_MASK;
-
-        UINT64 *new_table;
-
-        if (is_kernel)
+        if (DESC_IS_LEAF(entry))
         {
-            if (l0_slot >= ARM64_KERNEL_L1_TABLES) return NULL;
+            UINT64 block_base = entry & ~ARM64_BLOCK_MASK_2M;
+            UINT64 block_attrs = entry & ~((UINT64)ARM64_BLOCK_MASK_2M | PTE_TYPE_MASK);
+            UINT64 *split_table;
 
-            UINT64 l2_slot = get_l2_slot_index(TRUE, l0_slot, l2_table);
-            if (l2_slot >= ARM64_L2_TABLES_PER_L1) return NULL;
-            if (arm64_l3_next_index[l0_slot][l2_slot] >= ARM64_L3_TABLES_PER_L2) {
-                TRACE("ARM64: ensure_l3_table out of kernel L3 tables (l0=%llu l2=%llu)\n",
-                      (unsigned long long)l0_slot, (unsigned long long)l2_slot);
-                return NULL;
+            if (is_kernel)
+            {
+                if (l0_slot >= ARM64_KERNEL_L1_TABLES) return NULL;
+                if (l2_slot >= ARM64_L2_TABLES_PER_L1) return NULL;
+                if (arm64_l3_next_index[l0_slot][l2_slot] >= ARM64_L3_TABLES_PER_L2) {
+                    TRACE("ARM64: ensure_l3_table out of kernel L3 tables (l0=%llu l2=%llu)\n",
+                          (unsigned long long)l0_slot, (unsigned long long)l2_slot);
+                    return NULL;
+                }
+                UINT64 index = arm64_l3_next_index[l0_slot][l2_slot]++;
+                split_table = arm64_kernel_l3_tables[l0_slot][l2_slot][index];
+            }
+            else
+            {
+                if (l0_slot >= ARM64_USER_L1_TABLES) return NULL;
+                if (l2_slot >= ARM64_L2_TABLES_PER_L1) return NULL;
+                if (arm64_user_l3_next_index[l0_slot][l2_slot] >= ARM64_L3_TABLES_PER_L2) {
+                    TRACE("ARM64: ensure_l3_table out of user L3 tables (l0=%llu l2=%llu)\n",
+                          (unsigned long long)l0_slot, (unsigned long long)l2_slot);
+                    return NULL;
+                }
+                UINT64 index = arm64_user_l3_next_index[l0_slot][l2_slot]++;
+                split_table = arm64_user_l3_tables[l0_slot][l2_slot][index];
             }
 
-            UINT64 index = arm64_l3_next_index[l0_slot][l2_slot]++;
-            new_table = arm64_kernel_l3_tables[l0_slot][l2_slot][index];
-            RtlZeroMemory(new_table, PAGE_SIZE);
-
+            RtlZeroMemory(split_table, PAGE_SIZE);
             for (ULONG i = 0; i < 512; ++i)
             {
                 UINT64 pa = block_base + ((UINT64)i << 12);
-                new_table[i] = pa | PTE_TYPE_VALID | PTE_TYPE_PAGE | block_attrs;
+                split_table[i] = pa | PTE_TYPE_VALID | PTE_TYPE_PAGE | block_attrs;
             }
 
             pte_replace_break_before_make(&l2_table[l2_index],
-                                          VA_TO_PA(new_table) | PTE_TYPE_VALID | PTE_TYPE_TABLE);
-            entry = l2_table[l2_index];
+                                          VA_TO_PA(split_table) | PTE_TYPE_VALID | PTE_TYPE_TABLE);
+            return split_table;
         }
-        else
-        {
-            if (l0_slot >= ARM64_USER_L1_TABLES) return NULL;
 
-            UINT64 l2_slot = get_l2_slot_index(FALSE, l0_slot, l2_table);
-            if (l2_slot >= ARM64_L2_TABLES_PER_L1) return NULL;
-            if (arm64_user_l3_next_index[l0_slot][l2_slot] >= ARM64_L3_TABLES_PER_L2) {
-                TRACE("ARM64: ensure_l3_table out of user L3 tables (l0=%llu l2=%llu)\n",
-                      (unsigned long long)l0_slot, (unsigned long long)l2_slot);
-                return NULL;
-            }
-
-            UINT64 index = arm64_user_l3_next_index[l0_slot][l2_slot]++;
-            new_table = arm64_user_l3_tables[l0_slot][l2_slot][index];
-            RtlZeroMemory(new_table, PAGE_SIZE);
-
-            for (ULONG i = 0; i < 512; ++i)
-            {
-                UINT64 pa = block_base + ((UINT64)i << 12);
-                new_table[i] = pa | PTE_TYPE_VALID | PTE_TYPE_PAGE | block_attrs;
-            }
-
-            pte_replace_break_before_make(&l2_table[l2_index],
-                                          VA_TO_PA(new_table) | PTE_TYPE_VALID | PTE_TYPE_TABLE);
-            entry = l2_table[l2_index];
-        }
+        TRACE("ARM64: ensure_l3_table unexpected descriptor L2[%llu]=0x%llx\n",
+              (unsigned long long)l2_index,
+              (unsigned long long)entry);
+        return NULL;
     }
 
-    if (is_kernel) {
+    if (is_kernel)
+    {
         if (l0_slot >= ARM64_KERNEL_L1_TABLES) return NULL;
-
-        UINT64 l2_slot = get_l2_slot_index(TRUE, l0_slot, l2_table);
         if (l2_slot >= ARM64_L2_TABLES_PER_L1) return NULL;
         if (arm64_l3_next_index[l0_slot][l2_slot] >= ARM64_L3_TABLES_PER_L2) {
             TRACE("ARM64: ensure_l3_table out of kernel L3 tables (l0=%llu l2=%llu)\n",
@@ -495,22 +540,18 @@ static UINT64* ensure_l3_table(BOOLEAN is_kernel, UINT64 l0_slot, UINT64 *l2_tab
     }
 
     if (l0_slot >= ARM64_USER_L1_TABLES) return NULL;
-
-    {
-        UINT64 l2_slot = get_l2_slot_index(FALSE, l0_slot, l2_table);
-        if (l2_slot >= ARM64_L2_TABLES_PER_L1) return NULL;
-        if (arm64_user_l3_next_index[l0_slot][l2_slot] >= ARM64_L3_TABLES_PER_L2) {
-            TRACE("ARM64: ensure_l3_table out of user L3 tables (l0=%llu l2=%llu)\n",
-                  (unsigned long long)l0_slot, (unsigned long long)l2_slot);
-            return NULL;
-        }
-
-        UINT64 index = arm64_user_l3_next_index[l0_slot][l2_slot]++;
-        UINT64 *new_table = arm64_user_l3_tables[l0_slot][l2_slot][index];
-        RtlZeroMemory(new_table, PAGE_SIZE);
-        pte_write(&l2_table[l2_index], (VA_TO_PA(new_table) | PTE_TYPE_VALID | PTE_TYPE_TABLE));
-        return new_table;
+    if (l2_slot >= ARM64_L2_TABLES_PER_L1) return NULL;
+    if (arm64_user_l3_next_index[l0_slot][l2_slot] >= ARM64_L3_TABLES_PER_L2) {
+        TRACE("ARM64: ensure_l3_table out of user L3 tables (l0=%llu l2=%llu)\n",
+              (unsigned long long)l0_slot, (unsigned long long)l2_slot);
+        return NULL;
     }
+
+    UINT64 index = arm64_user_l3_next_index[l0_slot][l2_slot]++;
+    UINT64 *new_table = arm64_user_l3_tables[l0_slot][l2_slot][index];
+    RtlZeroMemory(new_table, PAGE_SIZE);
+    pte_write(&l2_table[l2_index], (VA_TO_PA(new_table) | PTE_TYPE_VALID | PTE_TYPE_TABLE));
+    return new_table;
 }
 
 /* ---------- Page-table construction ---------- */
@@ -654,6 +695,8 @@ static VOID setup_pgtables(VOID)
         if (l0_index < ARRAYSIZE(arm64_kernel_l0_table)) {
             pte_write(&arm64_kernel_l0_table[l0_index],
                       (VA_TO_PA(&arm64_kernel_l1_tables[i][0]) | PTE_TYPE_VALID | PTE_TYPE_TABLE));
+            TRACE("ARM64: Set L0[%lld] = L1 table %d at PA 0x%llx\n",
+                  l0_index, i, (unsigned long long)VA_TO_PA(&arm64_kernel_l1_tables[i][0]));
         }
     }
 
@@ -786,6 +829,94 @@ VOID Arm64SetupKernelHandoffMMU(VOID)
     UINT64 phys_ttbr1 = VA_TO_PA((UINT64)arm64_kernel_l0_table);
     BOOLEAN reprogram_ttbrs = TRUE;
 
+    /* CRITICAL: Map kernel and loader regions BEFORE switching TTBR1! */
+    {
+        TRACE("ARM64: Pre-mapping kernel/loader regions in new page tables\n");
+
+        /* Map the kernel and drivers region (256MB from 0x40000000-0x50000000) */
+        /* This covers where ReactOS kernel and drivers are loaded */
+        UINT64 kernel_region_pa = 0x40000000ULL;
+        UINT64 kernel_region_va = ARM64_KSEG0_BASE + kernel_region_pa;
+        UINT64 kernel_region_size = 0x10000000ULL; /* 256MB */
+
+        UartPuts("ARM64: Mapping kernel region PA 0x");
+        UartPutHex64(kernel_region_pa);
+        UartPuts(" -> VA 0x");
+        UartPutHex64(kernel_region_va);
+        UartPuts(" size 0x");
+        UartPutHex64(kernel_region_size);
+        UartPuts("\n");
+
+        /* Map with executable permissions */
+        UINT64 attrs = PTE_BLOCK_MEMTYPE(ARM64_MT_NORMAL) |
+                       PTE_BLOCK_INNER_SHARE |
+                       PTE_BLOCK_AF;
+        /* Note: PXN/UXN are NOT set, allowing execution */
+
+        if (!map_region_hierarchical(kernel_region_va, kernel_region_pa,
+                                    kernel_region_size, attrs))
+        {
+            ERR("ARM64: CRITICAL - Failed to map kernel region!\n");
+            UartPuts("ARM64: ERROR - Failed to map kernel region!\n");
+            return;
+        }
+
+        TRACE("ARM64: Kernel region mapped successfully\n");
+        UartPuts("ARM64: Kernel region mapped\n");
+
+        /* Also map the loader itself both identity and in kernel space */
+        UINT64 loader_region_pa = 0x13e000000ULL;
+        UINT64 loader_region_size = 0x02000000ULL; /* 32MB should cover loader + data */
+
+        /* First, identity map for current execution */
+        UartPuts("ARM64: Identity mapping loader region PA 0x");
+        UartPutHex64(loader_region_pa);
+        UartPuts("\n");
+
+        if (!map_region_hierarchical(loader_region_pa, loader_region_pa,
+                                    loader_region_size, attrs))
+        {
+            TRACE("ARM64: Warning - loader identity mapping failed (may be out of range)\n");
+        }
+
+        /* Also map loader into kernel space for transition */
+        UINT64 loader_kernel_va = ARM64_KSEG0_BASE + loader_region_pa;
+        UartPuts("ARM64: Mapping loader to kernel VA 0x");
+        UartPutHex64(loader_kernel_va);
+        UartPuts("\n");
+
+        if (!map_region_hierarchical(loader_kernel_va, loader_region_pa,
+                                    loader_region_size, attrs))
+        {
+            TRACE("ARM64: Warning - loader kernel mapping failed\n");
+        }
+        else
+        {
+            TRACE("ARM64: Loader mapped to kernel space\n");
+        }
+    }
+
+    /* Debug: Verify kernel mapping */
+    {
+        TRACE("ARM64: Verifying kernel mapping in new page tables\n");
+
+        UINT64 kernel_va = 0xFFFF800042160800ULL;
+        UINT64 l0_idx = (kernel_va >> 39) & 0x1FF;
+        UINT64 l0_entry = arm64_kernel_l0_table[l0_idx];
+        TRACE("ARM64: Kernel VA 0x%llx L0[%lld]=0x%llx (valid=%d)\n",
+              kernel_va, l0_idx, l0_entry, (l0_entry & PTE_TYPE_VALID) ? 1 : 0);
+
+        if (l0_entry & PTE_TYPE_VALID)
+        {
+            /* Check L1 */
+            UINT64 l1_idx = (kernel_va >> 30) & 0x1FF;
+            UINT64 *l1_table = (UINT64 *)PA_TO_VA(l0_entry & ~0xFFFULL);
+            UINT64 l1_entry = l1_table[l1_idx];
+            TRACE("ARM64: L1[%lld]=0x%llx (valid=%d)\n",
+                  l1_idx, l1_entry, (l1_entry & PTE_TYPE_VALID) ? 1 : 0);
+        }
+    }
+
     {
         UINT64 pc_va = (UINT64)(uintptr_t)&Arm64SetupKernelHandoffMMU;
         TRACE("ARM64: Debug lookup for current PC VA=0x%llx\n", (unsigned long long)pc_va);
@@ -810,30 +941,66 @@ VOID Arm64SetupKernelHandoffMMU(VOID)
         }
     }
 
+    /* Ensure the loader stack has a higher-half mapping before TTBR1 is used */
+    {
+        UINT64 sp_value;
+        __asm__ volatile("mov %0, sp" : "=r"(sp_value));
+        UINT64 sp_page = sp_value & ~(PAGE_SIZE - 1ULL);
+        UINT64 sp_kva = ARM64_KSEG0_BASE | sp_page;
+        UINT64 sp_phys = VA_TO_PA(sp_page);
+        ULONG stack_attrs = ARM64_MAP_ATTR_NORMAL | ARM64_MAP_ATTR_UXN | ARM64_MAP_ATTR_PXN;
+
+        TRACE("ARM64: Pre-mapping loader stack page SP=0x%llx -> KVA=0x%llx PA=0x%llx\n",
+              (unsigned long long)sp_value,
+              (unsigned long long)sp_kva,
+              (unsigned long long)sp_phys);
+
+        if (!Arm64MapVirtualMemory(sp_kva, sp_phys, PAGE_SIZE, stack_attrs))
+        {
+            TRACE("ARM64: WARNING: Failed to map stack page into TTBR1\n");
+        }
+        else
+        {
+            debug_dump_static_mapping(sp_kva | (sp_value & (PAGE_SIZE - 1ULL)));
+        }
+    }
+
     if (el == 1 || el12) {
-        /* Enable both TTBR0 & TTBR1 (EPD0/EPD1 cleared) */
-        tcr = (TCR_EL1_RSVD | (ips << 32)) |
-              TCR_T0SZ(va_bits) | TCR_SHARED_INNER | TCR_ORGN_WBWA | TCR_IRGN_WBWA | TCR_TG0_4K |
-              TCR_T1SZ(48)      | TCR_SHARED1_INNER | TCR_ORGN1_WBWA | TCR_IRGN1_WBWA | TCR_TG1_4K | TCR_A1;
+        /* Read current TCR to preserve its configuration */
+        UINT64 current_tcr;
+        if (el12)
+            __asm__ volatile("mrs %0, " TCR_EL12_SYSREG : "=r"(current_tcr));
+        else
+            __asm__ volatile("mrs %0, tcr_el1" : "=r"(current_tcr));
+
+        TRACE("ARM64: Current TCR = 0x%llx\n", current_tcr);
+
+        /* Use existing TCR but fix T1SZ to 16 for 48-bit kernel addresses */
+        tcr = current_tcr;
+        /* Clear EPD bits to enable both TTBR0 & TTBR1 */
         tcr &= ~(TCR_EPD0 | TCR_EPD1);
+        /* Clear and set T1SZ to 16 (48-bit addresses) */
+        tcr &= ~(0x3FULL << 16);  /* Clear T1SZ bits [21:16] */
+        tcr |= (16ULL << 16);     /* Set T1SZ = 16 */
+
+        TRACE("ARM64: Modified TCR (EPD cleared, T1SZ=16) = 0x%llx\n", tcr);
         UINT64 ttbr1_current;
+        BOOLEAN need_full_reprogram = reprogram_ttbrs;
         __asm__ volatile("mrs %0, ttbr1_el1" : "=r" (ttbr1_current));
 
         if (!reprogram_ttbrs || ttbr1_current == phys_ttbr1)
         {
             TRACE("ARM64: Skipping EL1 TTBR reprogramming (reuse existing configuration)\n");
+            need_full_reprogram = FALSE;
         }
-        else if ((ttbr1_current == 0) && !el12)
+
+        if (need_full_reprogram)
         {
-            TRACE("ARM64: TTBR1 currently zero, applying minimal update to 0x%llx\n",
-                  (unsigned long long)phys_ttbr1);
-            ARM64_DSB_ISH();
-            __asm__ volatile("msr ttbr1_el1, %0" :: "r" (phys_ttbr1) : "memory");
-            ARM64_ISB();
-            TRACE("ARM64: TTBR1 updated without full reconfiguration\n");
-        }
-        else if (reprogram_ttbrs)
-        {
+            if (ttbr1_current == 0 && !el12)
+            {
+                TRACE("ARM64: TTBR1 currently zero, performing full reprogram to 0x%llx\n",
+                      (unsigned long long)phys_ttbr1);
+            }
             UINT64 sctlr_saved;
 
             if (el12)
@@ -841,13 +1008,49 @@ VOID Arm64SetupKernelHandoffMMU(VOID)
             else
                 __asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr_saved));
 
-            UINT64 sctlr_tmp = sctlr_saved & ~(SCTLR_EL1_M | SCTLR_EL1_C | SCTLR_EL1_I);
+            /* Get current PC and ensure it's mapped before disabling MMU */
+            {
+                UINT64 current_pc;
+                __asm__ volatile("adr %0, ." : "=r"(current_pc));
+                UartPuts("ARM64: Pre-disable PC: 0x");
+                UartPutHex64(current_pc);
+                UartPuts("\n");
+
+                /* Map FreeLoader region into TTBR1 before switch */
+                UINT64 loader_base = current_pc & ~(UINT64)0xFFFFFULL; /* Align to 1MB */
+                UINT64 loader_kva = ARM64_KSEG0_BASE | loader_base;
+                UINT64 loader_size = 0x200000; /* Map 2MB for safety */
+
+                UartPuts("ARM64: Pre-mapping loader region PA=0x");
+                UartPutHex64(loader_base);
+                UartPuts(" -> KVA=0x");
+                UartPutHex64(loader_kva);
+                UartPuts(" size=0x");
+                UartPutHex64(loader_size);
+                UartPuts("\n");
+
+                if (!Arm64MapVirtualMemory(loader_kva, loader_base, loader_size,
+                                          ARM64_MAP_ATTR_NORMAL | ARM64_MAP_ATTR_EXECUTE))
+                {
+                    UartPuts("ARM64: ERROR: Failed to pre-map loader region - CRITICAL!\n");
+                }
+                else
+                {
+                    UartPuts("ARM64: Loader region pre-mapped successfully\n");
+                }
+            }
+
+            /* Try a different approach - keep MMU enabled, just update TTBRs */
+            UartPuts("ARM64: Updating TTBRs with MMU enabled\n");
+
+            /* Don't disable MMU - this avoids the risky transition */
+            /* UINT64 sctlr_tmp = sctlr_saved & ~(SCTLR_EL1_M | SCTLR_EL1_C | SCTLR_EL1_I);
             if (el12)
                 __asm__ volatile("msr " SCTLR_EL12_SYSREG ", %0" :: "r"(sctlr_tmp) : "memory");
             else
                 __asm__ volatile("msr sctlr_el1, %0" :: "r"(sctlr_tmp) : "memory");
             ARM64_ISB();
-            TRACE("ARM64: EL1 MMU temporarily disabled for TTBR switch\n");
+            TRACE("ARM64: EL1 MMU temporarily disabled for TTBR switch\n"); */
 
             ARM64_DSB_ISH();
             TLBI_VMALLE1IS();
@@ -855,18 +1058,108 @@ VOID Arm64SetupKernelHandoffMMU(VOID)
             ARM64_ISB();
             TRACE("ARM64: EL1 TLB invalidated before TTBR update\n");
 
+            /* CRITICAL: We can only update TTBR1, not TTBR0, while the MMU is enabled */
+            UartPuts("ARM64: Writing TTBR1=0x");
+            UartPutHex64(phys_ttbr1);
+            UartPuts("\n");
+
             if (el12) {
-                __asm__ volatile("msr " TTBR0_EL12_SYSREG ", %0" :: "r" (phys_ttbr0) : "memory");
+                /* Don't change TTBR0 - we're running from it! */
+                /* __asm__ volatile("msr " TTBR0_EL12_SYSREG ", %0" :: "r" (phys_ttbr0) : "memory"); */
                 __asm__ volatile("msr " TTBR1_EL12_SYSREG ", %0" :: "r" (phys_ttbr1) : "memory");
+                /* We can update TCR since we're using the same configuration */
                 __asm__ volatile("msr " TCR_EL12_SYSREG   ", %0" :: "r" (tcr) : "memory");
+                /* MAIR should be safe to update */
                 __asm__ volatile("msr " MAIR_EL12_SYSREG  ", %0" :: "r" (MEMORY_ATTRIBUTES) : "memory");
             } else {
-                __asm__ volatile("msr ttbr0_el1, %0" :: "r" (phys_ttbr0) : "memory");
+                /* Don't change TTBR0 - we're running from it! */
+                /* __asm__ volatile("msr ttbr0_el1, %0" :: "r" (phys_ttbr0) : "memory"); */
                 __asm__ volatile("msr ttbr1_el1, %0" :: "r" (phys_ttbr1) : "memory");
+                ARM64_ISB();
+
+                /* Verify TTBR1 was written */
+                UINT64 ttbr1_verify;
+                __asm__ volatile("mrs %0, ttbr1_el1" : "=r" (ttbr1_verify));
+                UartPuts("ARM64: TTBR1 written, readback=0x");
+                UartPutHex64(ttbr1_verify);
+                UartPuts("\n");
+
+                /* Debug: Walk the page table using physical addresses to verify kernel mapping */
+                {
+                    UartPuts("ARM64: Verifying kernel page table after TTBR1 update\n");
+                    UINT64 kernel_va = 0xFFFF800042160800ULL;
+                    UINT64 l0_idx = (kernel_va >> 39) & 0x1FF;
+
+                    /* Access L0 using physical address from TTBR1 */
+                    UINT64 *l0_table_phys = (UINT64 *)(uintptr_t)(ttbr1_verify & ~0xFFFULL);
+                    UINT64 *l0_table_va = (UINT64 *)PA_TO_VA((UINT64)(uintptr_t)l0_table_phys);
+
+                    UartPuts("  TTBR1 physical L0 @ 0x");
+                    UartPutHex64((UINT64)(uintptr_t)l0_table_phys);
+                    UartPuts(", VA @ 0x");
+                    UartPutHex64((UINT64)(uintptr_t)l0_table_va);
+                    UartPuts("\n");
+
+                    UINT64 l0_entry = l0_table_va[l0_idx];
+                    UartPuts("  L0[");
+                    UartPutHex32(l0_idx);
+                    UartPuts("] = 0x");
+                    UartPutHex64(l0_entry);
+
+                    if (l0_entry & 0x1) {
+                        UartPuts(" (valid table)\n");
+
+                        /* Check L1 */
+                        UINT64 l1_idx = (kernel_va >> 30) & 0x1FF;
+                        UINT64 *l1_table_phys = (UINT64 *)(uintptr_t)(l0_entry & 0xFFFFFFFFF000ULL);
+                        UINT64 *l1_table_va = (UINT64 *)PA_TO_VA((UINT64)(uintptr_t)l1_table_phys);
+
+                        UartPuts("  L1 physical @ 0x");
+                        UartPutHex64((UINT64)(uintptr_t)l1_table_phys);
+                        UartPuts(", VA @ 0x");
+                        UartPutHex64((UINT64)(uintptr_t)l1_table_va);
+                        UartPuts("\n");
+
+                        UINT64 l1_entry = l1_table_va[l1_idx];
+                        UartPuts("  L1[");
+                        UartPutHex32(l1_idx);
+                        UartPuts("] = 0x");
+                        UartPutHex64(l1_entry);
+
+                        if (l1_entry & 0x1) {
+                            UartPuts(" (valid)\n");
+                        } else {
+                            UartPuts(" (INVALID - this is the problem!)\n");
+                        }
+                    } else {
+                        UartPuts(" (INVALID - this is the problem!)\n");
+                    }
+                }
+
+                /* We can update TCR since we're using the same configuration */
+                UartPuts("ARM64: Writing TCR=0x");
+                UartPutHex64(tcr);
+                UartPuts("\n");
                 __asm__ volatile("msr tcr_el1, %0"   :: "r" (tcr) : "memory");
+                ARM64_ISB();
+
+                /* Verify TCR was written */
+                UINT64 tcr_verify;
+                __asm__ volatile("mrs %0, tcr_el1" : "=r" (tcr_verify));
+                UartPuts("ARM64: TCR written, readback=0x");
+                UartPutHex64(tcr_verify);
+
+                /* Decode T1SZ for debugging */
+                UINT64 t1sz = (tcr_verify >> 16) & 0x3F;
+                UartPuts(" (T1SZ=");
+                UartPutHex32((UINT32)t1sz);
+                UartPuts(")\n");
+
+                /* MAIR should be safe to update */
                 __asm__ volatile("msr mair_el1, %0"  :: "r" (MEMORY_ATTRIBUTES) : "memory");
+                UartPuts("ARM64: MAIR written\n");
             }
-            TRACE("ARM64: EL1 TTBR/TCR/MAIR written\n");
+            TRACE("ARM64: EL1 TTBR1/MAIR written (TCR kept unchanged)\n");
 
             ARM64_ISB();
             TLBI_VMALLE1IS();
@@ -874,18 +1167,36 @@ VOID Arm64SetupKernelHandoffMMU(VOID)
             ARM64_ISB();
             TRACE("ARM64: EL1 TLB invalidated after TTBR update\n");
 
-            if (el12)
-                __asm__ volatile("msr " SCTLR_EL12_SYSREG ", %0" :: "r"(sctlr_saved) : "memory");
-            else
-                __asm__ volatile("msr sctlr_el1, %0" :: "r"(sctlr_saved) : "memory");
-            ARM64_ISB();
+            /* Since we're keeping MMU enabled, no need to restore SCTLR */
+            UartPuts("ARM64: TTBRs updated with MMU still enabled\n");
+
+            /* Verify we can still execute by reading back SCTLR */
+            {
+                UINT64 sctlr_verify;
+                if (el12)
+                    __asm__ volatile("mrs %0, " SCTLR_EL12_SYSREG : "=r"(sctlr_verify));
+                else
+                    __asm__ volatile("mrs %0, sctlr_el1" : "=r"(sctlr_verify));
+
+                UartPuts("ARM64: SCTLR verified read back: 0x");
+                UartPutHex64(sctlr_verify);
+                UartPuts("\n");
+
+                /* Also verify PC is still accessible */
+                UINT64 test_pc;
+                __asm__ volatile("adr %0, ." : "=r"(test_pc));
+                UartPuts("ARM64: PC still accessible at: 0x");
+                UartPutHex64(test_pc);
+                UartPuts("\n");
+            }
+
             TRACE("ARM64: EL1 MMU restored\n");
             TRACE("ARM64: TTBRs programmed (EL1%s) TTBR0=0x%llx TTBR1=0x%llx\n",
                   el12 ? "+EL12" : "",
                   (unsigned long long)phys_ttbr0,
                   (unsigned long long)phys_ttbr1);
         }
-        
+
 
         /* Example: map a 1GiB kernel window (if desired) */
         {
@@ -915,6 +1226,7 @@ VOID Arm64SetupKernelHandoffMMU(VOID)
                 ARM64_ISB();
             }
         }
+        TRACE("ARM64: EL1 handoff tables primed\n");
     } else if (el == 2) {
         UINT64 sctlr;
         tcr = TCR_EL2_RSVD | (ips << 16) |
@@ -984,8 +1296,11 @@ BOOLEAN Arm64MapVirtualMemory(ULONGLONG VirtualAddress,
     BOOLEAN executable = (Attributes & ARM64_MAP_ATTR_EXECUTE) != 0;
     ULONG mem_type = Attributes & ARM64_MAP_ATTR_TYPE_MASK;
 
-    TRACE("ARM64: Map VA=0x%016llx -> PA=0x%016llx, Size=0x%016llx, Attr=0x%lx\n",
-          VirtualAddress, PhysicalAddress, Size, Attributes);
+    /* Too verbose - disable for now
+    if (VirtualAddress >= ARM64_KSEG0_BASE) {
+        TRACE("ARM64: Map VA=0x%016llx -> PA=0x%016llx, Size=0x%016llx, Attr=0x%lx\n",
+              VirtualAddress, PhysicalAddress, Size, Attributes);
+    } */
 
     if (((VirtualAddress | PhysicalAddress | Size) & (PAGE_SIZE - 1)) != 0)
     {
@@ -1256,13 +1571,31 @@ static VOID debug_dump_static_mapping(UINT64 va)
     UINT64 l3_idx = (va >> 12) & 0x1FF;
     UINT64 entry;
 
+    /* Enhanced UART debug for critical handoff debugging */
+    UartPuts("ARM64: Page walk for VA 0x");
+    UartPutHex64(va);
+    UartPuts(" (");
+    UartPuts(kernel ? "kernel" : "user");
+    UartPuts("):\n");
+
+    UartPuts("  L0 table @ 0x");
+    UartPutHex64((UINT64)(uintptr_t)l0_table);
+    UartPuts(", idx=");
+    UartPutHex32(l0_idx);
+
     entry = l0_table[l0_idx];
+    UartPuts(", entry=0x");
+    UartPutHex64(entry);
+    UartPuts("\n");
+
     if (!DESC_VALID(entry)) {
+        UartPuts("  L0 entry INVALID - translation fault!\n");
         TRACE("ARM64: debug map VA=0x%llx L0[%llx] invalid (kernel=%d)\n",
               (unsigned long long)va, (unsigned long long)l0_idx, kernel);
         return;
     }
     if (!DESC_IS_TABLE(entry)) {
+        UartPuts("  L0 entry is leaf (not table) - unexpected\n");
         TRACE("ARM64: debug map VA=0x%llx L0[%llx]=0x%llx leaf (kernel=%d)\n",
               (unsigned long long)va, (unsigned long long)l0_idx,
               (unsigned long long)entry, kernel);
@@ -1270,19 +1603,33 @@ static VOID debug_dump_static_mapping(UINT64 va)
     }
 
     UINT64 *l1_table = (UINT64 *)PA_TO_VA(entry & ~0xFFFULL);
+    UartPuts("  L1 table @ 0x");
+    UartPutHex64((UINT64)(uintptr_t)l1_table);
+    UartPuts(", idx=");
+    UartPutHex32(l1_idx);
+
     entry = l1_table[l1_idx];
+    UartPuts(", entry=0x");
+    UartPutHex64(entry);
+    UartPuts("\n");
+
     if (!DESC_VALID(entry)) {
+        UartPuts("  L1 entry INVALID - translation fault!\n");
         TRACE("ARM64: debug map VA=0x%llx L1[%llx] invalid\n",
               (unsigned long long)va, (unsigned long long)l1_idx);
         return;
     }
     if (DESC_IS_BLOCK(entry)) {
+        UartPuts("  L1 block mapping -> PA 0x");
+        UartPutHex64(entry & 0xFFFFFFFFF000ULL);
+        UartPuts("\n");
         TRACE("ARM64: debug map VA=0x%llx -> block L1[%llx]=0x%llx\n",
               (unsigned long long)va, (unsigned long long)l1_idx,
               (unsigned long long)entry);
         return;
     }
     if (!DESC_IS_TABLE(entry)) {
+        UartPuts("  L1 entry unexpected type\n");
         TRACE("ARM64: debug map VA=0x%llx L1[%llx]=0x%llx unexpected\n",
               (unsigned long long)va, (unsigned long long)l1_idx,
               (unsigned long long)entry);
@@ -1290,19 +1637,33 @@ static VOID debug_dump_static_mapping(UINT64 va)
     }
 
     UINT64 *l2_table = (UINT64 *)PA_TO_VA(entry & ~0xFFFULL);
+    UartPuts("  L2 table @ 0x");
+    UartPutHex64((UINT64)(uintptr_t)l2_table);
+    UartPuts(", idx=");
+    UartPutHex32(l2_idx);
+
     entry = l2_table[l2_idx];
+    UartPuts(", entry=0x");
+    UartPutHex64(entry);
+    UartPuts("\n");
+
     if (!DESC_VALID(entry)) {
+        UartPuts("  L2 entry INVALID - translation fault!\n");
         TRACE("ARM64: debug map VA=0x%llx L2[%llx] invalid\n",
               (unsigned long long)va, (unsigned long long)l2_idx);
         return;
     }
     if (DESC_IS_BLOCK(entry)) {
+        UartPuts("  L2 block mapping -> PA 0x");
+        UartPutHex64(entry & 0xFFFFFFFFF000ULL);
+        UartPuts("\n");
         TRACE("ARM64: debug map VA=0x%llx -> block L2[%llx]=0x%llx\n",
               (unsigned long long)va, (unsigned long long)l2_idx,
               (unsigned long long)entry);
         return;
     }
     if (!DESC_IS_TABLE(entry)) {
+        UartPuts("  L2 entry unexpected type\n");
         TRACE("ARM64: debug map VA=0x%llx L2[%llx]=0x%llx unexpected\n",
               (unsigned long long)va, (unsigned long long)l2_idx,
               (unsigned long long)entry);
@@ -1310,8 +1671,29 @@ static VOID debug_dump_static_mapping(UINT64 va)
     }
 
     UINT64 *l3_table = (UINT64 *)PA_TO_VA(entry & ~0xFFFULL);
+    UartPuts("  L3 table @ 0x");
+    UartPutHex64((UINT64)(uintptr_t)l3_table);
+    UartPuts(", idx=");
+    UartPutHex32(l3_idx);
+
     entry = l3_table[l3_idx];
+    UartPuts(", entry=0x");
+    UartPutHex64(entry);
+
+    if (DESC_VALID(entry)) {
+        UartPuts(" -> PA 0x");
+        UartPutHex64(entry & 0xFFFFFFFFF000ULL);
+    } else {
+        UartPuts(" INVALID");
+    }
+    UartPuts("\n");
+
     TRACE("ARM64: debug map VA=0x%llx L3[%llx]=0x%llx\n",
           (unsigned long long)va, (unsigned long long)l3_idx,
           (unsigned long long)entry);
+}
+
+VOID Arm64DebugDumpMapping(UINT64 VirtualAddress)
+{
+    debug_dump_static_mapping(VirtualAddress);
 }

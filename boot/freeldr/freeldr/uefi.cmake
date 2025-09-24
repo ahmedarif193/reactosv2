@@ -46,6 +46,7 @@ elseif(ARCH STREQUAL "arm64")
         arch/arm64/trap.c
         arch/arm64/mmu_v2.c
         arch/arm64/gic.c
+        arch/uefi/uefibacktrace.c
         arch/uefi/efiapp.c
         arch/uefi/uefiserial.c
         ntldr/conversion.c)

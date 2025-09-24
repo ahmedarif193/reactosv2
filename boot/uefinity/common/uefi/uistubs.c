@@ -78,6 +78,32 @@ UiDrawProgressBarCenter(
 }
 
 VOID
+UiDrawProgressBar(
+    _In_ ULONG Left,
+    _In_ ULONG Top,
+    _In_ ULONG Right,
+    _In_ ULONG Bottom,
+    _In_ PCSTR ProgressText)
+{
+    TRACE("UiDrawProgressBar(L=%lu,T=%lu,R=%lu,B=%lu,Text=\"%s\")\n",
+          Left, Top, Right, Bottom, ProgressText ? ProgressText : "(null)");
+}
+
+VOID
+UiSetProgressBarText(
+    _In_ PCSTR ProgressText)
+{
+    TRACE("UiSetProgressBarText(\"%s\")\n", ProgressText ? ProgressText : "(null)");
+}
+
+VOID
+UiTickProgressBar(
+    _In_ ULONG SubPercentTimes100)
+{
+    TRACE("UiTickProgressBar(%lu)\n", SubPercentTimes100);
+}
+
+VOID
 UiUpdateProgressBar(
     _In_ ULONG Percentage,
     _In_opt_ PCSTR ProgressText)
@@ -85,6 +111,19 @@ UiUpdateProgressBar(
     TRACE("UiUpdateProgressBar(Percentage=%lu, ProgressText=\"%s\")\n",
           Percentage, ProgressText ? ProgressText : "(null)");
     /* TODO: Update progress bar using UEFI console */
+}
+
+VOID
+UiDrawStatusText(
+    _In_ PCSTR StatusText)
+{
+    TRACE("UiDrawStatusText(\"%s\")\n", StatusText ? StatusText : "(null)");
+}
+
+VOID
+UiResetForSOS(VOID)
+{
+    TRACE("UiResetForSOS()\n");
 }
 
 /* Message Functions */

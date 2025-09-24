@@ -11,6 +11,64 @@
 #define NDEBUG
 #include <debug.h>
 
+#define PL011_BASE   0x09000000U
+#define PL011_FR     (*(volatile ULONG *)(PL011_BASE + 0x18))
+#define PL011_DR     (*(volatile ULONG *)(PL011_BASE + 0x00))
+#define PL011_TXFF   (1u << 5)
+
+static VOID KiTrapUartPutc(char Ch)
+{
+    while (PL011_FR & PL011_TXFF)
+    {
+        __asm__ __volatile__("wfi");
+    }
+    PL011_DR = (unsigned char)Ch;
+}
+
+static VOID KiTrapUartPuts(const char *String)
+{
+    while (*String)
+    {
+        if (*String == '\n')
+            KiTrapUartPutc('\r');
+        KiTrapUartPutc(*String++);
+    }
+}
+
+static VOID KiTrapUartPutHex(ULONGLONG Value, ULONG Nibbles)
+{
+    static const char HexDigits[] = "0123456789ABCDEF";
+
+    for (LONG Index = (LONG)Nibbles - 1; Index >= 0; --Index)
+    {
+        ULONG Shift = (ULONG)Index * 4;
+        KiTrapUartPutc(HexDigits[(Value >> Shift) & 0xFULL]);
+    }
+}
+
+static VOID KiTrapUartPutDec(ULONG Value)
+{
+    char Buffer[10];
+    ULONG Pos = 0;
+
+    if (Value == 0)
+    {
+        KiTrapUartPutc('0');
+        return;
+    }
+
+    while (Value && Pos < RTL_NUMBER_OF(Buffer))
+    {
+        Buffer[Pos++] = (char)('0' + (Value % 10));
+        Value /= 10;
+    }
+
+    while (Pos)
+    {
+        KiTrapUartPutc(Buffer[--Pos]);
+    }
+}
+
 /* TYPES *********************************************************************/
 
 /* ARM64 trap frame structure (must match assembly definitions) */
@@ -101,6 +159,201 @@ VOID NTAPI KiStackAlignmentFault(IN PARM64_TRAP_FRAME TrapFrame);
 #define ESR_ELx_S1PTW           (1ULL << 7)
 #define ESR_ELx_WnR             (1ULL << 6)
 #define ESR_ELx_DFSC_MASK       0x3F
+#define ESR_ELx_ISS_MASK        0x1FFFFFF
+
+static const char* Arm64FaultStatusNames[] = {
+    "Address size fault (level 0)", "Address size fault (level 1)", "Address size fault (level 2)", "Address size fault (level 3)",
+    "Translation fault (level 0)", "Translation fault (level 1)", "Translation fault (level 2)", "Translation fault (level 3)",
+    "Access flag fault (level 0)", "Access flag fault (level 1)", "Access flag fault (level 2)", "Access flag fault (level 3)",
+    "Permission fault (level 0)", "Permission fault (level 1)", "Permission fault (level 2)", "Permission fault (level 3)"
+};
+
+static VOID KiDescribeAbort(ULONG ExceptionClass, ULONG ISS, ULONGLONG FaultAddr)
+{
+    ULONG FaultStatus = ISS & ESR_ELx_DFSC_MASK;
+    BOOLEAN Stage1Walk = (ISS & ESR_ELx_S1PTW) != 0;
+    BOOLEAN IsInstrAbort = (ExceptionClass == ESR_ELx_EC_IABT_CUR || ExceptionClass == ESR_ELx_EC_IABT_LOW);
+    BOOLEAN IsWrite = (ISS & ESR_ELx_WnR) != 0;
+    const char *FaultName = (FaultStatus < ARRAYSIZE(Arm64FaultStatusNames)) ?
+                            Arm64FaultStatusNames[FaultStatus] : "Unknown fault";
+
+    DbgPrintEx(DPFLTR_DEFAULT_ID,
+               DPFLTR_ERROR_LEVEL,
+               "Detail: %s abort at 0x%016llX (%s)%s [DFSC=0x%02lX]\n",
+               IsInstrAbort ? "Instruction" : (IsWrite ? "Data (write)" : "Data (read)"),
+               FaultAddr,
+               FaultName,
+               Stage1Walk ? " via table walk" : "",
+               FaultStatus);
+
+    KiTrapUartPuts("Detail: ");
+    KiTrapUartPuts(IsInstrAbort ? "Instruction" : (IsWrite ? "Data (write)" : "Data (read)"));
+    KiTrapUartPuts(" abort @0x");
+    KiTrapUartPutHex(FaultAddr, 16);
+    KiTrapUartPuts(" ");
+    KiTrapUartPuts(FaultName);
+    if (Stage1Walk)
+        KiTrapUartPuts(" walk");
+    KiTrapUartPuts(" DFSC=0x");
+    KiTrapUartPutHex(FaultStatus, 2);
+    KiTrapUartPuts("\n");
+}
+
+static VOID KiDumpBacktrace(PARM64_TRAP_FRAME TrapFrame)
+{
+    PKTHREAD Thread = KeGetCurrentThread();
+    ULONG_PTR StackTop = Thread ? (ULONG_PTR)Thread->StackBase : TrapFrame->Sp;
+    ULONG_PTR StackBottom = Thread ? (ULONG_PTR)Thread->StackLimit : (StackTop - KERNEL_STACK_SIZE);
+    ULONG_PTR fp_walk = (ULONG_PTR)TrapFrame->X29;
+    ULONG frames = 0;
+    const ULONG max_frames = 32;
+
+    DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "Backtrace (ARM64):\n");
+    KiTrapUartPuts("Backtrace (ARM64)\n");
+
+    while (frames < max_frames)
+    {
+        if ((fp_walk & 0xF) != 0)
+            break;
+        if (fp_walk < StackBottom || fp_walk + 16 > StackTop)
+            break;
+
+        ULONG_PTR *slot = (ULONG_PTR *)fp_walk;
+        ULONG_PTR next_fp = slot[0];
+        ULONG_PTR lr = slot[1];
+
+        if (lr == 0 || next_fp <= fp_walk)
+            break;
+
+        DbgPrintEx(DPFLTR_DEFAULT_ID,
+                   DPFLTR_ERROR_LEVEL,
+                   "    0x%016llX\n",
+                   (unsigned long long)lr);
+
+        KiTrapUartPuts("    0x");
+        KiTrapUartPutHex(lr, 16);
+        KiTrapUartPuts("\n");
+
+        fp_walk = next_fp;
+        frames++;
+    }
+}
+
+static
+PCSTR
+KiGetExceptionClassString(
+    _In_ ULONG ExceptionClass
+)
+{
+    switch (ExceptionClass)
+    {
+        case ESR_ELx_EC_DABT_CUR:
+            return "Data Abort (EL1)";
+        case ESR_ELx_EC_DABT_LOW:
+            return "Data Abort (EL0)";
+        case ESR_ELx_EC_IABT_CUR:
+            return "Instruction Abort (EL1)";
+        case ESR_ELx_EC_IABT_LOW:
+            return "Instruction Abort (EL0)";
+        case ESR_ELx_EC_PC_ALIGN:
+            return "PC Alignment Fault";
+        case ESR_ELx_EC_SP_ALIGN:
+            return "SP Alignment Fault";
+        case ESR_ELx_EC_BRK64:
+            return "BRK";
+        case ESR_ELx_EC_SVC64:
+            return "SVC64";
+        case ESR_ELx_EC_SYS64:
+            return "System Register";
+        case ESR_ELx_EC_UNKNOWN:
+            return "Unknown";
+        default:
+            return "Unhandled";
+    }
+}
+
+static
+VOID
+KiDumpTrapFrameDebug(
+    _In_ PCSTR Reason,
+    _In_ PARM64_TRAP_FRAME TrapFrame
+)
+{
+    ULONGLONG *Regs = &TrapFrame->X0;
+    ULONG ExceptionClass = ESR_ELx_EC(TrapFrame->Esr);
+
+    DbgPrintEx(DPFLTR_DEFAULT_ID,
+               DPFLTR_ERROR_LEVEL,
+               "ARM64 Trap: %s (EC=0x%02lX %s)\n"
+               "  ESR=0x%016llX FAR=0x%016llX\n"
+               "  PC =0x%016llX SP =0x%016llX PSTATE=0x%016llX\n",
+               Reason,
+               ExceptionClass,
+               KiGetExceptionClassString(ExceptionClass),
+               (unsigned long long)TrapFrame->Esr,
+               (unsigned long long)TrapFrame->Far,
+               (unsigned long long)TrapFrame->Pc,
+               (unsigned long long)TrapFrame->Sp,
+               (unsigned long long)TrapFrame->Pstate);
+
+    KiTrapUartPuts("ARM64 Trap: ");
+    KiTrapUartPuts(Reason);
+    KiTrapUartPuts(" (EC=0x");
+    KiTrapUartPutHex(ExceptionClass, 2);
+    KiTrapUartPuts(" ");
+    KiTrapUartPuts(KiGetExceptionClassString(ExceptionClass));
+    KiTrapUartPuts(")\n  ESR=0x");
+    KiTrapUartPutHex(TrapFrame->Esr, 16);
+    KiTrapUartPuts(" FAR=0x");
+    KiTrapUartPutHex(TrapFrame->Far, 16);
+    KiTrapUartPuts("\n  PC =0x");
+    KiTrapUartPutHex(TrapFrame->Pc, 16);
+    KiTrapUartPuts(" SP =0x");
+    KiTrapUartPutHex(TrapFrame->Sp, 16);
+    KiTrapUartPuts(" PSTATE=0x");
+    KiTrapUartPutHex(TrapFrame->Pstate, 16);
+    KiTrapUartPuts("\n");
+
+    for (ULONG i = 0; i < 31; i += 2)
+    {
+        if (i + 1 < 31)
+        {
+            DbgPrintEx(DPFLTR_DEFAULT_ID,
+                       DPFLTR_ERROR_LEVEL,
+                       "    X%02lu=0x%016llX  X%02lu=0x%016llX\n",
+                       i,
+                       (unsigned long long)Regs[i],
+                       i + 1,
+                       (unsigned long long)Regs[i + 1]);
+
+            KiTrapUartPuts("    X");
+            KiTrapUartPutDec(i);
+            KiTrapUartPuts("=0x");
+            KiTrapUartPutHex(Regs[i], 16);
+            KiTrapUartPuts("  X");
+            KiTrapUartPutDec(i + 1);
+            KiTrapUartPuts("=0x");
+            KiTrapUartPutHex(Regs[i + 1], 16);
+            KiTrapUartPuts("\n");
+        }
+        else
+        {
+            DbgPrintEx(DPFLTR_DEFAULT_ID,
+                       DPFLTR_ERROR_LEVEL,
+                       "    X%02lu=0x%016llX\n",
+                       i,
+                       (unsigned long long)Regs[i]);
+
+            KiTrapUartPuts("    X");
+            KiTrapUartPutDec(i);
+            KiTrapUartPuts("=0x");
+            KiTrapUartPutHex(Regs[i], 16);
+            KiTrapUartPuts("\n");
+        }
+    }
+
+    KiDumpBacktrace(TrapFrame);
+}
 
 /* GLOBALS *******************************************************************/
 
@@ -116,22 +369,32 @@ KiTrapHandlerC(
 )
 {
     ULONG ExceptionClass = ESR_ELx_EC(TrapFrame->Esr);
+
+    KiDumpTrapFrameDebug("Synchronous exception", TrapFrame);
     
     DPRINT("ARM64: Kernel Trap - EC=0x%02X, ESR=0x%llX, FAR=0x%llX, PC=0x%llX\n",
            ExceptionClass, TrapFrame->Esr, TrapFrame->Far, TrapFrame->Pc);
     
     switch (ExceptionClass)
     {
+        case ESR_ELx_EC_DABT_LOW:
         case ESR_ELx_EC_DABT_CUR:
-            /* Data abort in current EL (kernel mode) */
+        {
+            ULONG Iss = (ULONG)(TrapFrame->Esr & ESR_ELx_ISS_MASK);
+            KiDescribeAbort(ExceptionClass, Iss, TrapFrame->Far);
             KiKernelDataAbort(TrapFrame);
             break;
-            
+        }
+
+        case ESR_ELx_EC_IABT_LOW:
         case ESR_ELx_EC_IABT_CUR:
-            /* Instruction abort in current EL */
+        {
+            ULONG Iss = (ULONG)(TrapFrame->Esr & ESR_ELx_ISS_MASK);
+            KiDescribeAbort(ExceptionClass, Iss, TrapFrame->Far);
             KiKernelInstructionAbort(TrapFrame);
             break;
-            
+        }
+
         case ESR_ELx_EC_PC_ALIGN:
             /* PC alignment fault */
             KiAlignmentFault(TrapFrame);
@@ -402,6 +665,8 @@ KiBugCheck(
     IN PARM64_TRAP_FRAME TrapFrame
 )
 {
+    KiDumpTrapFrameDebug("BugCheck", TrapFrame);
+
     DPRINT1("ARM64: KERNEL BUG CHECK\n");
     DPRINT1("PC=0x%llX, SP=0x%llX, PSTATE=0x%llX\n",
             TrapFrame->Pc, TrapFrame->Sp, TrapFrame->Pstate);

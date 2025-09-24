@@ -44,6 +44,7 @@ set(UEFINITY_COMMON_SOURCES
     common/boot/custom.c
     common/boot/options.c
     common/boot/settings.c
+    common/boot/arcname.c
 
     # UEFI services
     common/uefi/ueficon.c
@@ -53,10 +54,12 @@ set(UEFINITY_COMMON_SOURCES
     common/uefi/uefihw.c
     common/uefi/uefiutil.c
     common/uefi/uefisetup.c
+    common/uefi/uefidebug.c
+    common/uefi/uefibacktrace.c
+    common/uefi/uefiserial.c
     common/uefi/efiapp.c
     common/uefi/stubs.c
     common/uefi/uistubs.c
-    common/uefi/miscstubs.c
     common/uefi/uefiarc.c
 
     # Filesystem drivers
@@ -80,6 +83,7 @@ set(UEFINITY_COMMON_SOURCES
     common/lib/libsupp.c
     common/lib/cache/blocklist.c
     common/lib/cache/cache.c
+    $<$<NOT:$<STREQUAL:${ARCH},arm64>>:common/lib/comm/rs232.c>
 
     # Disk support
     common/disk/disk.c
@@ -116,16 +120,17 @@ if(ARCH STREQUAL "arm64")
         arch/arm64/except.S
         arch/arm64/misc.S
         arch/arm64/cache_v2.S
+        arch/uefi/arm64/uefiasm.S
     )
 elseif(ARCH STREQUAL "amd64")
     set(UEFINITY_ARCH_SOURCES
-        arch/amd64/init.c
         arch/amd64/uefitrap.c
         # NT Loader for AMD64
         common/ntldr/amd64/winldr.c
     )
 
     set(UEFINITY_ARCH_ASM_SOURCES
+        arch/amd64/misc.S
         arch/amd64/uefiasm.S
         arch/amd64/uefitrap.S
     )

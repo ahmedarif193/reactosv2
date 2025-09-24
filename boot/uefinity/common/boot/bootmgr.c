@@ -353,11 +353,9 @@ MainBootMenuKeyPressFilter(
 VOID RunLoader(VOID)
 {
     OperatingSystemItem* OperatingSystemList;
-    PCSTR* OperatingSystemDisplayNames;
     ULONG OperatingSystemCount;
     ULONG DefaultOperatingSystem;
     ULONG SelectedOperatingSystem;
-    ULONG i;
 
 #ifdef _M_IX86
 #ifndef UEFIBOOT
@@ -407,51 +405,33 @@ VOID RunLoader(VOID)
         goto Reboot;
     }
 
-    /* Create list of display names */
-    OperatingSystemDisplayNames = FrLdrTempAlloc(sizeof(PCSTR) * OperatingSystemCount, 'mNSO');
-    if (!OperatingSystemDisplayNames)
-        goto Reboot;
-
-    for (i = 0; i < OperatingSystemCount; i++)
-    {
-        OperatingSystemDisplayNames[i] = OperatingSystemList[i].LoadIdentifier;
-    }
-
     /* Find all the message box settings and run them */
     UiShowMessageBoxesInSection(GetBootMgrInfo()->FrLdrSection);
 
-    for (;;)
+    /* Choose the default operating system without presenting a menu */
+    if (DefaultOperatingSystem >= OperatingSystemCount)
     {
-        /* Redraw the backdrop, but don't overwrite boot options */
-        UiDrawBackdrop(UiGetScreenHeight() - 2);
-
-        /* Show the operating system list menu */
-        if (!UiDisplayMenu("Please select the operating system to start:",
-                           "For troubleshooting and advanced startup options for "
-                               "ReactOS, press F8.",
-                           OperatingSystemDisplayNames,
-                           OperatingSystemCount,
-                           DefaultOperatingSystem,
-                           GetBootMgrInfo()->TimeOut,
-                           &SelectedOperatingSystem,
-                           FALSE,
-                           MainBootMenuKeyPressFilter,
-                           OperatingSystemList))
-        {
-            UiMessageBox("Press ENTER to reboot.");
-            goto Reboot;
-        }
-
-        /* Load the chosen operating system */
-        LoadOperatingSystem(&OperatingSystemList[SelectedOperatingSystem]);
-
-        GetBootMgrInfo()->TimeOut = -1;
-
-        /* If we get there, the OS loader failed. As it may have
-         * messed up the display, re-initialize the UI. */
-        UiUnInitialize("");
-        UiInitialize(TRUE);
+        TRACE("Default operating system index %lu out of range, using first entry\n",
+              DefaultOperatingSystem);
+        SelectedOperatingSystem = 0;
     }
+    else
+    {
+        SelectedOperatingSystem = DefaultOperatingSystem;
+    }
+
+    TRACE("Auto-booting OS entry %lu (%s)\n",
+          SelectedOperatingSystem,
+          OperatingSystemList[SelectedOperatingSystem].LoadIdentifier);
+
+    UiDrawBackdrop(UiGetScreenHeight() - 2);
+    UiDrawStatusText("Booting default entry...");
+
+    /* Launch the default operating system directly */
+    LoadOperatingSystem(&OperatingSystemList[SelectedOperatingSystem]);
+
+    /* If execution continues past the loader, treat as a failure */
+    UiMessageBox("Boot loader returned unexpectedly.\nPress ENTER to reboot.");
 
 Reboot:
     UiUnInitialize("Rebooting...");

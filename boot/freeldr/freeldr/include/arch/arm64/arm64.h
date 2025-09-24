@@ -81,6 +81,7 @@ VOID Arm64DataMemoryBarrier(VOID);
 VOID Arm64InstructionBarrier(VOID);
 VOID Arm64Breakpoint(VOID);
 VOID Arm64HaltProcessor(VOID);
+VOID Arm64DebugDumpMapping(ULONGLONG VirtualAddress);
 #endif /* __ASM__ */
 
 /* Enhanced cache operations from U-Boot */

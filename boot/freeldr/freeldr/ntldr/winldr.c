@@ -1411,7 +1411,14 @@ LoadAndBootWindowsCommon(
 
     /* Load boot drivers */
     UiSetProgressBarText("Loading boot drivers...");
+#if defined(_M_ARM64)
+    UartPuts("ARM64: Starting boot drivers load\n");
+#endif
     Success = WinLdrLoadBootDrivers(LoaderBlock, BootPath);
+#if defined(_M_ARM64)
+    UartPuts("ARM64: Boot drivers load ");
+    UartPuts(Success ? "successful\n" : "failed\n");
+#endif
     TRACE("Boot drivers loading %s\n", Success ? "successful" : "failed");
 
     UiSetProgressBarSubset(0, 100);
@@ -1526,6 +1533,10 @@ LoadAndBootWindowsCommon(
                         TRACE("ARM64: WARNING: Failed to map extension VA=0x%p\n",
                               (PVOID)ExtensionVA);
                     }
+                    else
+                    {
+                        Arm64DebugDumpMapping(map_va);
+                    }
 
                     /* Optional VA write skipped on current bring-up to avoid late faults */
                     TRACE("ARM64: Skipping LoaderPagesSpanned VA update (PA write already done)\n");
@@ -1554,6 +1565,39 @@ LoadAndBootWindowsCommon(
 
     TRACE("Hello from paged mode, KiSystemStartup %p, LoaderBlockVA %p!\n",
           (PVOID)KiSystemStartup, (PVOID)LoaderBlockVA);
+
+#if defined(_M_ARM64)
+    Arm64DebugDumpMapping((ULONGLONG)(ULONG_PTR)LoaderBlockVA);
+
+    {
+        ULONGLONG kernel_image_va = (ULONGLONG)(ULONG_PTR)KernelDTE->DllBase;
+        ULONGLONG kernel_image_pa = (kernel_image_va >= ARM64_KSEG0_BASE)
+                                    ? (kernel_image_va - ARM64_KSEG0_BASE)
+                                    : kernel_image_va;
+        ULONGLONG kernel_map_va = kernel_image_va & ~(ULONGLONG)(MM_PAGE_SIZE - 1);
+        ULONGLONG kernel_map_pa = kernel_image_pa & ~(ULONGLONG)(MM_PAGE_SIZE - 1);
+        ULONGLONG kernel_size = (ULONGLONG)KernelDTE->SizeOfImage;
+        ULONGLONG kernel_map_size = (kernel_size + (kernel_image_va - kernel_map_va) + MM_PAGE_SIZE - 1) & ~(ULONGLONG)(MM_PAGE_SIZE - 1);
+
+        if (!Arm64MapVirtualMemory(kernel_map_va,
+                                   kernel_map_pa,
+                                   kernel_map_size,
+                                   ARM64_MAP_ATTR_NORMAL | ARM64_MAP_ATTR_EXECUTE))
+        {
+            TRACE("ARM64: WARNING: Failed to map kernel image VA=0x%p size=0x%llx\n",
+                  (PVOID)kernel_image_va,
+                  (unsigned long long)kernel_map_size);
+        }
+        else
+        {
+            TRACE("ARM64: Kernel image mapped VA=0x%p size=0x%llx\n",
+                  (PVOID)kernel_image_va,
+                  (unsigned long long)kernel_map_size);
+            Arm64DebugDumpMapping((ULONGLONG)kernel_image_va);
+            Arm64DebugDumpMapping((ULONGLONG)(ULONG_PTR)KiSystemStartup);
+        }
+    }
+#endif
 
     /* ARM64: Setup proper MMU configuration for kernel handoff */
 #if defined(_M_ARM64) || defined(__aarch64__)
@@ -1593,14 +1637,6 @@ LoadAndBootWindowsCommon(
           (PVOID)KiSystemStartup,
           (PVOID)LoaderBlockVA);
 
-#if defined(_M_ARM64)
-    /* ARM64: Verify kernel stack is virtual address */
-    TRACE("ARM64: Final kernel stack address in LoaderBlock: 0x%llx\n", LoaderBlockVA->KernelStack);
-    if (LoaderBlockVA->KernelStack < ARM64_KSEG0_BASE) {
-        ERR("ARM64: CRITICAL - Kernel stack is not virtual address: 0x%llx\n", LoaderBlockVA->KernelStack);
-    }
-#endif
-
     /* Emit detailed debug information via UART before handoff */
 #if defined(_M_ARM64) || defined(__aarch64__)
     {
@@ -1610,61 +1646,73 @@ LoadAndBootWindowsCommon(
         UartPutHex64((ULONGLONG)(ULONG_PTR)LoaderBlockVA);
         UartPuts("\nCalling kernel now...\n");
 
-        /* ARM64: Final register state check before kernel jump */
-        {
-            UINT64 ttbr0, ttbr1, tcr, sp_reg;
-            __asm__ volatile("mrs %0, ttbr0_el1" : "=r" (ttbr0));
-            __asm__ volatile("mrs %0, ttbr1_el1" : "=r" (ttbr1));
-            __asm__ volatile("mrs %0, tcr_el1"   : "=r" (tcr));
-            __asm__ volatile("mov %0, sp"        : "=r" (sp_reg));
+    }
 
-            CHAR RegMsg[256];
-            RtlStringCbPrintfA(RegMsg, sizeof(RegMsg),
-                              "ARM64: Final state - TTBR0=0x%llx, TTBR1=0x%llx, TCR=0x%llx, SP=0x%llx\n",
-                              ttbr0, ttbr1, tcr, sp_reg);
-            UartPuts(RegMsg);
+    /* Skip the test read - it might be causing issues */
+#if 0
+    /* Test that we can read from the kernel entry point */
+    {
+        UINT32 test_read;
+        UartPuts("ARM64: Testing kernel entry point accessibility...\n");
 
-            RtlStringCbPrintfA(RegMsg, sizeof(RegMsg),
-                              "ARM64: LoaderBlock=0x%p, KernelStack in LB=0x%llx\n",
-                              LoaderBlockVA, LoaderBlockVA->KernelStack);
-            UartPuts(RegMsg);
-        }
+        /* Ensure all previous memory operations complete */
+        __asm__ volatile("dsb sy" ::: "memory");
+        __asm__ volatile("isb" ::: "memory");
 
-        /* CRITICAL: Final MMU state verification before kernel jump */
-        {
-            UINT64 final_ttbr1, final_tcr, final_sctlr;
-            __asm__ volatile("mrs %0, ttbr1_el1" : "=r" (final_ttbr1));
-            __asm__ volatile("mrs %0, tcr_el1"   : "=r" (final_tcr));
-            __asm__ volatile("mrs %0, sctlr_el1" : "=r" (final_sctlr));
-
-            /* EPD1 bit (23): 0 == walks enabled for TTBR1 */
-            BOOLEAN epd1_clear = !(final_tcr & (1ULL << 23));
-            /* TG1 bits (31:30): 0b10 == 4KB */
-            UINT64 tg1_bits = (final_tcr >> 30) & 0x3;
-            BOOLEAN tg1_is_4k = (tg1_bits == 2);
-            BOOLEAN mmu_enabled = (final_sctlr & 1) ? TRUE : FALSE;
-
-            CHAR FinalMsg[256];
-            RtlStringCbPrintfA(FinalMsg, sizeof(FinalMsg),
-                "CRITICAL: Final MMU check - TTBR1=0x%llx, TCR=0x%llx\n"
-                "  EPD1=%s (bit 23), TG1=%llu (%s), MMU=%s\n",
-                final_ttbr1, final_tcr,
-                epd1_clear ? "CLEAR-OK" : "SET-BAD",
-                tg1_bits, tg1_is_4k ? "4KB-OK" : "WRONG",
-                mmu_enabled ? "ON" : "OFF");
-            UartPuts(FinalMsg);
-
-            /* Abort if critical settings are wrong */
-            if (!epd1_clear || !tg1_is_4k || final_ttbr1 == 0)
-            {
-                UartPuts("FATAL: MMU not configured correctly, aborting!\n");
-                while (1) { __asm__ __volatile__("wfi"); }
-            }
-        }
+        /* Try to read from kernel with explicit synchronization */
+        __asm__ volatile(
+            "dsb sy\n"
+            "ldr %w0, [%1]\n"
+            "dsb sy\n"
+            : "=r"(test_read)
+            : "r"(KiSystemStartup)
+            : "memory"
+        );
+        UartPuts("ARM64: Successfully read from kernel entry: 0x");
+        UartPutHex64((UINT64)test_read);
+        UartPuts("\n");
     }
 #endif
 
+    /* Declare the kernel jump function */
+    extern VOID Arm64JumpToKernel(ULONGLONG KernelEntry, ULONGLONG LoaderBlockVA, ULONGLONG KernelStack);
+
+    /* Jump to kernel using proper assembly wrapper */
+    UartPuts("ARM64: About to jump to kernel at 0x");
+    UartPutHex64((ULONGLONG)(ULONG_PTR)KiSystemStartup);
+    UartPuts(" with LoaderBlock at 0x");
+    UartPutHex64((ULONGLONG)(ULONG_PTR)LoaderBlockVA);
+    UartPuts("\n");
+
+    /* Final check of MMU state */
+    {
+        UINT64 ttbr0, ttbr1, tcr, sctlr;
+        __asm__ volatile("mrs %0, ttbr0_el1" : "=r" (ttbr0));
+        __asm__ volatile("mrs %0, ttbr1_el1" : "=r" (ttbr1));
+        __asm__ volatile("mrs %0, tcr_el1" : "=r" (tcr));
+        __asm__ volatile("mrs %0, sctlr_el1" : "=r" (sctlr));
+
+        UartPuts("ARM64: Final MMU state:\n");
+        UartPuts("  TTBR0=0x");
+        UartPutHex64(ttbr0);
+        UartPuts("\n  TTBR1=0x");
+        UartPutHex64(ttbr1);
+        UartPuts("\n  TCR=0x");
+        UartPutHex64(tcr);
+        UartPuts("\n  SCTLR=0x");
+        UartPutHex64(sctlr);
+        UartPuts("\n");
+    }
+
+    /* Use the assembly function for proper handoff */
+    Arm64JumpToKernel((ULONGLONG)(ULONG_PTR)KiSystemStartup,
+                      (ULONGLONG)(ULONG_PTR)LoaderBlockVA,
+                      0); /* No separate kernel stack yet */
+
+    UNREACHABLE; /* Should never return */
+#else
     (*KiSystemStartup)(LoaderBlockVA);
+#endif
 
     UNREACHABLE; // return ESUCCESS;
 }

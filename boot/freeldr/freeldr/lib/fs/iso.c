@@ -99,7 +99,10 @@ static BOOLEAN IsoSearchDirectoryBufferForFile(PVOID DirectoryBuffer, ULONG Dire
             for (i = 0; i < Record->FileIdLength && Record->FileId[i] != ';'; i++)
                 Name[i] = Record->FileId[i];
             Name[i] = ANSI_NULL;
-            //TODO keep this TRACE("Name '%s'\n", Name);
+            TRACE("ISO: entry '%s' (len %lu) compare with '%s'\n",
+                  Name,
+                  (unsigned long)Record->FileIdLength,
+                  FileName);
 
             if (strlen(FileName) == strlen(Name) && _stricmp(FileName, Name) == 0)
             {
@@ -276,6 +279,9 @@ static ARC_STATUS IsoLookupFile(PCSTR FileName, ULONG DeviceId, PISO_FILE_INFO I
                                              PathPart,
                                              IsoFileInfo))
         {
+            TRACE("ISO: failed to locate path part '%s' (dir len %lu)\n",
+                  PathPart,
+                  (unsigned long)DirectoryLength);
             /* Free the directory buffer that wasn't cached */
             if ((i + 1) < NumberOfPathParts)
             {

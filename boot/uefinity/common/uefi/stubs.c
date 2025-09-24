@@ -7,15 +7,16 @@
 
 #include <uefildr.h>
 
-
 extern EFI_SYSTEM_TABLE* GlobalSystemTable;
 
+#ifndef _M_ARM
 /* TODO: Handle this with custom Disk / partition setup */
 UCHAR
 DriveMapGetBiosDriveNumber(PCSTR DeviceName)
 {
     return 0;
 }
+#endif
 
 VOID
 StallExecutionProcessor(ULONG Microseconds)
