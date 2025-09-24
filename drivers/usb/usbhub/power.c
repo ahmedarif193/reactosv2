@@ -7,11 +7,14 @@
 
 #include "usbhub.h"
 
-#define NDEBUG
 #include <debug.h>
-
-#define NDEBUG_USBHUB_POWER
 #include "dbg_uhub.h"
+
+static VOID
+NTAPI
+USBH_PdoWaitWakeCancelRoutine(
+  IN PDEVICE_OBJECT DeviceObject,
+  IN PIRP Irp);
 
 VOID
 NTAPI
@@ -173,6 +176,11 @@ USBH_HubQueuePortWakeIrps(IN PUSBHUB_FDO_EXTENSION HubExtension,
 
     InitializeListHead(ListIrps);
 
+    if (!HubExtension->PortData)
+    {
+        return;
+    }
+
     IoAcquireCancelSpinLock(&OldIrql);
 
     for (Port = 0; Port < NumPorts; ++Port)
@@ -188,8 +196,24 @@ USBH_HubQueuePortWakeIrps(IN PUSBHUB_FDO_EXTENSION HubExtension,
 
             if (WakeIrp)
             {
-                DPRINT1("USBH_HubQueuePortWakeIrps: UNIMPLEMENTED. FIXME\n");
-                DbgBreakPoint();
+                PortExtension->PortPdoFlags &= ~USBHUB_PDO_FLAG_WAIT_WAKE;
+
+                if (WakeIrp->Cancel || !IoSetCancelRoutine(WakeIrp, NULL))
+                {
+                    WakeIrp = NULL;
+
+                    if (HubExtension &&
+                        !InterlockedDecrement(&HubExtension->PendingRequestCount))
+                    {
+                        KeSetEvent(&HubExtension->PendingRequestEvent,
+                                   EVENT_INCREMENT,
+                                   FALSE);
+                    }
+                }
+                else
+                {
+                    InsertTailList(ListIrps, &WakeIrp->Tail.Overlay.ListEntry);
+                }
             }
         }
     }
@@ -207,8 +231,13 @@ USBH_HubCompleteQueuedPortWakeIrps(IN PUSBHUB_FDO_EXTENSION HubExtension,
 
     while (!IsListEmpty(ListIrps))
     {
-        DPRINT1("USBH_HubCompleteQueuedPortWakeIrps: UNIMPLEMENTED. FIXME\n");
-        DbgBreakPoint();
+        PLIST_ENTRY Entry;
+        PIRP WakeIrp;
+
+        Entry = RemoveHeadList(ListIrps);
+        WakeIrp = CONTAINING_RECORD(Entry, IRP, Tail.Overlay.ListEntry);
+
+        USBH_CompletePowerIrp(HubExtension, WakeIrp, NtStatus);
     }
 }
 
@@ -262,8 +291,50 @@ NTAPI
 USBH_CompletePortWakeIrpsWorker(IN PUSBHUB_FDO_EXTENSION HubExtension,
                                 IN PVOID Context)
 {
-    DPRINT1("USBH_CompletePortWakeIrpsWorker: UNIMPLEMENTED. FIXME\n");
-    DbgBreakPoint();
+    NTSTATUS Status;
+
+    DPRINT("USBH_CompletePortWakeIrpsWorker: HubExtension - %p, Context - %p\n",
+           HubExtension,
+           Context);
+
+    Status = (Context != NULL) ? (NTSTATUS)(ULONG_PTR)Context : STATUS_SUCCESS;
+    USBH_HubCompletePortWakeIrps(HubExtension, Status);
+}
+
+static VOID
+NTAPI
+USBH_PdoWaitWakeCancelRoutine(IN PDEVICE_OBJECT DeviceObject,
+                              IN PIRP Irp)
+{
+    PUSBHUB_PORT_PDO_EXTENSION PortExtension;
+    PUSBHUB_FDO_EXTENSION HubExtension;
+
+    DPRINT("USBH_PdoWaitWakeCancelRoutine: DeviceObject - %p, Irp - %p\n",
+           DeviceObject,
+           Irp);
+
+    PortExtension = DeviceObject->DeviceExtension;
+    HubExtension = PortExtension->HubExtension;
+
+    if (PortExtension->PdoWaitWakeIrp == Irp)
+    {
+        PortExtension->PdoWaitWakeIrp = NULL;
+        PortExtension->PortPdoFlags &= ~USBHUB_PDO_FLAG_WAIT_WAKE;
+    }
+
+    IoReleaseCancelSpinLock(Irp->CancelIrql);
+
+    if (HubExtension &&
+        !InterlockedDecrement(&HubExtension->PendingRequestCount))
+    {
+        KeSetEvent(&HubExtension->PendingRequestEvent,
+                   EVENT_INCREMENT,
+                   FALSE);
+    }
+
+    PoStartNextPowerIrp(Irp);
+    Irp->IoStatus.Status = STATUS_CANCELLED;
+    IoCompleteRequest(Irp, IO_NO_INCREMENT);
 }
 
 NTSTATUS
@@ -759,6 +830,7 @@ USBH_PdoPower(IN PUSBHUB_PORT_PDO_EXTENSION PortExtension,
               IN UCHAR Minor)
 {
     NTSTATUS Status = Irp->IoStatus.Status;
+    PUSBHUB_FDO_EXTENSION HubExtension = PortExtension->HubExtension;
 
     DPRINT_PWR("USBH_FdoPower: PortExtension - %p, Irp - %p, Minor - %X\n",
                PortExtension,
@@ -768,9 +840,39 @@ USBH_PdoPower(IN PUSBHUB_PORT_PDO_EXTENSION PortExtension,
     switch (Minor)
     {
       case IRP_MN_WAIT_WAKE:
+      {
+          KIRQL CancelIrql;
+
           DPRINT_PWR("USBHUB_PdoPower: IRP_MN_WAIT_WAKE\n");
+
+          IoAcquireCancelSpinLock(&CancelIrql);
+
+          if (PortExtension->PdoWaitWakeIrp)
+          {
+              IoReleaseCancelSpinLock(CancelIrql);
+              PoStartNextPowerIrp(Irp);
+              Irp->IoStatus.Status = STATUS_DEVICE_BUSY;
+              IoCompleteRequest(Irp, IO_NO_INCREMENT);
+              return STATUS_DEVICE_BUSY;
+          }
+
+          PortExtension->PdoWaitWakeIrp = Irp;
+          PortExtension->PortPdoFlags |= USBHUB_PDO_FLAG_WAIT_WAKE;
+
+          IoSetCancelRoutine(Irp, USBH_PdoWaitWakeCancelRoutine);
+
+          IoReleaseCancelSpinLock(CancelIrql);
+
+          if (HubExtension)
+          {
+              InterlockedIncrement(&HubExtension->PendingRequestCount);
+          }
+
           PoStartNextPowerIrp(Irp);
-          break;
+          IoMarkIrpPending(Irp);
+          Irp->IoStatus.Status = STATUS_PENDING;
+          return STATUS_PENDING;
+      }
 
       case IRP_MN_POWER_SEQUENCE:
           DPRINT_PWR("USBHUB_PdoPower: IRP_MN_POWER_SEQUENCE\n");

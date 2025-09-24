@@ -7,11 +7,8 @@
 
 #include "usbhub.h"
 
-#define NDEBUG
 #include <debug.h>
 
-#define NDEBUG_USBHUB_PNP
-#define NDEBUG_USBHUB_ENUM
 #include "dbg_uhub.h"
 
 NTSTATUS
@@ -1453,9 +1450,16 @@ NTAPI
 USBH_FdoStopDevice(IN PUSBHUB_FDO_EXTENSION HubExtension,
                    IN PIRP Irp)
 {
-    DPRINT1("USBH_FdoStopDevice: UNIMPLEMENTED. FIXME\n");
-    DbgBreakPoint();
-    return STATUS_SUCCESS;
+    NTSTATUS Status;
+
+    DPRINT_PNP("USBH_FdoStopDevice: HubExtension - %p\n", HubExtension);
+
+    USBH_FdoCleanup(HubExtension);
+    HubExtension->HubFlags |= USBHUB_FDO_FLAG_DEVICE_STOPPED;
+
+    Status = USBH_PassIrp(HubExtension->LowerDevice, Irp);
+
+    return Status;
 }
 
 NTSTATUS
@@ -2352,9 +2356,90 @@ NTAPI
 USBH_PdoStopDevice(IN PUSBHUB_PORT_PDO_EXTENSION PortExtension,
                    IN PIRP Irp)
 {
-    DPRINT1("USBH_PdoStopDevice: UNIMPLEMENTED. FIXME\n");
-    DbgBreakPoint();
-    return STATUS_SUCCESS;
+    PUSBHUB_FDO_EXTENSION HubExtension;
+    PIRP IdleIrp = NULL;
+    PIRP WakeIrp = NULL;
+    PVOID DeviceHandle;
+    KIRQL OldIrql;
+    NTSTATUS Status = STATUS_SUCCESS;
+
+    DPRINT_PNP("USBH_PdoStopDevice: PortExtension - %p\n", PortExtension);
+
+    HubExtension = PortExtension->HubExtension;
+
+    if (HubExtension &&
+        HubExtension->CurrentPowerState.DeviceState != PowerDeviceD0 &&
+        (HubExtension->HubFlags & USBHUB_FDO_FLAG_DEVICE_STARTED))
+    {
+        USBH_HubSetD0(HubExtension);
+    }
+
+    IoAcquireCancelSpinLock(&OldIrql);
+
+    IdleIrp = PortExtension->IdleNotificationIrp;
+    PortExtension->IdleNotificationIrp = NULL;
+    PortExtension->PortPdoFlags &= ~USBHUB_PDO_FLAG_IDLE_NOTIFICATION;
+
+    if (IdleIrp)
+    {
+        if (IdleIrp->Cancel || !IoSetCancelRoutine(IdleIrp, NULL))
+        {
+            IdleIrp = NULL;
+        }
+    }
+
+    WakeIrp = PortExtension->PdoWaitWakeIrp;
+    PortExtension->PdoWaitWakeIrp = NULL;
+    PortExtension->PortPdoFlags &= ~USBHUB_PDO_FLAG_WAIT_WAKE;
+
+    if (WakeIrp)
+    {
+        if (WakeIrp->Cancel || !IoSetCancelRoutine(WakeIrp, NULL))
+        {
+            WakeIrp = NULL;
+
+            if (HubExtension &&
+                !InterlockedDecrement(&HubExtension->PendingRequestCount))
+            {
+                KeSetEvent(&HubExtension->PendingRequestEvent,
+                           EVENT_INCREMENT,
+                           FALSE);
+            }
+        }
+    }
+
+    IoReleaseCancelSpinLock(OldIrql);
+
+    if (IdleIrp)
+    {
+        IdleIrp->IoStatus.Status = STATUS_CANCELLED;
+        IoCompleteRequest(IdleIrp, IO_NO_INCREMENT);
+    }
+
+    if (WakeIrp && HubExtension)
+    {
+        USBH_CompletePowerIrp(HubExtension, WakeIrp, STATUS_CANCELLED);
+    }
+
+    if (HubExtension)
+    {
+        DeviceHandle = InterlockedExchangePointer(&PortExtension->DeviceHandle,
+                                                  NULL);
+
+        if (DeviceHandle)
+        {
+            USBD_RemoveDeviceEx(HubExtension, DeviceHandle, 0);
+        }
+
+        USBH_SyncDisablePort(HubExtension, PortExtension->PortNumber);
+    }
+
+    PortExtension->PortPdoFlags &= ~USBHUB_PDO_FLAG_DEVICE_STARTED;
+    PortExtension->PortPdoFlags |= USBHUB_PDO_FLAG_POWER_D3;
+    PortExtension->CurrentPowerState.DeviceState = PowerDeviceD3;
+
+    USBH_CompleteIrp(Irp, Status);
+    return Status;
 }
 
 NTSTATUS

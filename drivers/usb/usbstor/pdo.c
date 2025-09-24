@@ -16,6 +16,36 @@
 
 
 static
+VOID
+USBSTOR_DisableInterface(
+    IN PPDO_DEVICE_EXTENSION DeviceExtension)
+{
+    if (DeviceExtension->InterfaceEnabled &&
+        DeviceExtension->InterfaceName.Buffer)
+    {
+        IoSetDeviceInterfaceState(&DeviceExtension->InterfaceName, FALSE);
+        DeviceExtension->InterfaceEnabled = FALSE;
+    }
+}
+
+static
+VOID
+USBSTOR_FreeInterface(
+    IN PPDO_DEVICE_EXTENSION DeviceExtension)
+{
+    USBSTOR_DisableInterface(DeviceExtension);
+
+    if (DeviceExtension->InterfaceName.Buffer)
+    {
+        RtlFreeUnicodeString(&DeviceExtension->InterfaceName);
+        DeviceExtension->InterfaceName.Buffer = NULL;
+        DeviceExtension->InterfaceName.Length = 0;
+        DeviceExtension->InterfaceName.MaximumLength = 0;
+    }
+}
+
+
+static
 LPCSTR
 USBSTOR_GetDeviceType(
     IN PINQUIRYDATA InquiryData)
@@ -589,7 +619,9 @@ USBSTOR_PdoHandlePnp(
        {
            DPRINT("IRP_MN_REMOVE_DEVICE\n");
 
-           if(*DeviceExtension->PDODeviceObject != NULL)
+           USBSTOR_FreeInterface(DeviceExtension);
+
+           if (*DeviceExtension->PDODeviceObject != NULL)
            {
                *DeviceExtension->PDODeviceObject = NULL;
                bDelete = TRUE;
@@ -641,14 +673,28 @@ USBSTOR_PdoHandlePnp(
                Status = STATUS_SUCCESS;
            break;
        }
+       case IRP_MN_STOP_DEVICE:
+       {
+           USBSTOR_DisableInterface(DeviceExtension);
+           Status = STATUS_SUCCESS;
+           break;
+       }
        case IRP_MN_START_DEVICE:
        {
-           // no-op for PDO
            Status = STATUS_SUCCESS;
+           if (DeviceExtension->InterfaceName.Buffer)
+           {
+               Status = IoSetDeviceInterfaceState(&DeviceExtension->InterfaceName, TRUE);
+               if (NT_SUCCESS(Status))
+               {
+                   DeviceExtension->InterfaceEnabled = TRUE;
+               }
+           }
            break;
        }
        case IRP_MN_SURPRISE_REMOVAL:
        {
+           USBSTOR_DisableInterface(DeviceExtension);
            Status = STATUS_SUCCESS;
            break;
        }
@@ -894,6 +940,8 @@ USBSTOR_CreatePDO(
     PDODeviceExtension->PDODeviceObject = &FDODeviceExtension->ChildPDO[LUN];
     PDODeviceExtension->Self = PDO;
     PDODeviceExtension->LUN = LUN;
+    RtlZeroMemory(&PDODeviceExtension->InterfaceName, sizeof(PDODeviceExtension->InterfaceName));
+    PDODeviceExtension->InterfaceEnabled = FALSE;
 
     PDO->Flags |= DO_DIRECT_IO;
 
@@ -908,13 +956,29 @@ USBSTOR_CreatePDO(
 
     if (!NT_SUCCESS(Status))
     {
+        FDODeviceExtension->ChildPDO[LUN] = NULL;
+        IoDeleteDevice(PDO);
         return Status;
     }
 
     if (InquiryData->DeviceType != DIRECT_ACCESS_DEVICE &&
         InquiryData->DeviceType != READ_ONLY_DIRECT_ACCESS_DEVICE)
     {
+        FDODeviceExtension->ChildPDO[LUN] = NULL;
+        IoDeleteDevice(PDO);
         return STATUS_NOT_SUPPORTED;
+    }
+
+    Status = IoRegisterDeviceInterface(PDO,
+                                       &GUID_DEVINTERFACE_DISK,
+                                       NULL,
+                                       &PDODeviceExtension->InterfaceName);
+    if (!NT_SUCCESS(Status))
+    {
+        FDODeviceExtension->ChildPDO[LUN] = NULL;
+        USBSTOR_FreeInterface(PDODeviceExtension);
+        IoDeleteDevice(PDO);
+        return Status;
     }
 
     return Status;

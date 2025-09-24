@@ -164,6 +164,8 @@ typedef union _EHCI_PORT_STATUS_CONTROL {
 
 C_ASSERT(sizeof(EHCI_PORT_STATUS_CONTROL) == sizeof(ULONG));
 
+#define EHCI_PORTSC_CONNECT_STATUS_CHANGE (1u << 1)
+
 /* FRINDEX Frame Index Register */
 #define EHCI_FRINDEX_FRAME_MASK     0x7FF
 #define EHCI_FRINDEX_INDEX_MASK     0x3FF

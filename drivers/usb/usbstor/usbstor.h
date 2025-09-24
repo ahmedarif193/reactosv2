@@ -7,6 +7,8 @@
 #include <usbbusif.h>
 #include <usbdlib.h>
 #include <classpnp.h>
+#include <ntddstor.h>
+#include <ntdddisk.h>
 
 #define USB_STOR_TAG 'sbsu'
 
@@ -160,6 +162,8 @@ typedef struct
     PDEVICE_OBJECT Self;                                                                 // self
     // the whole structure is not stored
     UCHAR InquiryData[INQUIRYDATABUFFERSIZE];                                            // USB SCSI inquiry data
+    UNICODE_STRING InterfaceName;                                                        // registered device interface name
+    BOOLEAN InterfaceEnabled;                                                            // interface state tracking
 }PDO_DEVICE_EXTENSION, *PPDO_DEVICE_EXTENSION;
 
 typedef struct _ERRORHANDLER_WORKITEM_DATA
@@ -316,6 +320,10 @@ BOOLEAN
 USBSTOR_QueueAddIrp(
     IN PDEVICE_OBJECT DeviceObject,
     IN PIRP Irp);
+
+PIRP
+USBSTOR_RemoveIrp(
+    IN PDEVICE_OBJECT DeviceObject);
 
 VOID
 NTAPI

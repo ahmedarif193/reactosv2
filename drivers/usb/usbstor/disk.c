@@ -431,6 +431,37 @@ USBSTOR_HandleDeviceControl(
         case IOCTL_STORAGE_QUERY_PROPERTY:
             Status = USBSTOR_HandleQueryProperty(DeviceObject, Irp);
             break;
+
+        case IOCTL_STORAGE_GET_HOTPLUG_INFO:
+        {
+            PSTORAGE_HOTPLUG_INFO HotplugInfo;
+
+            if (IoStack->Parameters.DeviceIoControl.OutputBufferLength < sizeof(STORAGE_HOTPLUG_INFO))
+            {
+                Status = STATUS_BUFFER_TOO_SMALL;
+                Irp->IoStatus.Information = sizeof(STORAGE_HOTPLUG_INFO);
+                break;
+            }
+
+            PDODeviceExtension = (PPDO_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
+            ASSERT(PDODeviceExtension);
+            ASSERT(PDODeviceExtension->Common.IsFDO == FALSE);
+
+            InquiryData = (PINQUIRYDATA)&PDODeviceExtension->InquiryData;
+
+            HotplugInfo = (PSTORAGE_HOTPLUG_INFO)Irp->AssociatedIrp.SystemBuffer;
+            RtlZeroMemory(HotplugInfo, sizeof(STORAGE_HOTPLUG_INFO));
+            HotplugInfo->Size = sizeof(STORAGE_HOTPLUG_INFO);
+
+            HotplugInfo->MediaRemovable = InquiryData->RemovableMedia ? TRUE : FALSE;
+            HotplugInfo->MediaHotplug = HotplugInfo->MediaRemovable;
+            HotplugInfo->DeviceHotplug = TRUE;
+            HotplugInfo->WriteCacheEnableOverride = FALSE;
+
+            Irp->IoStatus.Information = sizeof(STORAGE_HOTPLUG_INFO);
+            Status = STATUS_SUCCESS;
+            break;
+        }
         case IOCTL_SCSI_PASS_THROUGH:
         case IOCTL_SCSI_PASS_THROUGH_DIRECT:
         {

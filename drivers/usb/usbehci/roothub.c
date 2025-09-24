@@ -7,10 +7,8 @@
 
 #include "usbehci.h"
 
-#define NDEBUG
 #include <debug.h>
 
-#define NDEBUG_EHCI_ROOT_HUB
 #include "dbg_ehci.h"
 
 MPSTATUS
@@ -269,7 +267,6 @@ NTAPI
 EHCI_RH_GetHubStatus(IN PVOID ehciExtension,
                      IN PUSB_HUB_STATUS_AND_CHANGE HubStatus)
 {
-    DPRINT_RH("EHCI_RH_GetHubStatus: ... \n");
     HubStatus->AsUlong32 = 0;
     return MP_STATUS_SUCCESS;
 }

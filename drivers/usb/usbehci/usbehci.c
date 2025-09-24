@@ -7,10 +7,8 @@
 
 #include "usbehci.h"
 
-#define NDEBUG
 #include <debug.h>
 
-#define NDEBUG_EHCI_TRACE
 #include "dbg_ehci.h"
 
 USBPORT_REGISTRATION_PACKET RegPacket;
@@ -92,6 +90,9 @@ static const EHCI_PERIOD pTable[] = {
     { ENDPOINT_INTERRUPT_32ms, 0x06, 0x80 },
     { 0x00, 0x00, 0x00 }
 };
+
+static VOID
+EHCI_HandlePortChangeInterrupt(PEHCI_EXTENSION EhciExtension);
 C_ASSERT(RTL_NUMBER_OF(pTable) == INTERRUPT_ENDPOINTs + 1);
 
 static const UCHAR Balance[] = {
@@ -1042,7 +1043,7 @@ EHCI_InitializeHardware(IN PEHCI_EXTENSION EhciExtension)
     EhciExtension->InterruptMask.AsULONG = 0;
     EhciExtension->InterruptMask.Interrupt = 1;
     EhciExtension->InterruptMask.ErrorInterrupt = 1;
-    EhciExtension->InterruptMask.PortChangeInterrupt = 0;
+    EhciExtension->InterruptMask.PortChangeInterrupt = 1;
     EhciExtension->InterruptMask.FrameListRollover = 1;
     EhciExtension->InterruptMask.HostSystemError = 1;
     EhciExtension->InterruptMask.InterruptOnAsyncAdvance = 1;
@@ -1098,6 +1099,7 @@ EHCI_TakeControlHC(IN PEHCI_EXTENSION EhciExtension)
     LARGE_INTEGER CurrentTime;
     EHCI_LEGACY_EXTENDED_CAPABILITY LegacyCapability;
     UCHAR OffsetEECP;
+    BOOLEAN OwnershipReleased = FALSE;
 
     DPRINT("EHCI_TakeControlHC: EhciExtension - %p\n", EhciExtension);
 
@@ -1128,22 +1130,38 @@ EHCI_TakeControlHC(IN PEHCI_EXTENSION EhciExtension)
     KeQuerySystemTime(&EndTime);
     EndTime.QuadPart += 100 * 10000;
 
-    do
+    while (TRUE)
     {
         RegPacket.UsbPortReadWriteConfigSpace(EhciExtension,
                                               TRUE,
                                               &LegacyCapability.AsULONG,
                                               OffsetEECP,
                                               sizeof(LegacyCapability));
-        KeQuerySystemTime(&CurrentTime);
 
-        if (LegacyCapability.BiosOwnedSemaphore)
+        if (LegacyCapability.BiosOwnedSemaphore == 0)
         {
-            DPRINT("EHCI_TakeControlHC: Ownership is ok\n");
+            OwnershipReleased = TRUE;
             break;
         }
+
+        KeQuerySystemTime(&CurrentTime);
+
+        if (CurrentTime.QuadPart > EndTime.QuadPart)
+        {
+            break;
+        }
+
+        KeStallExecutionProcessor(25);
     }
-    while (CurrentTime.QuadPart <= EndTime.QuadPart);
+
+    if (!OwnershipReleased)
+    {
+        DPRINT1("EHCI_TakeControlHC: BIOS did not release ownership (EECP %X)\n",
+                OffsetEECP);
+        return MP_STATUS_UNSUCCESSFUL;
+    }
+
+    DPRINT("EHCI_TakeControlHC: Ownership successfully transferred\n");
 
     return MP_STATUS_SUCCESS;
 }
@@ -1285,7 +1303,74 @@ NTAPI
 EHCI_StopController(IN PVOID ehciExtension,
                     IN BOOLEAN DisableInterrupts)
 {
-    DPRINT1("EHCI_StopController: UNIMPLEMENTED. FIXME\n");
+    PEHCI_EXTENSION EhciExtension = ehciExtension;
+    PEHCI_HW_REGISTERS OperationalRegs;
+    EHCI_USB_COMMAND Command;
+    EHCI_USB_STATUS Status;
+    ULONG ix;
+
+    DPRINT("EHCI_StopController: DisableInterrupts - %x\n", DisableInterrupts);
+
+    if (!EhciExtension)
+        return;
+
+    OperationalRegs = EhciExtension->OperationalRegs;
+
+    if (!OperationalRegs)
+        return;
+
+    if (DisableInterrupts)
+    {
+        WRITE_REGISTER_ULONG(&OperationalRegs->HcInterruptEnable.AsULONG, 0);
+    }
+
+    Command.AsULONG = READ_REGISTER_ULONG(&OperationalRegs->HcCommand.AsULONG);
+    Command.InterruptAdvanceDoorbell = 0;
+    Command.PeriodicEnable = 0;
+    Command.AsynchronousEnable = 0;
+    Command.Run = 0;
+    WRITE_REGISTER_ULONG(&OperationalRegs->HcCommand.AsULONG, Command.AsULONG);
+
+    for (ix = 0; ix < 100; ix++)
+    {
+        Status.AsULONG = READ_REGISTER_ULONG(&OperationalRegs->HcStatus.AsULONG);
+
+        if (Status.HCHalted &&
+            Status.PeriodicStatus == 0 &&
+            Status.AsynchronousStatus == 0)
+        {
+            break;
+        }
+
+        RegPacket.UsbPortWait(EhciExtension, 1);
+    }
+
+    Status.AsULONG = READ_REGISTER_ULONG(&OperationalRegs->HcStatus.AsULONG);
+
+    if (!Status.HCHalted)
+    {
+        DPRINT1("EHCI_StopController: Controller did not halt\n");
+    }
+
+    if (Status.PeriodicStatus || Status.AsynchronousStatus)
+    {
+        DPRINT1("EHCI_StopController: Schedule still active (P%u A%u)\n",
+                Status.PeriodicStatus,
+                Status.AsynchronousStatus);
+    }
+
+    Status.AsULONG = 0;
+    Status.Interrupt = 1;
+    Status.ErrorInterrupt = 1;
+    Status.PortChangeDetect = 1;
+    Status.FrameListRollover = 1;
+    Status.HostSystemError = 1;
+    Status.InterruptOnAsyncAdvance = 1;
+    WRITE_REGISTER_ULONG(&OperationalRegs->HcStatus.AsULONG, Status.AsULONG);
+
+    EhciExtension->Flags &= ~EHCI_FLAGS_CONTROLLER_SUSPEND;
+    EhciExtension->IsStarted = FALSE;
+    EhciExtension->InterruptStatus.AsULONG = 0;
 }
 
 VOID
@@ -1428,6 +1513,52 @@ EHCI_HardwarePresent(IN PEHCI_EXTENSION EhciExtension,
     return FALSE;
 }
 
+static VOID
+EHCI_HandlePortChangeInterrupt(PEHCI_EXTENSION EhciExtension)
+{
+    PEHCI_HW_REGISTERS OperationalRegs;
+    ULONG PortCount;
+    ULONG Port;
+
+    OperationalRegs = EhciExtension->OperationalRegs;
+    PortCount = EhciExtension->NumberOfPorts;
+
+    for (Port = 0; Port < PortCount; Port++)
+    {
+        PULONG PortStatusReg;
+        EHCI_PORT_STATUS_CONTROL PortSC;
+        ULONG PortMask;
+
+        PortStatusReg = &OperationalRegs->PortControl[Port].AsULONG;
+        PortSC.AsULONG = READ_REGISTER_ULONG(PortStatusReg);
+
+        if (PortSC.AsULONG == 0xFFFFFFFF)
+            continue;
+
+        PortMask = 1 << Port;
+
+        if (PortSC.ConnectStatusChange)
+        {
+            DPRINT_EHCI("EHCI_HandlePortChangeInterrupt: port %lu change, PortSC - %08X\n",
+                        Port + 1,
+                        PortSC.AsULONG);
+
+            EhciExtension->ConnectPortBits |= PortMask;
+
+            WRITE_REGISTER_ULONG(PortStatusReg,
+                                 PortSC.AsULONG | EHCI_PORTSC_CONNECT_STATUS_CHANGE);
+            READ_REGISTER_ULONG(PortStatusReg);
+        }
+
+        if (!PortSC.CurrentConnectStatus)
+        {
+            EhciExtension->SuspendPortBits &= ~PortMask;
+            EhciExtension->ResetPortBits &= ~PortMask;
+            EhciExtension->FinishResetPortBits &= ~PortMask;
+        }
+    }
+}
+
 BOOLEAN
 NTAPI
 EHCI_InterruptService(IN PVOID ehciExtension)
@@ -1515,13 +1646,18 @@ EHCI_InterruptDpc(IN PVOID ehciExtension,
         RegPacket.UsbPortInvalidateEndpoint(EhciExtension, NULL);
     }
 
+    BOOLEAN RestoreInterruptMask = EnableInterrupts;
+
     if (iStatus.PortChangeInterrupt == 1)
     {
         DPRINT_EHCI("EHCI_InterruptDpc: [%p] PortChangeInterrupt\n", EhciExtension);
+        EHCI_HandlePortChangeInterrupt(EhciExtension);
         RegPacket.UsbPortInvalidateRootHub(EhciExtension);
+        EhciExtension->InterruptMask.PortChangeInterrupt = 1;
+        RestoreInterruptMask = TRUE;
     }
 
-    if (EnableInterrupts)
+    if (RestoreInterruptMask)
     {
         WRITE_REGISTER_ULONG(&OperationalRegs->HcInterruptEnable.AsULONG,
                              EhciExtension->InterruptMask.AsULONG);
@@ -3523,7 +3659,71 @@ VOID
 NTAPI
 EHCI_ResetController(IN PVOID ehciExtension)
 {
-    DPRINT1("EHCI_ResetController: UNIMPLEMENTED. FIXME\n");
+    PEHCI_EXTENSION EhciExtension = ehciExtension;
+    PEHCI_HW_REGISTERS OperationalRegs;
+    EHCI_USB_COMMAND Command;
+    EHCI_USB_STATUS Status;
+    ULONG ix;
+
+    DPRINT("EHCI_ResetController: ... \n");
+
+    if (!EhciExtension)
+        return;
+
+    OperationalRegs = EhciExtension->OperationalRegs;
+
+    if (!OperationalRegs)
+        return;
+
+    EHCI_StopController(EhciExtension, TRUE);
+
+    Command.AsULONG = READ_REGISTER_ULONG(&OperationalRegs->HcCommand.AsULONG);
+    Command.Reset = 1;
+    Command.Run = 0;
+    Command.PeriodicEnable = 0;
+    Command.AsynchronousEnable = 0;
+    WRITE_REGISTER_ULONG(&OperationalRegs->HcCommand.AsULONG, Command.AsULONG);
+
+    for (ix = 0; ix < 100; ix++)
+    {
+        Command.AsULONG = READ_REGISTER_ULONG(&OperationalRegs->HcCommand.AsULONG);
+
+        if (Command.Reset == 0)
+            break;
+
+        RegPacket.UsbPortWait(EhciExtension, 1);
+    }
+
+    if (Command.Reset)
+    {
+        DPRINT1("EHCI_ResetController: Reset timed out\n");
+    }
+
+    Status.AsULONG = 0;
+    Status.Interrupt = 1;
+    Status.ErrorInterrupt = 1;
+    Status.PortChangeDetect = 1;
+    Status.FrameListRollover = 1;
+    Status.HostSystemError = 1;
+    Status.InterruptOnAsyncAdvance = 1;
+    WRITE_REGISTER_ULONG(&OperationalRegs->HcStatus.AsULONG, Status.AsULONG);
+
+    WRITE_REGISTER_ULONG(&OperationalRegs->HcInterruptEnable.AsULONG, 0);
+
+    EhciExtension->Flags &= ~EHCI_FLAGS_CONTROLLER_SUSPEND;
+    EhciExtension->IsStarted = FALSE;
+    EhciExtension->PortRoutingControl = 0;
+    EhciExtension->ConnectPortBits = 0;
+    EhciExtension->SuspendPortBits = 0;
+    EhciExtension->ResetPortBits = 0;
+    EhciExtension->FinishResetPortBits = 0;
+    EhciExtension->InterruptStatus.AsULONG = 0;
+    EhciExtension->FrameIndex = 0;
+    EhciExtension->FrameHighPart = 0;
+    EhciExtension->BackupPeriodiclistbase = 0;
+    EhciExtension->BackupAsynclistaddr = 0;
+    EhciExtension->BackupCtrlDSSegment = 0;
+    EhciExtension->BackupUSBCmd = 0;
 }
 
 MPSTATUS

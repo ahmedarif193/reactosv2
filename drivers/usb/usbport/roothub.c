@@ -615,14 +615,28 @@ USBPORT_RootHubSCE(IN PUSBPORT_TRANSFER Transfer)
             return RH_STATUS_UNSUCCESSFUL;
         }
 
+        DPRINT("USBPORT_RootHubSCE: port %u snapshot status=%04X change=%04X\n",
+               Port,
+               PortStatus.PortStatus.AsUshort16,
+               PortStatus.PortChange.AsUshort16);
+
         if (PortStatus.PortChange.Usb20PortChange.ConnectStatusChange ||
             PortStatus.PortChange.Usb20PortChange.PortEnableDisableChange ||
             PortStatus.PortChange.Usb20PortChange.SuspendChange ||
             PortStatus.PortChange.Usb20PortChange.OverCurrentIndicatorChange ||
             PortStatus.PortChange.Usb20PortChange.ResetChange)
         {
+            ULONG BitIndex;
+
+            /* Bit 0 is reserved for hub events, map port N to bit N */
+            BitIndex = Port;
+
             /* At the port status there is a change */
-            AddressBitMap[Port >> 5] |= 1 << (Port & 0x1F);
+            AddressBitMap[BitIndex >> 5] |= 1u << (BitIndex & 0x1F);
+            DPRINT("USBPORT_RootHubSCE: change detected on port %u (change=%04X status=%04X)\n",
+                   Port,
+                   PortStatus.PortChange.AsUshort16,
+                   PortStatus.PortStatus.AsUshort16);
             RHStatus = RH_STATUS_SUCCESS;
         }
     }

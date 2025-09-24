@@ -9,7 +9,7 @@
 
 #define NDEBUG
 #include <debug.h>
-
+ 
 #define NDEBUG_USBHUB_SCE
 #define NDEBUG_USBHUB_PNP
 #include "dbg_uhub.h"
@@ -97,8 +97,6 @@ USBH_SyncIrpComplete(IN PDEVICE_OBJECT DeviceObject,
     KIRQL OldIrql;
     BOOLEAN TimerCancelled;
 
-    DPRINT("USBH_SyncIrpComplete: ... \n");
-
     HubTimeoutContext = Context;
 
     KeAcquireSpinLock(&HubTimeoutContext->UrbTimeoutSpinLock, &OldIrql);
@@ -124,7 +122,6 @@ IsBitSet(IN PUCHAR BitMapAddress,
     BOOLEAN IsSet;
 
     IsSet = (BitMapAddress[Bit / 8] & (1 << (Bit & 7))) != 0;
-    DPRINT("IsBitSet: Bit - %lX, IsSet - %x\n", Bit, IsSet);
     return IsSet;
 }
 
@@ -259,8 +256,6 @@ USBH_SyncSubmitUrb(IN PDEVICE_OBJECT DeviceObject,
     LARGE_INTEGER DueTime;
     NTSTATUS Status;
 
-    DPRINT("USBH_SyncSubmitUrb: ... \n");
-
     Urb->UrbHeader.UsbdDeviceHandle = NULL;
 
     KeInitializeEvent(&Event, NotificationEvent, FALSE);
@@ -357,10 +352,6 @@ USBH_FdoSyncSubmitUrb(IN PDEVICE_OBJECT FdoDevice,
 {
     PUSBHUB_FDO_EXTENSION HubExtension;
 
-    DPRINT("USBH_FdoSyncSubmitUrb: FdoDevice - %p, Urb - %p\n",
-           FdoDevice,
-           Urb);
-
     HubExtension = FdoDevice->DeviceExtension;
     return USBH_SyncSubmitUrb(HubExtension->LowerDevice, Urb);
 }
@@ -382,8 +373,6 @@ USBH_Transact(IN PUSBHUB_FDO_EXTENSION HubExtension,
     PVOID Buffer = NULL;
     ULONG Length;
     NTSTATUS Status;
-
-    DPRINT("USBH_Transact: ... \n");
 
     if (BufferLen)
     {
@@ -1366,8 +1355,6 @@ USBH_SyncGetHubStatus(IN PUSBHUB_FDO_EXTENSION HubExtension,
 {
     BM_REQUEST_TYPE RequestType;
 
-    DPRINT("USBH_SyncGetHubStatus\n");
-
     RequestType.B = 0;
     RequestType.Recipient = BMREQUEST_TO_DEVICE;
     RequestType.Type = BMREQUEST_CLASS;
@@ -1512,6 +1499,44 @@ USBH_SyncPowerOnPort(IN PUSBHUB_FDO_EXTENSION HubExtension,
         }
 
         PortStatus->PortStatus.Usb20PortStatus.CurrentConnectStatus = 1;
+    }
+
+    return Status;
+}
+
+NTSTATUS
+NTAPI
+USBH_SyncPowerOffPort(IN PUSBHUB_FDO_EXTENSION HubExtension,
+                      IN USHORT Port)
+{
+    PUSBHUB_PORT_DATA PortData;
+    BM_REQUEST_TYPE RequestType;
+    NTSTATUS Status;
+
+    DPRINT("USBH_SyncPowerOffPort: Port - %x\n", Port);
+
+    ASSERT(Port > 0);
+
+    PortData = HubExtension->PortData ? &HubExtension->PortData[Port - 1] : NULL;
+
+    RequestType.B = 0;
+    RequestType.Recipient = BMREQUEST_TO_DEVICE;
+    RequestType.Type = BMREQUEST_CLASS;
+    RequestType.Dir = BMREQUEST_HOST_TO_DEVICE;
+
+    Status = USBH_Transact(HubExtension,
+                           NULL,
+                           0,
+                           BMREQUEST_HOST_TO_DEVICE,
+                           URB_FUNCTION_CLASS_OTHER,
+                           RequestType,
+                           USB_REQUEST_CLEAR_FEATURE,
+                           USBHUB_FEATURE_PORT_POWER,
+                           Port);
+
+    if (NT_SUCCESS(Status) && PortData)
+    {
+        PortData->PortStatus.PortStatus.Usb20PortStatus.PortPower = 0;
     }
 
     return Status;
@@ -1859,8 +1884,9 @@ USBH_ProcessHubStateChange(IN PUSBHUB_FDO_EXTENSION HubExtension,
                                 USBHUB_FEATURE_C_HUB_OVER_CURRENT);
         if (HubStatus->HubStatus.OverCurrent)
         {
-            DPRINT1("USBH_ProcessHubStateChange: OverCurrent UNIMPLEMENTED. FIXME\n");
-            DbgBreakPoint();
+            DPRINT1("USBH_ProcessHubStateChange: Over-current detected, resetting hub\n");
+            USBH_WriteFailReasonID(HubExtension->LowerPDO, USBHUB_FAIL_OVERCURRENT);
+            USBH_ResetHub(HubExtension);
         }
     }
 }
@@ -1878,14 +1904,14 @@ USBH_ProcessPortStateChange(IN PUSBHUB_FDO_EXTENSION HubExtension,
     PVOID SerialNumber;
     PVOID DeviceHandle;
     USHORT RequestValue;
+    NTSTATUS Status;
     KIRQL Irql;
-
-    DPRINT_SCE("USBH_ProcessPortStateChange ... \n");
 
     ASSERT(Port > 0);
     PortData = &HubExtension->PortData[Port - 1];
 
     PortStatusChange = PortStatus->PortChange.Usb20PortChange;
+    Status = STATUS_SUCCESS;
 
     if (PortStatusChange.ConnectStatusChange)
     {
@@ -1958,13 +1984,61 @@ USBH_ProcessPortStateChange(IN PUSBHUB_FDO_EXTENSION HubExtension,
     }
     else if (PortStatusChange.SuspendChange)
     {
-        DPRINT1("USBH_ProcessPortStateChange: SuspendChange UNIMPLEMENTED. FIXME\n");
-        DbgBreakPoint();
+        PortData->PortStatus = *PortStatus;
+        USBH_SyncClearPortStatus(HubExtension,
+                                 Port,
+                                 USBHUB_FEATURE_C_PORT_SUSPEND);
+
+        PortDevice = PortData->DeviceObject;
+        if (PortDevice)
+        {
+            PortExtension = PortDevice->DeviceExtension;
+            PortExtension->PortPdoFlags &= ~USBHUB_PDO_FLAG_POWER_D1_OR_D2;
+        }
+
+        if (!PortStatus->PortStatus.Usb20PortStatus.Suspend)
+        {
+            DPRINT("USBH_ProcessPortStateChange: Port %u resumed from suspend\n", Port);
+        }
+        return;
     }
     else if (PortStatusChange.OverCurrentIndicatorChange)
     {
-        DPRINT1("USBH_ProcessPortStateChange: OverCurrentIndicatorChange UNIMPLEMENTED. FIXME\n");
-        DbgBreakPoint();
+        PortData->PortStatus = *PortStatus;
+        USBH_SyncClearPortStatus(HubExtension,
+                                 Port,
+                                 USBHUB_FEATURE_C_PORT_OVER_CURRENT);
+
+        PortDevice = PortData->DeviceObject;
+        PortExtension = PortDevice ? PortDevice->DeviceExtension : NULL;
+
+        if (PortStatus->PortStatus.Usb20PortStatus.OverCurrent)
+        {
+            DPRINT1("USBH_ProcessPortStateChange: Port %u over-current detected\n", Port);
+            if (PortExtension)
+            {
+                PortExtension->PortPdoFlags |= USBHUB_PDO_FLAG_OVERCURRENT_PORT;
+            }
+
+            USBH_WriteFailReasonID(HubExtension->LowerPDO, USBHUB_FAIL_OVERCURRENT);
+
+            Status = USBH_SyncDisablePort(HubExtension, Port);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("USBH_ProcessPortStateChange: Failed to disable port %u (Status %lx)\n",
+                        Port,
+                        Status);
+            }
+        }
+        else
+        {
+            DPRINT("USBH_ProcessPortStateChange: Port %u over-current cleared\n", Port);
+            if (PortExtension)
+            {
+                PortExtension->PortPdoFlags &= ~USBHUB_PDO_FLAG_OVERCURRENT_PORT;
+            }
+        }
+        return;
     }
     else if (PortStatusChange.ResetChange)
     {
@@ -2235,28 +2309,40 @@ Enum:
     }
     else
     {
-        for (Port = 0;
-             Port < HubExtension->HubDescriptor->bNumberOfPorts;
+        PUCHAR Bitmap;
+        BOOLEAN HubChange;
+
+        Bitmap = (PUCHAR)(WorkItem + 1);
+        HubChange = IsBitSet(Bitmap, 0);
+
+        for (Port = 1;
+             Port <= HubExtension->HubDescriptor->bNumberOfPorts;
              Port++)
         {
-            if (IsBitSet((PUCHAR)(WorkItem + 1), Port))
+            if (IsBitSet(Bitmap, Port))
             {
                 break;
             }
         }
 
-        if (Port)
+        if (Port <= HubExtension->HubDescriptor->bNumberOfPorts)
         {
             Status = USBH_SyncGetPortStatus(HubExtension,
                                             Port,
                                             &PortStatus,
                                             sizeof(PortStatus));
         }
-        else
+        else if (HubChange)
         {
             Status = USBH_SyncGetHubStatus(HubExtension,
                                            &HubStatus,
                                            sizeof(HubStatus));
+            Port = 0;
+        }
+        else
+        {
+            Port = 0;
+            Status = STATUS_SUCCESS;
         }
 
         if (NT_SUCCESS(Status))
@@ -2267,7 +2353,7 @@ Enum:
                                             Port,
                                             &PortStatus);
             }
-            else
+            else if (HubChange)
             {
                 USBH_ProcessHubStateChange(HubExtension,
                                            &HubStatus);
@@ -2327,9 +2413,11 @@ USBH_ChangeIndication(IN PDEVICE_OBJECT DeviceObject,
     PUSBHUB_STATUS_CHANGE_CONTEXT HubWorkItemBuffer;
     USHORT NumPorts;
     USHORT Port;
+    USHORT SelectedPort;
     NTSTATUS Status;
     PVOID Bitmap;
     ULONG BufferLength;
+    BOOLEAN HubChange;
 
     HubExtension = Context;
     UrbStatus = HubExtension->SCEWorkerUrb.Hdr.Status;
@@ -2411,23 +2499,27 @@ USBH_ChangeIndication(IN PDEVICE_OBJECT DeviceObject,
 
     NumPorts = HubExtension->HubDescriptor->bNumberOfPorts;
 
-    for (Port = 0; Port <= NumPorts; ++Port)
+    SelectedPort = 0;
+    HubChange = IsBitSet(Bitmap, 0);
+
+    for (Port = 1; Port <= NumPorts; ++Port)
     {
         if (IsBitSet(Bitmap, Port))
         {
+            SelectedPort = Port;
             break;
         }
     }
 
-    if (Port > NumPorts)
+    if (!SelectedPort && !HubChange)
     {
-        Port = 0;
+        SelectedPort = 0;
     }
 
     Status = USBH_ChangeIndicationQueryChange(HubExtension,
                                               HubExtension->ResetPortIrp,
                                               &HubExtension->SCEWorkerUrb,
-                                              Port);
+                                              SelectedPort);
 
     if (NT_ERROR(Status))
     {
@@ -2799,8 +2891,6 @@ USBH_AllocateWorkItem(PUSBHUB_FDO_EXTENSION HubExtension,
     PIO_WORKITEM WorkItem;
     PVOID WorkItemBuffer;
 
-    DPRINT("USBH_AllocateWorkItem: ... \n");
-
     if (!(HubExtension->HubFlags & USBHUB_FDO_FLAG_WITEM_INIT))
     {
         return STATUS_INVALID_PARAMETER;
@@ -2877,8 +2967,6 @@ USBH_Worker(IN PDEVICE_OBJECT DeviceObject,
     KIRQL OldIrql;
     PIO_WORKITEM WorkItem;
 
-    DPRINT("USBH_Worker: HubIoWorkItem - %p\n", Context);
-
     HubIoWorkItem = Context;
 
     InterlockedDecrement(&HubIoWorkItem->HubWorkerQueued);
@@ -2908,8 +2996,6 @@ USBH_Worker(IN PDEVICE_OBJECT DeviceObject,
     }
 
     IoFreeWorkItem(WorkItem);
-
-    DPRINT("USBH_Worker: HubIoWorkItem %p complete\n", Context);
 }
 
 VOID
@@ -2917,7 +3003,6 @@ NTAPI
 USBH_QueueWorkItem(IN PUSBHUB_FDO_EXTENSION HubExtension,
                    IN PUSBHUB_IO_WORK_ITEM HubIoWorkItem)
 {
-    DPRINT("USBH_QueueWorkItem: ... \n");
 
     InterlockedIncrement(&HubExtension->PendingRequestCount);
     InterlockedIncrement(&HubIoWorkItem->HubWorkerQueued);
@@ -5134,4 +5219,3 @@ DriverEntry(IN PDRIVER_OBJECT DriverObject,
 
     return STATUS_SUCCESS;
 }
-

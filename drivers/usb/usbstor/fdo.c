@@ -37,6 +37,50 @@ USBSTOR_DumpDeviceDescriptor(PUSB_DEVICE_DESCRIPTOR DeviceDescriptor)
 }
 #endif
 
+static
+VOID
+USBSTOR_FreezeRequestQueue(PFDO_DEVICE_EXTENSION DeviceExtension)
+{
+    KIRQL OldIrql;
+
+    KeAcquireSpinLock(&DeviceExtension->IrpListLock, &OldIrql);
+    DeviceExtension->Flags |= USBSTOR_FDO_FLAGS_IRP_LIST_FREEZE;
+    KeReleaseSpinLock(&DeviceExtension->IrpListLock, OldIrql);
+}
+
+static
+VOID
+USBSTOR_DrainRequestQueue(IN PDEVICE_OBJECT DeviceObject,
+                          IN PFDO_DEVICE_EXTENSION DeviceExtension,
+                          IN NTSTATUS CompleteStatus)
+{
+    PIRP PendingIrp;
+
+    UNREFERENCED_PARAMETER(DeviceExtension);
+
+    while ((PendingIrp = USBSTOR_RemoveIrp(DeviceObject)) != NULL)
+    {
+        IoSetCancelRoutine(PendingIrp, NULL);
+        PendingIrp->IoStatus.Status = CompleteStatus;
+        PendingIrp->IoStatus.Information = 0;
+        USBSTOR_QueueTerminateRequest(DeviceObject, PendingIrp);
+        IoCompleteRequest(PendingIrp, IO_NO_INCREMENT);
+    }
+}
+
+static
+VOID
+USBSTOR_CancelActiveTransfer(IN PDEVICE_OBJECT DeviceObject)
+{
+    PIRP CurrentIrp;
+
+    CurrentIrp = DeviceObject->CurrentIrp;
+    if (CurrentIrp)
+    {
+        IoCancelIrp(CurrentIrp);
+    }
+}
+
 NTSTATUS
 USBSTOR_FdoHandleDeviceRelations(
     IN PFDO_DEVICE_EXTENSION DeviceExtension,
@@ -106,6 +150,11 @@ USBSTOR_FdoHandleRemoveDevice(
     ULONG Index;
 
     DPRINT("Handling FDO removal %p\n", DeviceObject);
+
+    USBSTOR_FreezeRequestQueue(DeviceExtension);
+    USBSTOR_CancelActiveTransfer(DeviceObject);
+    USBSTOR_DrainRequestQueue(DeviceObject, DeviceExtension, STATUS_NO_SUCH_DEVICE);
+    USBSTOR_QueueWaitForPendingRequests(DeviceObject);
 
     // FIXME: wait for devices finished processing
     for (Index = 0; Index < USB_MAXCHILDREN; Index++)
@@ -269,6 +318,8 @@ USBSTOR_FdoHandleStartDevice(
     //IoStartTimer(DeviceObject);
 
     DPRINT("USBSTOR_FdoHandleStartDevice FDO is initialized\n");
+
+    USBSTOR_QueueRelease(DeviceObject);
     return STATUS_SUCCESS;
 }
 
@@ -290,9 +341,14 @@ USBSTOR_FdoHandlePnp(
         case IRP_MN_SURPRISE_REMOVAL:
         {
             DPRINT("IRP_MN_SURPRISE_REMOVAL %p\n", DeviceObject);
+
+            USBSTOR_FreezeRequestQueue(DeviceExtension);
+            USBSTOR_CancelActiveTransfer(DeviceObject);
+            USBSTOR_DrainRequestQueue(DeviceObject, DeviceExtension, STATUS_DEVICE_NOT_CONNECTED);
+            USBSTOR_QueueWaitForPendingRequests(DeviceObject);
+
             Irp->IoStatus.Status = STATUS_SUCCESS;
 
-            // forward irp to next device object
             IoSkipCurrentIrpStackLocation(Irp);
             return IoCallDriver(DeviceExtension->LowerDeviceObject, Irp);
         }
@@ -303,11 +359,16 @@ USBSTOR_FdoHandlePnp(
         }
         case IRP_MN_STOP_DEVICE:
         {
-            DPRINT1("USBSTOR_FdoHandlePnp: IRP_MN_STOP_DEVICE unimplemented\n");
+            DPRINT("USBSTOR_FdoHandlePnp: IRP_MN_STOP_DEVICE\n");
+
+            USBSTOR_FreezeRequestQueue(DeviceExtension);
+            USBSTOR_CancelActiveTransfer(DeviceObject);
+            USBSTOR_DrainRequestQueue(DeviceObject, DeviceExtension, STATUS_CANCELLED);
+            USBSTOR_QueueWaitForPendingRequests(DeviceObject);
+
             IoStopTimer(DeviceObject);
             Irp->IoStatus.Status = STATUS_SUCCESS;
 
-            // forward irp to next device object
             IoSkipCurrentIrpStackLocation(Irp);
             return IoCallDriver(DeviceExtension->LowerDeviceObject, Irp);
         }
@@ -330,17 +391,33 @@ USBSTOR_FdoHandlePnp(
             {
                 /* We have pending requests */
                 DPRINT1("Failing removal/stop request due to pending requests present\n");
-                Status = STATUS_UNSUCCESSFUL;
+                Status = STATUS_DEVICE_BUSY;
             }
             else
             {
-                /* We're all clear */
+                USBSTOR_FreezeRequestQueue(DeviceExtension);
                 Irp->IoStatus.Status = STATUS_SUCCESS;
 
                 IoSkipCurrentIrpStackLocation(Irp);
-                return IoCallDriver(DeviceExtension->LowerDeviceObject, Irp);
+                Status = IoCallDriver(DeviceExtension->LowerDeviceObject, Irp);
+
+                if (!NT_SUCCESS(Status) && Status != STATUS_PENDING)
+                {
+                    USBSTOR_QueueRelease(DeviceObject);
+                }
+
+                return Status;
             }
             break;
+        }
+        case IRP_MN_CANCEL_STOP_DEVICE:
+        case IRP_MN_CANCEL_REMOVE_DEVICE:
+        {
+            DPRINT("USBSTOR_FdoHandlePnp: cancel stop/remove\n");
+            USBSTOR_QueueRelease(DeviceObject);
+
+            IoSkipCurrentIrpStackLocation(Irp);
+            return IoCallDriver(DeviceExtension->LowerDeviceObject, Irp);
         }
         case IRP_MN_START_DEVICE:
         {

@@ -7,11 +7,14 @@
 
 #include "usbhub.h"
 
-#define NDEBUG
 #include <debug.h>
 
-#define NDEBUG_USBHUB_IOCTL
 #include "dbg_uhub.h"
+
+static NTSTATUS
+USBH_IoctlCyclePort(
+  IN PUSBHUB_FDO_EXTENSION HubExtension,
+  IN PIRP Irp);
 
 NTSTATUS
 NTAPI
@@ -1131,6 +1134,125 @@ Exit:
     return Status;
 }
 
+static NTSTATUS
+USBH_IoctlCyclePort(IN PUSBHUB_FDO_EXTENSION HubExtension,
+                    IN PIRP Irp)
+{
+    PIO_STACK_LOCATION IoStack;
+    PULONG PortNumber;
+    USHORT Port;
+    NTSTATUS Status = STATUS_SUCCESS;
+    BOOLEAN SemaphoreHeld = FALSE;
+
+    IoStack = IoGetCurrentIrpStackLocation(Irp);
+
+    if (!HubExtension->HubDescriptor ||
+        !(HubExtension->HubFlags & USBHUB_FDO_FLAG_DEVICE_STARTED))
+    {
+        Status = STATUS_INVALID_DEVICE_STATE;
+        USBH_CompleteIrp(Irp, Status);
+        return Status;
+    }
+
+    if (IoStack->Parameters.DeviceIoControl.InputBufferLength < sizeof(ULONG) ||
+        Irp->AssociatedIrp.SystemBuffer == NULL)
+    {
+        Status = STATUS_INVALID_PARAMETER;
+        USBH_CompleteIrp(Irp, Status);
+        return Status;
+    }
+
+    PortNumber = (PULONG)Irp->AssociatedIrp.SystemBuffer;
+    Port = (USHORT)(*PortNumber);
+
+    if (Port == 0 ||
+        Port > HubExtension->HubDescriptor->bNumberOfPorts)
+    {
+        Status = STATUS_INVALID_PARAMETER;
+        USBH_CompleteIrp(Irp, Status);
+        return Status;
+    }
+
+    InterlockedIncrement(&HubExtension->PendingRequestCount);
+    KeWaitForSingleObject(&HubExtension->ResetDeviceSemaphore,
+                          Executive,
+                          KernelMode,
+                          FALSE,
+                          NULL);
+    SemaphoreHeld = TRUE;
+
+    if (HubExtension->CurrentPowerState.DeviceState != PowerDeviceD0)
+    {
+        NTSTATUS PowerStatus;
+
+        PowerStatus = USBH_HubSetD0(HubExtension);
+
+        if (!NT_SUCCESS(PowerStatus) && PowerStatus != STATUS_INVALID_DEVICE_STATE)
+        {
+            Status = PowerStatus;
+            goto Exit;
+        }
+    }
+
+    Status = USBH_SyncDisablePort(HubExtension, Port);
+
+    if (NT_SUCCESS(Status))
+    {
+        NTSTATUS PowerStatus;
+
+        PowerStatus = USBH_SyncPowerOffPort(HubExtension, Port);
+
+        if (!NT_SUCCESS(PowerStatus) &&
+            PowerStatus != STATUS_INVALID_DEVICE_REQUEST &&
+            PowerStatus != STATUS_NOT_SUPPORTED)
+        {
+            Status = PowerStatus;
+        }
+    }
+
+    if (NT_SUCCESS(Status))
+    {
+        USBH_Wait(100);
+        Status = USBH_SyncPowerOnPort(HubExtension, Port, TRUE);
+    }
+
+    if (NT_SUCCESS(Status))
+    {
+        USBH_SyncClearPortStatus(HubExtension,
+                                 Port,
+                                 USBHUB_FEATURE_C_PORT_CONNECTION);
+
+        Status = USBH_SyncResetPort(HubExtension, Port);
+    }
+
+Exit:
+    if (SemaphoreHeld)
+    {
+        KeReleaseSemaphore(&HubExtension->ResetDeviceSemaphore,
+                           LOW_REALTIME_PRIORITY,
+                           1,
+                           FALSE);
+    }
+
+    if (!InterlockedDecrement(&HubExtension->PendingRequestCount))
+    {
+        KeSetEvent(&HubExtension->PendingRequestEvent,
+                   EVENT_INCREMENT,
+                   FALSE);
+    }
+
+    Irp->IoStatus.Information = 0;
+
+    if (NT_SUCCESS(Status))
+    {
+        HubExtension->HubFlags |= USBHUB_FDO_FLAG_DO_ENUMERATION;
+        IoInvalidateDeviceRelations(HubExtension->LowerPDO, BusRelations);
+    }
+
+    USBH_CompleteIrp(Irp, Status);
+    return Status;
+}
+
 NTSTATUS
 NTAPI
 USBH_DeviceControl(IN PUSBHUB_FDO_EXTENSION HubExtension,
@@ -1170,8 +1292,8 @@ USBH_DeviceControl(IN PUSBHUB_FDO_EXTENSION HubExtension,
             break;
 
         case IOCTL_USB_HUB_CYCLE_PORT:
-            DPRINT1("USBH_DeviceControl: IOCTL_USB_HUB_CYCLE_PORT UNIMPLEMENTED. FIXME\n");
-            DbgBreakPoint();
+            DPRINT("USBH_DeviceControl: IOCTL_USB_HUB_CYCLE_PORT\n");
+            Status = USBH_IoctlCyclePort(HubExtension, Irp);
             break;
 
         case IOCTL_USB_GET_NODE_INFORMATION:
