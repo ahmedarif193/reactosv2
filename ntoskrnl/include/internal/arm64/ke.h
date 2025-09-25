@@ -238,6 +238,15 @@ extern volatile KSYSTEM_TIME KeTickCount;
 /* ARM64 Generic Timer definitions */
 #define ARM64_TIMER_FREQ_DEFAULT    62500000ULL  /* 62.5 MHz typical */
 
+/* ARM64 Thread Scheduler Constants */
+#define THREAD_QUANTUM_MAX          12          /* Maximum quantum */
+#define ARM64_QUANTUM_TARGET_MS     30          /* Target quantum duration in milliseconds */
+
+/* ARM64 Static definition (compatibility) */
+#ifndef STATIC
+#define STATIC static
+#endif
+
 /* win64 uses DMA macros, this one is not defined (following AMD64 pattern) */
 NTHALAPI
 NTSTATUS

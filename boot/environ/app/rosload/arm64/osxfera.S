@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT:       See COPYING.ARM in the top level directory
+ * COPYRIGHT:       Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
  * PROJECT:         ReactOS UEFI OS Loader
  * FILE:            boot/environ/app/rosload/arm64/osxfera.S
  * PURPOSE:         Architecture-Specific Transfer Routines

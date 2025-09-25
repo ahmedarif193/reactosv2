@@ -15,6 +15,19 @@
 #define NDEBUG
 #include <debug.h>
 
+#ifdef _M_ARM64
+/* ARM64-specific debug output for early kernel debugging */
+VOID
+Arm64SerialPutString(
+    _In_ PCHAR String
+);
+
+VOID
+Arm64SerialPutChar(
+    _In_ CHAR Character
+);
+#endif
+
 /*
  * Override DbgPrint(), used by the debugger banner DPRINTs below,
  * because KdInitSystem() can be called under the debugger lock by
@@ -169,17 +182,50 @@ KdInitSystem(
     PLDR_DATA_TABLE_ENTRY LdrEntry;
     ULONG i;
 
+#ifdef _M_ARM64
+    /* ARM64: Early debug logging for kernel initialization tracking */
+    Arm64SerialPutString("KdInitSystem: Entry, BootPhase=");
+    if (BootPhase == 0) {
+        Arm64SerialPutString("0 (Phase 0 - Early Init)\r\n");
+    } else {
+        Arm64SerialPutString("1 (Phase 1 - Late Init)\r\n");
+    }
+
+    /* ARM64: Memory barriers for debug output consistency */
+    __dsb(0xF); /* Full system data synchronization barrier */
+    __isb();    /* Instruction synchronization barrier */
+#endif
+
     /* Check if this is Phase 1 */
     if (BootPhase)
     {
+#ifdef _M_ARM64
+        Arm64SerialPutString("KdInitSystem: Phase 1 - querying performance counter\r\n");
+#endif
         /* Just query the performance counter */
         KeQueryPerformanceCounter(&KdPerformanceCounterRate);
+#ifdef _M_ARM64
+        Arm64SerialPutString("KdInitSystem: Phase 1 complete, returning TRUE\r\n");
+#endif
         return TRUE;
     }
 
+#ifdef _M_ARM64
+    Arm64SerialPutString("KdInitSystem: Phase 0 continuing with full initialization\r\n");
+#endif
+
     /* Check if we already initialized once */
     if (KdDebuggerEnabled)
+    {
+#ifdef _M_ARM64
+        Arm64SerialPutString("KdInitSystem: Already initialized, returning TRUE\r\n");
+#endif
         return TRUE;
+    }
+
+#ifdef _M_ARM64
+    Arm64SerialPutString("KdInitSystem: First-time initialization beginning\r\n");
+#endif
 
     /* Set the Debug Routine as the Stub for now */
     KiDebugRoutine = KdpStub;
@@ -227,21 +273,69 @@ KdInitSystem(
     {
         PSTR CommandLine, DebugLine;
 
+#ifdef _M_ARM64
+        Arm64SerialPutString("KdInitSystem: Processing LoaderBlock\r\n");
+
+        /* ARM64: Validate LoaderBlock structure integrity */
+        if (LoaderBlock->LoadOrderListHead.Flink == NULL) {
+            Arm64SerialPutString("KdInitSystem: ERROR - LoadOrderListHead.Flink is NULL!\r\n");
+        } else {
+            Arm64SerialPutString("KdInitSystem: LoadOrderListHead.Flink=");
+            /* Simple hex output for pointer - convert to string manually for early boot */
+            CHAR HexBuffer[20];
+            ULONG_PTR Value = (ULONG_PTR)LoaderBlock->LoadOrderListHead.Flink;
+            INT Pos = 0;
+            HexBuffer[Pos++] = '0';
+            HexBuffer[Pos++] = 'x';
+            for (INT Shift = 60; Shift >= 0; Shift -= 4) {
+                UCHAR Nibble = (UCHAR)((Value >> Shift) & 0xF);
+                HexBuffer[Pos++] = (Nibble < 10) ? ('0' + Nibble) : ('A' + Nibble - 10);
+            }
+            HexBuffer[Pos++] = '\r';
+            HexBuffer[Pos++] = '\n';
+            HexBuffer[Pos] = '\0';
+            Arm64SerialPutString(HexBuffer);
+        }
+
+        /* ARM64: Additional safety checks */
+        if (LoaderBlock->LoadOrderListHead.Blink == NULL) {
+            Arm64SerialPutString("KdInitSystem: WARNING - LoadOrderListHead.Blink is NULL!\r\n");
+        }
+#endif
+
         /* Get the image entry */
         LdrEntry = CONTAINING_RECORD(LoaderBlock->LoadOrderListHead.Flink,
                                      LDR_DATA_TABLE_ENTRY,
                                      InLoadOrderLinks);
 
+#ifdef _M_ARM64
+        Arm64SerialPutString("KdInitSystem: Kernel base retrieved from LdrEntry\r\n");
+#endif
+
         /* Save the Kernel Base */
         PsNtosImageBase = (ULONG_PTR)LdrEntry->DllBase;
         KdVersionBlock.KernBase = (ULONG64)(LONG_PTR)LdrEntry->DllBase;
+
+#ifdef _M_ARM64
+        Arm64SerialPutString("KdInitSystem: Kernel base saved, checking LoadOptions\r\n");
+#endif
 
         /* Check if we have a command line */
         CommandLine = LoaderBlock->LoadOptions;
         if (CommandLine)
         {
+#ifdef _M_ARM64
+            Arm64SerialPutString("KdInitSystem: Found LoadOptions command line\r\n");
+            Arm64SerialPutString("KdInitSystem: Command line: ");
+            Arm64SerialPutString(CommandLine);
+            Arm64SerialPutString("\r\n");
+#endif
             /* Upcase it */
             _strupr(CommandLine);
+
+#ifdef _M_ARM64
+            Arm64SerialPutString("KdInitSystem: Command line upcased, parsing options\r\n");
+#endif
 
             /* Assume we'll disable KD */
             EnableKd = FALSE;
@@ -249,22 +343,34 @@ KdInitSystem(
             /* Check for CRASHDEBUG, NODEBUG and just DEBUG */
             if (strstr(CommandLine, "CRASHDEBUG"))
             {
+#ifdef _M_ARM64
+                Arm64SerialPutString("KdInitSystem: CRASHDEBUG option found - debugger deferred\r\n");
+#endif
                 /* Don't enable KD now, but allow it to be enabled later */
                 KdPitchDebugger = FALSE;
             }
             else if (strstr(CommandLine, "NODEBUG"))
             {
+#ifdef _M_ARM64
+                Arm64SerialPutString("KdInitSystem: NODEBUG option found - debugger disabled\r\n");
+#endif
                 /* Don't enable KD and don't let it be enabled later */
                 KdPitchDebugger = TRUE;
             }
             else if ((DebugLine = strstr(CommandLine, "DEBUG")))
             {
+#ifdef _M_ARM64
+                Arm64SerialPutString("KdInitSystem: DEBUG option found - enabling debugger\r\n");
+#endif
                 /* Enable KD */
                 EnableKd = TRUE;
 
                 /* Check if there are any options */
                 if (DebugLine[5] == '=')
                 {
+#ifdef _M_ARM64
+                    Arm64SerialPutString("KdInitSystem: DEBUG options detected, parsing...\r\n");
+#endif
                     /* Save pointers */
                     PSTR DebugOptionStart, DebugOptionEnd;
                     DebugOptionStart = DebugOptionEnd = &DebugLine[6];
@@ -309,6 +415,9 @@ KdInitSystem(
                         if ((DebugOptionLength == 10) &&
                             !(strncmp(DebugOptionStart, "AUTOENABLE", 10)))
                         {
+#ifdef _M_ARM64
+                            Arm64SerialPutString("KdInitSystem: AUTOENABLE option found\r\n");
+#endif
                             /* Disable the debugger, but
                              * allow to re-enable it later */
                             DisableKdAfterInit = TRUE;
@@ -318,6 +427,9 @@ KdInitSystem(
                         else if ((DebugOptionLength == 7) &&
                                  !(strncmp(DebugOptionStart, "DISABLE", 7)))
                         {
+#ifdef _M_ARM64
+                            Arm64SerialPutString("KdInitSystem: DISABLE option found\r\n");
+#endif
                             /* Disable the debugger */
                             DisableKdAfterInit = TRUE;
                             BlockEnable = TRUE;
@@ -326,6 +438,9 @@ KdInitSystem(
                         else if ((DebugOptionLength == 6) &&
                                  !(strncmp(DebugOptionStart, "NOUMEX", 6)))
                         {
+#ifdef _M_ARM64
+                            Arm64SerialPutString("KdInitSystem: NOUMEX option found\r\n");
+#endif
                             /* Ignore user mode exceptions */
                             KdIgnoreUmExceptions = TRUE;
                         }
@@ -346,6 +461,9 @@ KdInitSystem(
         }
         else
         {
+#ifdef _M_ARM64
+            Arm64SerialPutString("KdInitSystem: No LoadOptions command line - disabling debugger by default\r\n");
+#endif
             /* No command line options? Disable debugger by default */
             KdPitchDebugger = TRUE;
             EnableKd = FALSE;
@@ -353,25 +471,57 @@ KdInitSystem(
     }
     else
     {
+#ifdef _M_ARM64
+        Arm64SerialPutString("KdInitSystem: No LoaderBlock - called from bugcheck or re-enable\r\n");
+#endif
         /* Called from a bugcheck or a re-enable. Save the Kernel Base. */
         KdVersionBlock.KernBase = (ULONG64)(LONG_PTR)PsNtosImageBase;
 
         /* Unconditionally enable KD */
         EnableKd = TRUE;
+#ifdef _M_ARM64
+        Arm64SerialPutString("KdInitSystem: Unconditionally enabling KD for bugcheck/re-enable\r\n");
+#endif
     }
 
     /* Set the Kernel Base in the Data Block */
     KdDebuggerDataBlock.KernBase = (ULONG_PTR)KdVersionBlock.KernBase;
 
+#ifdef _M_ARM64
+    Arm64SerialPutString("KdInitSystem: Kernel base set in data block\r\n");
+    if (EnableKd) {
+        Arm64SerialPutString("KdInitSystem: About to initialize debugger (EnableKd=TRUE)\r\n");
+    } else {
+        Arm64SerialPutString("KdInitSystem: Skipping debugger initialization (EnableKd=FALSE)\r\n");
+    }
+#endif
+
     /* Initialize the debugger if requested */
+#ifdef _M_ARM64
+    /* ARM64: Add memory barriers before critical debugger initialization */
+    __dsb(0xF); /* Full system data barrier for ARM64 */
+    __isb();    /* Instruction synchronization barrier */
+    Arm64SerialPutString("KdInitSystem: ARM64 memory barriers applied\r\n");
+#endif
+
     if (EnableKd && (NT_SUCCESS(KdDebuggerInitialize0(LoaderBlock))))
     {
+#ifdef _M_ARM64
+        Arm64SerialPutString("KdInitSystem: KdDebuggerInitialize0 succeeded\r\n");
+#endif
         /* Now set our real KD routine */
         KiDebugRoutine = KdpTrap;
+
+#ifdef _M_ARM64
+        Arm64SerialPutString("KdInitSystem: KiDebugRoutine set to KdpTrap\r\n");
+#endif
 
         /* Check if we've already initialized our structures */
         if (!KdpDebuggerStructuresInitialized)
         {
+#ifdef _M_ARM64
+            Arm64SerialPutString("KdInitSystem: Initializing debugger structures for first time\r\n");
+#endif
             /* Set Retries */
             KdpContext.KdpDefaultRetries = 20;
 
@@ -384,17 +534,33 @@ KdInitSystem(
                 KdpBreakpointTable[i].Address = NULL;
             }
 
+#ifdef _M_ARM64
+            Arm64SerialPutString("KdInitSystem: Breakpoint table initialized\r\n");
+#endif
+
             /* Initialize the Time Slip DPC */
             KeInitializeDpc(&KdpTimeSlipDpc, KdpTimeSlipDpcRoutine, NULL);
             KeInitializeTimer(&KdpTimeSlipTimer);
             ExInitializeWorkItem(&KdpTimeSlipWorkItem, KdpTimeSlipWork, NULL);
 
+#ifdef _M_ARM64
+            Arm64SerialPutString("KdInitSystem: Time slip DPC and timer initialized\r\n");
+#endif
+
             /* First-time initialization done! */
             KdpDebuggerStructuresInitialized = TRUE;
+
+#ifdef _M_ARM64
+            Arm64SerialPutString("KdInitSystem: Debugger structures initialization complete\r\n");
+#endif
         }
 
         /* Initialize the timer */
         KdTimerStart.QuadPart = 0;
+
+#ifdef _M_ARM64
+        Arm64SerialPutString("KdInitSystem: Timer initialized, officially enabling KD\r\n");
+#endif
 
         /* Officially enable KD */
         KdPitchDebugger = FALSE;
@@ -403,12 +569,23 @@ KdInitSystem(
         /* Let user-mode know that it's enabled as well */
         SharedUserData->KdDebuggerEnabled = TRUE;
 
+#ifdef _M_ARM64
+        Arm64SerialPutString("KdInitSystem: KD officially enabled, displaying banner\r\n");
+#endif
+
         /* Display separator + ReactOS version at the start of the debug log */
         KdpPrintBanner();
+
+#ifdef _M_ARM64
+        Arm64SerialPutString("KdInitSystem: Banner displayed\r\n");
+#endif
 
         /* Check if the debugger should be disabled initially */
         if (DisableKdAfterInit)
         {
+#ifdef _M_ARM64
+            Arm64SerialPutString("KdInitSystem: DisableKdAfterInit=TRUE, disabling debugger\r\n");
+#endif
             /* Disable it */
             KdDisableDebuggerWithLock(FALSE);
 
@@ -417,6 +594,9 @@ KdInitSystem(
              * (the debugger is active but disabled).
              */
             KdBlockEnable = BlockEnable;
+#ifdef _M_ARM64
+            Arm64SerialPutString("KdInitSystem: Debugger disabled after init, returning TRUE\r\n");
+#endif
             return TRUE;
         }
 
@@ -428,6 +608,10 @@ KdInitSystem(
             PWCHAR Name;
             STRING ImageName;
             CHAR NameBuffer[256];
+
+#ifdef _M_ARM64
+            Arm64SerialPutString("KdInitSystem: Loading symbols for boot images\r\n");
+#endif
 
             /* Loop over the first two boot images: HAL and kernel */
             for (NextEntry = LoaderBlock->LoadOrderListHead.Flink, i = 0;
@@ -454,21 +638,51 @@ KdInitSystem(
 
                 /* Load the symbols */
                 RtlInitString(&ImageName, NameBuffer);
+#ifdef _M_ARM64
+                Arm64SerialPutString("KdInitSystem: Loading symbols for image: ");
+                Arm64SerialPutString(NameBuffer);
+                Arm64SerialPutString("\r\n");
+#endif
                 DbgLoadImageSymbols(&ImageName,
                                     LdrEntry->DllBase,
                                     (ULONG_PTR)PsGetCurrentProcessId());
             }
 
+#ifdef _M_ARM64
+            Arm64SerialPutString("KdInitSystem: Symbol loading complete, checking for break-in\r\n");
+#endif
+
             /* Check for incoming break-in and break on symbol load
              * if requested, see ex/init.c!ExpLoadBootSymbols() */
             KdBreakAfterSymbolLoad = KdPollBreakIn();
+
+#ifdef _M_ARM64
+            if (KdBreakAfterSymbolLoad) {
+                Arm64SerialPutString("KdInitSystem: Break-in detected, KdBreakAfterSymbolLoad=TRUE\r\n");
+            } else {
+                Arm64SerialPutString("KdInitSystem: No break-in detected, KdBreakAfterSymbolLoad=FALSE\r\n");
+            }
+#endif
         }
     }
     else
     {
+#ifdef _M_ARM64
+        Arm64SerialPutString("KdInitSystem: Debugger initialization failed or not requested\r\n");
+#endif
         /* Disable debugger */
         KdDebuggerNotPresent = TRUE;
+#ifdef _M_ARM64
+        Arm64SerialPutString("KdInitSystem: KdDebuggerNotPresent set to TRUE\r\n");
+#endif
     }
+
+#ifdef _M_ARM64
+    Arm64SerialPutString("KdInitSystem: Returning TRUE - initialization complete\r\n");
+    /* ARM64: Final memory barrier to ensure all debug output is synchronized */
+    __dsb(0xF);
+    __isb();
+#endif
 
     /* Return initialized */
     return TRUE;

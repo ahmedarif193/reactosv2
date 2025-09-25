@@ -333,6 +333,7 @@ typedef struct _KPRCB
     volatile PVOID CurrentPacket[3];    /* IPI current packet array */
     volatile PVOID WorkerRoutine;       /* IPI worker routine */
     volatile ULONG IpiFrozen;           /* IPI frozen state */
+    KIRQL ThreadLockIrql;               /* Thread lock saved IRQL */
 } KPRCB, *PKPRCB;
 
 //

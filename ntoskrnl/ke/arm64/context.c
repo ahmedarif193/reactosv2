@@ -3,7 +3,7 @@
  * LICENSE:         GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0)
  * FILE:            ntoskrnl/ke/arm64/context.c
  * PURPOSE:         ARM64 Context Switching & Capture
- * PROGRAMMERS:     ReactOS ARM64 Team
+ * COPYRIGHT:       Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
  */
 
 /* INCLUDES *******************************************************************/

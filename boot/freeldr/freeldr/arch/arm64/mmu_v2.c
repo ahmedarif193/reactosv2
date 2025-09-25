@@ -2,12 +2,13 @@
  * PROJECT:     FreeLoader
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 MMU and memory management for ReactOS
- * COPYRIGHT:   Copyright 2024 Ahmed ARIF (contact@eotics.com)
+ * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
  */
 
 #include <freeldr.h>
 #include <arch/arm64/arm64.h>
 #include <debug.h>
+#include <Uefi.h>
 
 DBG_DEFAULT_CHANNEL(WARNING);
 

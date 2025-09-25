@@ -3,7 +3,7 @@
  * LICENSE:         BSD - See COPYING.ARM in the top level directory
  * FILE:            ntoskrnl/ex/arm64/ioport.c
  * PURPOSE:         Register and Port I/O Functions for ARM64
- * PROGRAMMERS:     ReactOS ARM64 Port Team
+ * COPYRIGHT:       Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
  */
 
 /* INCLUDES *******************************************************************/

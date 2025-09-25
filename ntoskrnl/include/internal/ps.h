@@ -482,6 +482,52 @@ extern ERESOURCE PsLoadedModuleResource;
 extern ULONG_PTR PsNtosImageBase;
 
 //
+// ARM64-specific Process Creation Functions
+//
+#ifdef _M_ARM64
+
+NTSTATUS
+NTAPI
+PspInitializeArm64ProcessCreation(VOID);
+
+NTSTATUS
+NTAPI
+PspCreateArm64SystemProcess(
+    OUT PEPROCESS *SystemProcess,
+    OUT PETHREAD *SystemThread
+);
+
+NTSTATUS
+NTAPI
+PspCreateArm64UserProcess(
+    OUT PEPROCESS *UserProcess,
+    IN PEPROCESS ParentProcess OPTIONAL,
+    IN PUNICODE_STRING ImageFileName,
+    IN ULONG ProcessFlags
+);
+
+NTSTATUS
+NTAPI
+PspCreateArm64ProcessThread(
+    IN PEPROCESS Process,
+    OUT PETHREAD *ProcessThread,
+    IN PVOID StartAddress,
+    IN PVOID StartParameter,
+    IN PCONTEXT InitialContext OPTIONAL,
+    IN BOOLEAN CreateSuspended
+);
+
+VOID
+NTAPI
+PspGetArm64ProcessStatistics(
+    OUT PULONG ProcessesCreated,
+    OUT PULONG ThreadsCreated,
+    OUT PULONG AsidsAllocated
+);
+
+#endif /* _M_ARM64 */
+
+//
 // Inlined Functions
 //
 #include "ps_x.h"

@@ -2,7 +2,7 @@
  * PROJECT:     ReactOS Kernel
  * LICENSE:     MIT (https://spdx.org/licenses/MIT)
  * PURPOSE:     Processor freeze support for ARM64
- * COPYRIGHT:   ReactOS ARM64 Team
+ * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
  */
 
 /* INCLUDES *******************************************************************/

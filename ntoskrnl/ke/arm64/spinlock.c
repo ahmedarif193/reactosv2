@@ -3,6 +3,7 @@
  * LICENSE:         GPL - See COPYING in the top level directory
  * FILE:            ntoskrnl/ke/arm64/spinlock.c
  * PURPOSE:         ARM64 Spinlock Support
+ * COPYRIGHT:       Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
  * PROGRAMMERS:     ReactOS Portable Systems Group
  */
 

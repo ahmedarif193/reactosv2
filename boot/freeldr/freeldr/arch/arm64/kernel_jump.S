@@ -2,7 +2,7 @@
  * PROJECT:     FreeLoader
  * LICENSE:     GPL-2.0-or-later
  * PURPOSE:     ARM64 kernel jump wrapper with proper handoff
- * COPYRIGHT:   Copyright 2024 ReactOS Team
+ * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
  */
 
 .text

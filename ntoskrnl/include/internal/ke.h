@@ -1040,11 +1040,6 @@ KiRetireDpcList(
     IN PKPRCB Prcb
 );
 
-VOID
-NTAPI
-KiQuantumEnd(
-    VOID
-);
 
 DECLSPEC_NORETURN
 VOID
@@ -1087,6 +1082,186 @@ KiFindIdealProcessor(
     _In_ KAFFINITY ProcessorSet,
     _In_ UCHAR OriginalIdealProcessor);
 #endif // CONFIG_SMP
+
+/* ARM64 Scheduler Functions */
+#ifdef _M_ARM64
+
+VOID
+FASTCALL
+KiReadyThread(
+    IN PKTHREAD Thread);
+
+PKTHREAD
+FASTCALL
+KiSelectNextThread(
+    IN PKPRCB Prcb);
+
+BOOLEAN
+FASTCALL
+KiQuantumEnd(
+    IN PKPRCB Prcb);
+
+VOID
+FASTCALL
+KiInitializeReadyQueues(
+    IN PKPRCB Prcb);
+
+VOID
+FASTCALL
+KiProcessDeferredReadyList(
+    IN PKPRCB Prcb);
+
+BOOLEAN
+FASTCALL
+KiCheckForReschedule(VOID);
+
+PKTHREAD
+FASTCALL
+KiDispatchThread(
+    IN PKTHREAD OldThread);
+
+VOID
+FASTCALL
+KiSetPriority(
+    IN PKTHREAD Thread,
+    IN KPRIORITY Priority,
+    IN BOOLEAN Boost);
+
+/* Additional ARM64 scheduler functions */
+
+VOID
+NTAPI
+KiInitializeScheduler(VOID);
+
+VOID
+FASTCALL
+KiAcquireThreadLock(
+    IN PKTHREAD Thread);
+
+VOID
+FASTCALL
+KiReleaseThreadLock(
+    IN PKTHREAD Thread);
+
+VOID
+FASTCALL
+KiDeferredReadyThread(
+    IN PKTHREAD Thread);
+
+VOID
+FASTCALL
+KiBoostPriorityThread(
+    IN PKTHREAD Thread,
+    IN KPRIORITY Increment);
+
+BOOLEAN
+FASTCALL
+KiPreemptThread(
+    IN PKTHREAD CurrentThread,
+    IN PKTHREAD NewThread);
+
+PKTHREAD
+FASTCALL
+KiIdleSchedule(
+    IN PKPRCB Prcb);
+
+KAFFINITY
+FASTCALL
+KiCalculateThreadAffinity(
+    IN PKTHREAD Thread);
+
+KAFFINITY
+FASTCALL
+KiSetAffinityThread(
+    IN PKTHREAD Thread,
+    IN KAFFINITY Affinity);
+
+VOID
+FASTCALL
+KiUpdateQuantumAfterIo(
+    IN PKTHREAD Thread,
+    IN ULONG IoTime);
+
+VOID
+FASTCALL
+KiDispatchInterruptHandler(VOID);
+
+NTSTATUS
+NTAPI
+KiGetSchedulerStatistics(
+    OUT PVOID Statistics,
+    IN ULONG Size);
+
+/* ARM64 Quantum Management Functions */
+
+VOID
+NTAPI
+KiInitializeQuantumManagement(VOID);
+
+VOID
+FASTCALL
+KiQuantumTimerHandler(
+    IN PKTRAP_FRAME TrapFrame);
+
+VOID
+FASTCALL
+KiUpdateQuantumOnSwitch(
+    IN PKTHREAD Thread);
+
+BOOLEAN
+FASTCALL
+KiYieldQuantum(
+    IN PKTHREAD Thread);
+
+VOID
+FASTCALL
+KiAdjustQuantumForIo(
+    IN PKTHREAD Thread,
+    IN LARGE_INTEGER WaitTime);
+
+BOOLEAN
+FASTCALL
+KiGetQuantumStatistics(
+    IN PKTHREAD Thread,
+    OUT PULONG QuantumUsed,
+    OUT PULONG QuantumRemaining);
+
+BOOLEAN
+NTAPI
+KiTimerInterruptServiceRoutine(
+    IN PKINTERRUPT InterruptObject,
+    IN PVOID ServiceContext);
+
+NTSTATUS
+NTAPI
+KiInitializeTimerInterrupt(VOID);
+
+/* ARM64 Scheduler Initialization Functions */
+
+NTSTATUS
+NTAPI
+KiInitializeArm64Scheduler(
+    IN PKPRCB Prcb);
+
+NTSTATUS
+NTAPI
+KiInitializeSecondaryProcessorScheduler(
+    IN PKPRCB Prcb);
+
+BOOLEAN
+NTAPI
+KiVerifySchedulerIntegrity(VOID);
+
+VOID
+NTAPI
+KiTuneSchedulerPerformance(VOID);
+
+NTSTATUS
+NTAPI
+KiSchedulerStartup(
+    IN PLOADER_PARAMETER_BLOCK LoaderBlock);
+
+#endif // _M_ARM64
 
 #ifdef __cplusplus
 } // extern "C"

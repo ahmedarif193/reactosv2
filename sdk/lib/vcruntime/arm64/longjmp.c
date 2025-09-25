@@ -2,7 +2,7 @@
  * PROJECT:     ReactOS vcruntime library
  * LICENSE:     MIT (https://spdx.org/licenses/MIT)
  * PURPOSE:     Implementation of longjmp for ARM64
- * COPYRIGHT:   Copyright 2025 Timo Kreuzer <timo.kreuzer@reactos.org>
+ * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
  */
 
 #include <setjmp.h>

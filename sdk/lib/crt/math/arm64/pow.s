@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT:       See COPYING in the top level directory
+ * COPYRIGHT:       Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
  * PROJECT:         ReactOS CRT library
  * PURPOSE:         Implementation of pow for ARM64
  * FILE:            lib/crt/math/arm64/pow.s

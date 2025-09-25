@@ -1815,6 +1815,28 @@ VOID
 NTAPI
 MiInitializeWorkingSetList(_Inout_ PMMSUPPORT WorkingSet);
 
+//
+// ARM64-specific Memory Management Functions
+//
+#ifdef _M_ARM64
+
+PFN_NUMBER
+NTAPI
+MiGetPfnForVirtualAddress(
+    IN PVOID VirtualAddress
+);
+
+NTSTATUS
+NTAPI
+MmMapViewOfSystemSection(
+    IN PEPROCESS Process,
+    IN OUT PVOID *BaseAddress,
+    IN OUT PSIZE_T ViewSize,
+    IN ULONG Protect
+);
+
+#endif /* _M_ARM64 */
+
 #ifdef __cplusplus
 } // extern "C"
 

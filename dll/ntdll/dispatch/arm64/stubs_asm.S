@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT:       See COPYING in the top level directory
+ * COPYRIGHT:       Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
  * PROJECT:         ReactOS System Libraries
  * FILE:            dll/ntdll/dispatch/arm64/stubs_asm.S
  * PURPOSE:         ARM64 User-Mode Dispatchers

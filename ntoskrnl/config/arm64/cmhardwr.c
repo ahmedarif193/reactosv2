@@ -3,6 +3,7 @@
  * LICENSE:         BSD - See COPYING.ARM in the top level directory
  * FILE:            ntoskrnl/config/arm64/cmhardwr.c
  * PURPOSE:         Configuration Manager - ARM64 Specific Code
+ * COPYRIGHT:       Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
  * PROGRAMMERS:     ReactOS Portable Systems Group
  */
 

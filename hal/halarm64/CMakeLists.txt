@@ -5,12 +5,24 @@ add_definitions(
     -D_NTHAL_)
 
 include_directories(
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/include)
+    ${REACTOS_SOURCE_DIR}/ntoskrnl/include
+    include)
 
 list(APPEND HAL_SOURCE
     halarm64.c
     portio.c
-    stubs.c)
+    stubs.c
+    acpi/halacpi.c
+    generic/halinit.c
+    generic/cache.c
+    generic/interrupt.c
+    generic/timer.c
+    generic/dma.c
+    generic/iommu.c
+    generic/power.c
+    generic/processor.c
+    generic/sysinfo.c
+    gic/gic.c)
 
 add_asm_files(hal_asm)
 

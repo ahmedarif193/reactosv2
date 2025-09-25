@@ -2,7 +2,7 @@
  * PROJECT:     ReactOS CRT
  * LICENSE:     GPL-2.0-or-later
  * PURPOSE:     ARM64 exception handling implementation
- * COPYRIGHT:   Copyright 2024 ReactOS Team
+ * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
  */
 
 #ifdef __aarch64__

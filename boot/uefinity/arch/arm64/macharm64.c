@@ -2,7 +2,7 @@
  * PROJECT:     FreeLoader
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 machine initialization for UEFI
- * COPYRIGHT:   Copyright 2024 Ahmed ARIF (contact@eotics.com)
+ * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
  */
 
 #include <freeldr.h>

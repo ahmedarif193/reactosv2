@@ -340,6 +340,16 @@ VOID NTAPI KeInvalidateTlbEntry(IN PVOID VirtualAddress);
 /* ARM64 function stubs */
 BOOLEAN NTAPI MiSynchronizeSystemPde(IN PMMPDE PointerPde);
 
+/* ARM64 Pool Allocator Functions */
+NTSTATUS NTAPI MiInitializeArm64Pool(VOID);
+PVOID NTAPI ExAllocatePoolArm64(_In_ POOL_TYPE PoolType, _In_ SIZE_T NumberOfBytes, _In_ ULONG Tag);
+VOID NTAPI ExFreePoolArm64(_In_ PVOID P, _In_ ULONG Tag);
+NTSTATUS NTAPI ExGetPoolTagInfoArm64(_In_ ULONG Tag, _Out_ PSYSTEM_POOLTAG_INFORMATION TagInfo);
+VOID NTAPI ExGetPoolStatisticsArm64(_Out_ PSYSTEM_POOL_ENTRY NonPagedPoolStats, _Out_ PSYSTEM_POOL_ENTRY PagedPoolStats);
+BOOLEAN NTAPI MiCheckPoolCorruption(_In_ PVOID StartAddress, _In_ SIZE_T Size);
+VOID NTAPI MiNotifyMemoryPressure(_In_ POOL_TYPE PoolType, _In_ ULONG Flags);
+VOID NTAPI MiDumpPoolStatistics(_In_ POOL_TYPE PoolType);
+
 #ifdef __cplusplus
 }
 #endif

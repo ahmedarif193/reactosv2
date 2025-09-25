@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT:       See COPYING in the top level directory
+ * COPYRIGHT:       Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
  * PROJECT:         ReactOS Kernel
  * PURPOSE:         ARM64 Thread Management
  * FILE:            ntoskrnl/ke/arm64/thread.c

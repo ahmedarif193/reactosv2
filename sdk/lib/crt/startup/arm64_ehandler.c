@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT:       Public Domain
+ * COPYRIGHT:       Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
  * PROJECT:         ReactOS CRT library
  * PURPOSE:         ARM64 exception handling stubs
  * PROGRAMMER:      Claude AI (for ARM64 port compatibility)

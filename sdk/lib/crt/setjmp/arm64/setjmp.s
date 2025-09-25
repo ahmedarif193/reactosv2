@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT:         BSD - See COPYING.ARM in the top level directory
+ * COPYRIGHT:         Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
  * PROJECT:           ReactOS CRT library
  * PURPOSE:           Implementation of _setjmp / longjmp for ARM64
  * PROGRAMMER:        Claude AI (based on ARM32 implementation and AMD64 reference)

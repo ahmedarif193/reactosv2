@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT:       See COPYING in the top level directory
+ * Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
  * PROJECT:         ReactOS HAL
  * PURPOSE:         ARM64 Hardware Abstraction Layer Main File
  * FILE:            hal/halarm64/halarm64.c

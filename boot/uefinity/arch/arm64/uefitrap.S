@@ -2,7 +2,7 @@
  * PROJECT:     FreeLoader UEFI Support
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 UEFI exception/interrupt stubs and vector helpers
- * COPYRIGHT:   Copyright 2024 ReactOS Team
+ * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
  */
 
 .extern Arm64HandleException

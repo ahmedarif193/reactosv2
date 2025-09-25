@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT:       See COPYING in the top level directory
+ * Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
  * PROJECT:         ReactOS Runtime Library
  * PURPOSE:         ARM64 stubs
  * FILE:            lib/rtl/arm64/stubs.c

@@ -155,6 +155,19 @@ KdDebuggerInitialize0(
     if (KdpDebugMode.Value == 0)
         KdpDebugMode.Serial = TRUE;
 
+#ifdef _M_ARM64
+    /* ARM64: Disable serial debugging due to missing ARM64-specific UART implementation
+     * The ARM32 UART code uses hardcoded addresses that cause crashes on ARM64 systems.
+     * Enable screen debugging instead as a safer alternative. */
+    if (KdpDebugMode.Serial) {
+        KdpDebugMode.Serial = FALSE;
+        /* Enable screen debugging instead if nothing else is set */
+        if (KdpDebugMode.Value == 0) {
+            KdpDebugMode.Screen = TRUE;
+        }
+    }
+#endif
+
     /* Call the providers at Phase 0 */
     for (i = 0; i < RTL_NUMBER_OF(DispatchTable); i++)
     {

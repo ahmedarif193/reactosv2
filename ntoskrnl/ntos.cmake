@@ -404,6 +404,7 @@ elseif(ARCH STREQUAL "arm64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/kd64/arm64/kdsup.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/context.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/cpu.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/debug.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/except.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/freeze.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/halimports.c
@@ -415,11 +416,21 @@ elseif(ARCH STREQUAL "arm64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/syscall.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/thread.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/thrdini.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/queue.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/scheduler.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/quantum.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/sched_init.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/usercall.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/semaphore.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/event.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/page.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/pool.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/procsup.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/tlb.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm64/init.c
-        ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/arm64/psctx.c)
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/arm64/psctx.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/arm64/psarm64.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/arm64/create.c)
 endif()
 
 if(NOT _WINKD_)

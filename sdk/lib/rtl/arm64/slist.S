@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT:       See COPYING in the top level directory
+ * COPYRIGHT:       Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
  * PROJECT:         ReactOS Runtime Library
  * PURPOSE:         ARM64 SList assembly support
  * FILE:            lib/rtl/arm64/slist.S

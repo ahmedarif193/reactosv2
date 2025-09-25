@@ -1,3 +1,10 @@
+/*
+ * PROJECT:     ReactOS Kernel
+ * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
+ * PURPOSE:     ARM64 Compiler Intrinsics
+ * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ */
+
 #pragma once
 
 /* ARM64 Compiler Intrinsics for ReactOS Kernel */
