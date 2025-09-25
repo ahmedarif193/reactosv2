@@ -80,76 +80,102 @@ typedef union _CPU_INFO
 
 typedef struct _KTRAP_FRAME
 {
-    UCHAR ExceptionActive;
-    UCHAR ContextFromKFramesUnwound;
-    UCHAR DebugRegistersValid;
+    //
+    // General purpose registers X0-X30, must match assembly layout exactly
+    // Offsets: 0x000-0x0F0 (248 bytes total)
+    //
     union
     {
+        ULONG64 X[31];  // X0-X30 as array
         struct
         {
-            CHAR PreviousMode;
-            UCHAR PreviousIrql;
+            ULONG64 X0;     // 0x000
+            ULONG64 X1;     // 0x008
+            ULONG64 X2;     // 0x010
+            ULONG64 X3;     // 0x018
+            ULONG64 X4;     // 0x020
+            ULONG64 X5;     // 0x028
+            ULONG64 X6;     // 0x030
+            ULONG64 X7;     // 0x038
+            ULONG64 X8;     // 0x040
+            ULONG64 X9;     // 0x048
+            ULONG64 X10;    // 0x050
+            ULONG64 X11;    // 0x058
+            ULONG64 X12;    // 0x060
+            ULONG64 X13;    // 0x068
+            ULONG64 X14;    // 0x070
+            ULONG64 X15;    // 0x078
+            ULONG64 X16;    // 0x080
+            ULONG64 X17;    // 0x088
+            ULONG64 X18;    // 0x090
+            ULONG64 X19;    // 0x098
+            ULONG64 X20;    // 0x0A0
+            ULONG64 X21;    // 0x0A8
+            ULONG64 X22;    // 0x0B0
+            ULONG64 X23;    // 0x0B8
+            ULONG64 X24;    // 0x0C0
+            ULONG64 X25;    // 0x0C8
+            ULONG64 X26;    // 0x0D0
+            ULONG64 X27;    // 0x0D8
+            ULONG64 X28;    // 0x0E0
+            ULONG64 Fp;     // 0x0E8 - X29 (Frame pointer)
+            ULONG64 Lr;     // 0x0F0 - X30 (Link register)
         };
     };
-    ULONG Reserved;
-    union
-    {
-        struct
-        {
-            ULONG64 FaultAddress;
-            ULONG64 TrapFrame;
-        };
-    };
-    //struct PKARM64_VFP_STATE VfpState;
-    ULONG VfpState;
-    ULONG Bcr[8];
-    ULONG64 Bvr[8];
-    ULONG Wcr[2];
-    ULONG64 Wvr[2];
-    ULONG Spsr;
-    ULONG Pstate;  // Also known as CPSR in user-mode context
-    ULONG Esr;
-    ULONG64 Sp;
-    union
-    {
-        ULONG64 X[29];
-        struct
-        {
-            ULONG64 X0;
-            ULONG64 X1;
-            ULONG64 X2;
-            ULONG64 X3;
-            ULONG64 X4;
-            ULONG64 X5;
-            ULONG64 X6;
-            ULONG64 X7;
-            ULONG64 X8;
-            ULONG64 X9;
-            ULONG64 X10;
-            ULONG64 X11;
-            ULONG64 X12;
-            ULONG64 X13;
-            ULONG64 X14;
-            ULONG64 X15;
-            ULONG64 X16;
-            ULONG64 X17;
-            ULONG64 X18;
-            ULONG64 X19;
-            ULONG64 X20;
-            ULONG64 X21;
-            ULONG64 X22;
-            ULONG64 X23;
-            ULONG64 X24;
-            ULONG64 X25;
-            ULONG64 X26;
-            ULONG64 X27;
-            ULONG64 X28;
-        };
-    };
-    ULONG64 Lr;
-    ULONG64 Fp;
-    ULONG64 Pc;
+
+    //
+    // Exception state registers, must match assembly layout exactly
+    //
+    ULONG64 Sp;         // 0x0F8 - Stack pointer
+    ULONG64 Pc;         // 0x100 - Program counter (ELR_EL1)
+    ULONG64 Pstate;     // 0x108 - Processor state (SPSR_EL1)
+    ULONG64 Esr;        // 0x110 - Exception syndrome register
+    ULONG64 Far;        // 0x118 - Fault address register
+
+    //
+    // Additional fields for Windows kernel compatibility
+    // These come after the hardware-defined trap frame layout
+    //
+    UCHAR ExceptionActive;              // 0x120
+    UCHAR ContextFromKFramesUnwound;    // 0x121
+    UCHAR DebugRegistersValid;          // 0x122
+    CHAR PreviousMode;                  // 0x123
+    UCHAR PreviousIrql;                 // 0x124
+    UCHAR Reserved1[3];                 // 0x125-0x127 (padding for alignment)
+
+    //
+    // Debug registers (optional, not saved by assembly trap handler)
+    //
+    ULONG Bcr[8];       // 0x128-0x147 - Breakpoint control registers
+    ULONG64 Bvr[8];     // 0x148-0x187 - Breakpoint value registers
+    ULONG Wcr[2];       // 0x188-0x18F - Watchpoint control registers
+    ULONG64 Wvr[2];     // 0x190-0x19F - Watchpoint value registers
+
+    //
+    // VFP/NEON state (not saved in basic trap frame)
+    //
+    PVOID VfpState;     // 0x1A0 - Pointer to VFP context if saved
+
+    ULONG64 TrapFrame;  // 0x1A8 - Self-reference for consistency checks
+
 } KTRAP_FRAME, *PKTRAP_FRAME;
+
+//
+// Static assertions to verify trap frame layout matches assembly definitions
+//
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, X0) == 0x000);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, X1) == 0x008);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, X8) == 0x040);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, X16) == 0x080);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, X28) == 0x0E0);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, Fp) == 0x0E8);    // X29
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, Lr) == 0x0F0);    // X30
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, Sp) == 0x0F8);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, Pc) == 0x100);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, Pstate) == 0x108);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, Esr) == 0x110);
+C_ASSERT(FIELD_OFFSET(KTRAP_FRAME, Far) == 0x118);
+C_ASSERT(sizeof(KTRAP_FRAME) >= 0x120);  // At least as large as assembly frame
 
 typedef struct _KEXCEPTION_FRAME
 {

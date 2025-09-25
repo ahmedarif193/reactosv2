@@ -198,7 +198,6 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/thrdschd.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/time.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/timerobj.c
-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/wait.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/close.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/complete.c
     ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/connect.c
@@ -298,6 +297,9 @@ list(APPEND SOURCE
     ${REACTOS_SOURCE_DIR}/ntoskrnl/se/debug.c)
 
 list(APPEND ASM_SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/zw.S)
+
+# Add wait.c for all architectures (contains essential Ki* functions)
+list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/wait.c)
 
 if(ARCH STREQUAL "i386")
     list(APPEND ASM_SOURCE
@@ -423,10 +425,12 @@ elseif(ARCH STREQUAL "arm64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/usercall.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/semaphore.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/event.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/wait.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/page.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/pool.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/procsup.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/tlb.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/virtual.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm64/init.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/arm64/psctx.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/arm64/psarm64.c

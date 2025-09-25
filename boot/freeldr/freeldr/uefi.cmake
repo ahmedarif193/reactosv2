@@ -54,7 +54,8 @@ elseif(ARCH STREQUAL "arm64")
         arch/uefi/arm64/uefiasm.S
         arch/arm64/entry.S
         arch/arm64/except.S
-        arch/arm64/cache_v2.S)
+        arch/arm64/cache_v2.S
+        arch/arm64/kernel_jump.S)
 else()
     #TBD
 endif()

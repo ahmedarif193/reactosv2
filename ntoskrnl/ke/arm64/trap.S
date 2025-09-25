@@ -44,7 +44,8 @@
 #define TF_PSTATE   0x108    /* Processor state (SPSR_EL1) */
 #define TF_ESR      0x110    /* Exception syndrome register */
 #define TF_FAR      0x118    /* Fault address register */
-#define TF_SIZE     0x120    /* Total size */
+#define TF_SIZE     0x120    /* Size of hardware trap frame (core registers + exception state)
+                                  * Note: Full KTRAP_FRAME is larger with additional Windows fields */
 
 .text
 

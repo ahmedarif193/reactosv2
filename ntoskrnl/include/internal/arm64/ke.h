@@ -195,12 +195,7 @@ KiSwapContextARM64(
     IN PKTHREAD OldThread,
     IN PKTHREAD NewThread);
 
-/* Generic KiSwapContext wrapper for ARM64 compatibility */
-BOOLEAN
-FASTCALL
-KiSwapContext(
-    IN KIRQL WaitIrql,
-    IN PKTHREAD CurrentThread);
+/* KiSwapContext is declared in generic ke.h - no ARM64 specific version needed */
 
 /* ARM64 specific PCR access */
 #define KeGetPcr() PCR
@@ -218,6 +213,14 @@ NTAPI
 _KfRaiseIrql(
     IN KIRQL NewIrql
 );
+
+BOOLEAN
+NTAPI
+_KfEnable(VOID);
+
+BOOLEAN
+NTAPI
+_KfDisable(VOID);
 
 /* ARM64 IRQL manipulation (using GIC priority) */
 #define KfLowerIrql(NewIrql) \
@@ -403,7 +406,7 @@ KeGetTrapFrameInterruptState(
     IN PKTRAP_FRAME TrapFrame)
 {
     /* Check if interrupts were enabled in the trap frame */
-    return (TrapFrame->Spsr & 0x80) == 0;
+    return (TrapFrame->Pstate & 0x80) == 0;
 }
 
 /* ARM64 frame register access functions */

@@ -460,6 +460,7 @@ KiTimerListExpire(IN PLIST_ENTRY ExpiredListHead,
     }
 }
 
+#ifndef _M_ARM64
 _Requires_lock_not_held_(Prcb->PrcbLock)
 VOID
 NTAPI
@@ -556,6 +557,7 @@ KiQuantumEnd(VOID)
     /* Lower IRQL back to DISPATCH_LEVEL */
     KeLowerIrql(DISPATCH_LEVEL);
 }
+#endif /* !_M_ARM64 */
 
 VOID
 FASTCALL

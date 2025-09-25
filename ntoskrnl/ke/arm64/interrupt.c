@@ -22,6 +22,39 @@ PVOID KiGicCpuInterfaceBase = NULL;
 /* Interrupt vector table */
 PVOID KiInterruptHandlerTable[256];
 
+/* ARM64 DAIF register bit definitions */
+#define DAIF_DEBUG_MASK     0x200   /* D bit - Debug exceptions */
+#define DAIF_SERROR_MASK    0x100   /* A bit - SError (System Error) */
+#define DAIF_IRQ_MASK       0x080   /* I bit - IRQ (Normal interrupts) at bit 7 */
+#define DAIF_FIQ_MASK       0x040   /* F bit - FIQ (Fast interrupts) */
+
+/* GIC Priority Register definitions */
+#define GIC_MIN_PRIORITY    0xFF    /* Lowest priority (all interrupts masked) */
+#define GIC_MAX_PRIORITY    0x00    /* Highest priority (no interrupts masked) */
+
+/* IRQL to GIC Priority mapping table
+ * Lower GIC priority values = higher actual priority
+ * Higher IRQL values = higher priority (fewer interrupts allowed)
+ */
+static const UCHAR KiIrqlToGicPriority[16] = {
+    0xF0,   /* PASSIVE_LEVEL (0) - Allow all interrupts */
+    0xE0,   /* APC_LEVEL (1) */
+    0xD0,   /* DISPATCH_LEVEL (2) */
+    0xC0,   /* IRQL 3 */
+    0xB0,   /* IRQL 4 */
+    0xA0,   /* IRQL 5 */
+    0x90,   /* IRQL 6 */
+    0x80,   /* IRQL 7 */
+    0x70,   /* IRQL 8 */
+    0x60,   /* IRQL 9 */
+    0x50,   /* IRQL 10 */
+    0x40,   /* IRQL 11 */
+    0x30,   /* IRQL 12 */
+    0x20,   /* IRQL 13 */
+    0x10,   /* PROFILE_LEVEL (14) */
+    0x00    /* HIGH_LEVEL (15) - Block all maskable interrupts */
+};
+
 /* FUNCTIONS *****************************************************************/
 
 /*
@@ -45,7 +78,13 @@ _KfRaiseIrql(IN KIRQL NewIrql)
     /* Set new IRQL */
     KeGetPcr()->CurrentIrql = NewIrql;
 
-    /* TODO: Configure GIC priority masking for this IRQL */
+    /* Configure GIC priority masking for this IRQL */
+    if (NewIrql < ARRAY_SIZE(KiIrqlToGicPriority))
+    {
+        UCHAR GicPriority = KiIrqlToGicPriority[NewIrql];
+        __asm__ volatile("msr icc_pmr_el1, %0" :: "r"((ULONG64)GicPriority));
+        __isb();
+    }
 
     return OldIrql;
 }
@@ -70,8 +109,21 @@ _KfLowerIrql(IN KIRQL NewIrql)
     /* Set new IRQL */
     KeGetPcr()->CurrentIrql = NewIrql;
 
-    /* TODO: Configure GIC priority masking for this IRQL */
-    /* TODO: Check for pending software interrupts */
+    /* Configure GIC priority masking for this IRQL */
+    if (NewIrql < ARRAY_SIZE(KiIrqlToGicPriority))
+    {
+        UCHAR GicPriority = KiIrqlToGicPriority[NewIrql];
+        __asm__ volatile("msr icc_pmr_el1, %0" :: "r"((ULONG64)GicPriority));
+        __isb();
+    }
+
+    /* Check for pending software interrupts at lower IRQL */
+    /* TODO: Implement software interrupt dispatch */
+    if (NewIrql < DISPATCH_LEVEL)
+    {
+        /* Check for pending DPCs and APCs */
+        /* KiCheckForSoftwareInterrupts(NewIrql); */
+    }
 }
 
 /* _KeGetPreviousMode is defined as a macro in ketypes.h for ARM64 */
@@ -125,13 +177,34 @@ KiInitializeInterruptController(
 }
 
 /*
- * @brief Enable interrupts on current processor
+ * @brief Enable interrupts on current processor (_KfEnable function)
  *
  * ARM64 uses DAIF register to control interrupts.
- * D - Debug exceptions
- * A - SError (System Error)
- * I - IRQ (Normal interrupts)
- * F - FIQ (Fast interrupts)
+ * D - Debug exceptions (bit 9)
+ * A - SError (System Error) (bit 8)
+ * I - IRQ (Normal interrupts) (bit 7) - THIS IS THE CORRECT BIT POSITION
+ * F - FIQ (Fast interrupts) (bit 6)
+ *
+ * @return BOOLEAN - Previous interrupt state (TRUE if interrupts were enabled)
+ */
+BOOLEAN
+NTAPI
+_KfEnable(VOID)
+{
+    ULONG64 OldDaif;
+
+    /* Read current DAIF state */
+    __asm__ volatile("mrs %0, daif" : "=r" (OldDaif));
+
+    /* Clear IRQ mask bit to enable interrupts (bit 7 = 0x80) */
+    __asm__ volatile("msr daifclr, #0x2" ::: "memory");
+
+    /* Return TRUE if interrupts were previously enabled (I bit was clear) */
+    return (OldDaif & DAIF_IRQ_MASK) == 0;
+}
+
+/*
+ * @brief Enable interrupts on current processor (legacy name)
  *
  * @return BOOLEAN - Previous interrupt state
  */
@@ -139,22 +212,32 @@ BOOLEAN
 NTAPI
 KiEnableInterrupts(VOID)
 {
-    DPRINT1("KiEnableInterrupts: ARM64 stub\n");
-
-    /* TODO: Read current DAIF state */
-    /* MRS X0, DAIF */
-    /* ULONG64 OldDaif = __readdaif(); */
-
-    /* TODO: Clear interrupt mask bits */
-    /* MSR DAIFClr, #0x2  ; Clear I bit to enable IRQ */
-
-    /* Return whether interrupts were previously enabled */
-    /* return (OldDaif & 0x80) == 0; */
-    return FALSE; /* Stub: assume interrupts were disabled */
+    return _KfEnable();
 }
 
 /*
- * @brief Disable interrupts on current processor
+ * @brief Disable interrupts on current processor (_KfDisable function)
+ *
+ * @return BOOLEAN - Previous interrupt state (TRUE if interrupts were enabled)
+ */
+BOOLEAN
+NTAPI
+_KfDisable(VOID)
+{
+    ULONG64 OldDaif;
+
+    /* Read current DAIF state */
+    __asm__ volatile("mrs %0, daif" : "=r" (OldDaif));
+
+    /* Set IRQ mask bit to disable interrupts (bit 7 = 0x80) */
+    __asm__ volatile("msr daifset, #0x2" ::: "memory");
+
+    /* Return TRUE if interrupts were previously enabled (I bit was clear) */
+    return (OldDaif & DAIF_IRQ_MASK) == 0;
+}
+
+/*
+ * @brief Disable interrupts on current processor (legacy name)
  *
  * @return BOOLEAN - Previous interrupt state
  */
@@ -162,18 +245,7 @@ BOOLEAN
 NTAPI
 KiDisableInterrupts(VOID)
 {
-    DPRINT1("KiDisableInterrupts: ARM64 stub\n");
-
-    /* TODO: Read current DAIF state */
-    /* MRS X0, DAIF */
-    /* ULONG64 OldDaif = __readdaif(); */
-
-    /* TODO: Set interrupt mask bits */
-    /* MSR DAIFSet, #0x2  ; Set I bit to disable IRQ */
-
-    /* Return whether interrupts were previously enabled */
-    /* return (OldDaif & 0x80) == 0; */
-    return FALSE; /* Stub: assume interrupts were disabled */
+    return _KfDisable();
 }
 
 /* KeConnectInterrupt is implemented in irqobj.c */

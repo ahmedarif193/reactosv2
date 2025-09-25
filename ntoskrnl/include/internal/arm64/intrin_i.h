@@ -344,6 +344,39 @@ static __inline__ unsigned long long __rndr(void)
     return val;
 }
 
+/* ARM64 GIC System Register Access */
+static __inline__ void __writeicc_pmr_el1(unsigned int val)
+{
+    __asm__ volatile("msr icc_pmr_el1, %0" :: "r"((unsigned long long)val));
+    __isb();
+}
+
+static __inline__ unsigned int __readicc_pmr_el1(void)
+{
+    unsigned long long val;
+    __asm__ volatile("mrs %0, icc_pmr_el1" : "=r"(val));
+    return (unsigned int)val;
+}
+
+static __inline__ unsigned int __readicc_iar1_el1(void)
+{
+    unsigned long long val;
+    __asm__ volatile("mrs %0, icc_iar1_el1" : "=r"(val));
+    return (unsigned int)val;
+}
+
+static __inline__ void __writeicc_eoir1_el1(unsigned int val)
+{
+    __asm__ volatile("msr icc_eoir1_el1, %0" :: "r"((unsigned long long)val));
+    __isb();
+}
+
+static __inline__ void __writeicc_sgi1r_el1(unsigned long long val)
+{
+    __asm__ volatile("msr icc_sgi1r_el1, %0" :: "r"(val));
+    __isb();
+}
+
 /* ARM64 IRQL Management */
 FORCEINLINE
 VOID

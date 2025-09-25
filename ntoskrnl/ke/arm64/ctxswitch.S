@@ -3,17 +3,48 @@
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 Context Switching
  * COPYRIGHT:   Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
+ *
+ * DESIGN NOTES FOR ARM64 CONTEXT SWITCHING:
+ *
+ * 1. Memory Ordering and Barriers:
+ *    ARM64 has a weakly-ordered memory model, requiring explicit barriers.
+ *    Critical sequence for TTBR switching: TTBR write -> DSB ISHST -> TLBI -> DSB ISH -> ISB
+ *
+ * 2. ASID-Based TLB Management:
+ *    Uses Address Space Identifiers (ASIDs) stored in upper 16 bits of TTBR
+ *    for more efficient TLB invalidation instead of global flushes.
+ *
+ * 3. Thread Local Storage (TLS):
+ *    - TPIDR_EL0: User-mode thread pointer (saved/restored per thread)
+ *    - TPIDR_EL1: Kernel-mode per-CPU data, stores current thread pointer
+ *
+ * 4. Cache Coherency:
+ *    All memory barriers use Inner Shareable domain (ISH) for multi-core
+ *    coherency while maintaining performance on single-core systems.
+ *
+ * 5. Register Usage:
+ *    Follows AAPCS64 calling convention, preserving callee-saved registers
+ *    (x19-x28, x29/FP, x30/LR, SP) across context switches.
  */
 
 #include <arm64/arm64.h>
 
+/* ARM64 ReactOS Constants - from ksarm64.h */
+#define THREAD_CONTEXT_FRAME        0x1b8  /* Offset to saved context in KTHREAD */
+#define THREAD_APCSTATE_PROCESS     0x130  /* ApcState.Process field in KTHREAD */
+#define PROCESS_DIRECTORYTABLEBASE  0x28   /* DirectoryTableBase field in KPROCESS */
+
+/* Additional thread structure constants */
+#define THREAD_INITIAL_STACK        0x018  /* InitialStack field */
+#define THREAD_KERNEL_STACK         0x020  /* KernelStack field */
+
 /* Thread context offsets (must match CONTEXT structure) */
-#define CTX_X0      0x000
-#define CTX_X1      0x008
-#define CTX_X2      0x010
-#define CTX_X3      0x018
-#define CTX_X4      0x020
-#define CTX_X5      0x028
+#define CTX_X0       0x000
+#define CTX_X1       0x008
+#define CTX_X2       0x010
+#define CTX_X3       0x018
+#define CTX_X4       0x020
+#define CTX_X5       0x028
 #define CTX_X6      0x030
 #define CTX_X7      0x038
 #define CTX_X8      0x040
@@ -42,15 +73,7 @@
 #define CTX_SP      0x0F8    /* Stack pointer */
 #define CTX_PC      0x100    /* Program counter */
 #define CTX_PSTATE  0x108    /* Processor state */
-
-/* Thread structure offsets (simplified) */
-/* #define THREAD_CONTEXT_FRAME    0x200 */  /* Offset to saved context - now in ksarm64.h */
-#define THREAD_INITIAL_STACK    0x018   /* InitialStack field */
-#define THREAD_KERNEL_STACK     0x020   /* KernelStack field */
-/* #define THREAD_APCSTATE_PROCESS 0x050 */  /* ApcState.Process field - now in ksarm64.h */
-
-/* Process structure offsets */
-/* #define PROCESS_DIRECTORYTABLEBASE  0x018 */  /* DirectoryTableBase field - now in ksarm64.h */
+#define CTX_TPIDR_EL0  0x110  /* Thread Pointer (User TLS) */
 
 .text
 
@@ -79,11 +102,15 @@ KiSwapContextARM64:
     stp x25, x26, [x4, #CTX_X25]
     stp x27, x28, [x4, #CTX_X27]
     stp x29, x30, [x4, #CTX_X29]
-    
+
     /* Save stack pointer and DAIF state */
     mov x3, sp
     str x3, [x4, #CTX_SP]
     str x2, [x4, #CTX_PSTATE]
+
+    /* Save Thread Local Storage pointer (TPIDR_EL0) */
+    mrs x3, tpidr_el0
+    str x3, [x4, #CTX_TPIDR_EL0]
     
     /* Check if we're switching between different processes */
     ldr x3, [x0, #THREAD_APCSTATE_PROCESS]  /* Old process */
@@ -93,13 +120,29 @@ KiSwapContextARM64:
     
     /* Switch page tables for different process */
     ldr x5, [x4, #PROCESS_DIRECTORYTABLEBASE]
+
+    /* ARM64 Critical Memory Barrier Sequence for TTBR switching:
+     * 1. Write TTBR -> DSB ISHST -> TLBI -> DSB ISH -> ISB
+     * This ensures proper ordering on ARM64's weakly-ordered memory model */
     msr ttbr1_el1, x5
-    isb
-    
-    /* Invalidate TLB entries for the new address space */
-    tlbi vmalle1
-    dsb sy
-    isb
+    dsb ishst                    /* Data Synchronization Barrier - Inner Shareable Store */
+
+    /* Get ASID from the new process for targeted TLB invalidation */
+    ldr x6, [x4, #PROCESS_DIRECTORYTABLEBASE + 8]  /* Load ASID from second DirectoryTableBase slot */
+    cbz x6, global_tlb_flush     /* If no ASID, use global flush */
+
+    /* ASID-based TLB invalidation (more efficient) */
+    lsl x6, x6, #48             /* Move ASID to bits 63:48 */
+    tlbi aside1is, x6           /* Invalidate by ASID, Inner Shareable */
+    b tlb_flush_done
+
+global_tlb_flush:
+    /* Fall back to global TLB flush if no ASID */
+    tlbi vmalle1is              /* Global flush, Inner Shareable */
+
+tlb_flush_done:
+    dsb ish                     /* Data Synchronization Barrier - Inner Shareable */
+    isb                         /* Instruction Synchronization Barrier */
 
 switch_context:
     /* Restore new thread's callee-saved registers */
@@ -110,17 +153,27 @@ switch_context:
     ldp x25, x26, [x5, #CTX_X25]
     ldp x27, x28, [x5, #CTX_X27]
     ldp x29, x30, [x5, #CTX_X29]
-    
+
     /* Restore stack pointer */
     ldr x3, [x5, #CTX_SP]
     mov sp, x3
-    
+
+    /* Restore Thread Local Storage pointer (TPIDR_EL0) */
+    ldr x3, [x5, #CTX_TPIDR_EL0]
+    msr tpidr_el0, x3
+
+    /* Update current thread in TPIDR_EL1 for kernel per-CPU data */
+    /* In ARM64, TPIDR_EL1 typically points to PCR or PRCB */
+    /* For now, store the current thread pointer directly */
+    msr tpidr_el1, x1           /* Store new thread pointer in TPIDR_EL1 */
+
+    /* Ensure all system register writes complete before continuing */
+    dsb sy                      /* Full system data synchronization barrier */
+    isb                         /* Instruction synchronization barrier */
+
     /* Restore interrupt state */
     ldr x2, [x5, #CTX_PSTATE]
     msr daif, x2
-    
-    /* Update current thread in PRCB (if PCR is accessible) */
-    /* TODO: Implement PCR access for ARM64 */
     
     ret
 
@@ -138,7 +191,7 @@ switch_context:
 KiInitializeContextFrame:
     /* Clear the context frame */
     add x4, x0, #THREAD_CONTEXT_FRAME
-    mov x5, #(CTX_PSTATE + 8)
+    mov x5, #(CTX_TPIDR_EL0 + 8)  /* Clear up to and including TPIDR_EL0 */
     mov x6, #0
 1:  str x6, [x4], #8
     subs x5, x5, #8
@@ -146,23 +199,24 @@ KiInitializeContextFrame:
     
     /* Set up initial stack pointer (aligned to 16 bytes) */
     and x1, x1, #~0xF
-    str x1, [x0, #THREAD_CONTEXT_FRAME + CTX_SP]
-    
+    add x5, x0, #THREAD_CONTEXT_FRAME    /* Get context frame base */
+    str x1, [x5, #CTX_SP]
+
     /* Set up frame pointer */
-    str x1, [x0, #THREAD_CONTEXT_FRAME + CTX_X29]
-    
+    str x1, [x5, #CTX_X29]
+
     /* Set up start routine and context */
-    str x2, [x0, #THREAD_CONTEXT_FRAME + CTX_PC]    /* Start routine as PC */
-    str x3, [x0, #THREAD_CONTEXT_FRAME + CTX_X0]    /* Start context in X0 */
-    
+    str x2, [x5, #CTX_PC]    /* Start routine as PC */
+    str x3, [x5, #CTX_X0]    /* Start context in X0 */
+
     /* Set up link register to point to thread termination */
     adrp x4, KiThreadExit
     add x4, x4, #:lo12:KiThreadExit
-    str x4, [x0, #THREAD_CONTEXT_FRAME + CTX_X30]
-    
+    str x4, [x5, #CTX_X30]
+
     /* Set up initial processor state */
     mov x4, #0    /* Clear DAIF (enable all interrupts) */
-    str x4, [x0, #THREAD_CONTEXT_FRAME + CTX_PSTATE]
+    str x4, [x5, #CTX_PSTATE]
     
     ret
 
@@ -271,23 +325,26 @@ KiRestoreFloatingPointState:
 /**
  * Atomic context switch with interrupts disabled
  * Used by the scheduler to atomically switch threads
- * 
+ *
  * Parameters:
- *   x0 = PKTHREAD OldThread  
+ *   x0 = PKTHREAD OldThread
  *   x1 = PKTHREAD NewThread
  *   x2 = PKIRQL OldIrql (saved DAIF state)
  */
 .globl KiAtomicSwapContext
 /* .type KiAtomicSwapContext, %function - not supported by MinGW */
 KiAtomicSwapContext:
-    /* Save the old IRQL/DAIF state */
-    str x2, [sp, #-16]!
-    
+    /* Save the old IRQL/DAIF state and link register */
+    stp x2, x30, [sp, #-16]!
+
+    /* Ensure all memory operations complete before context switch */
+    dsb sy
+
     /* Perform the context switch */
     bl KiSwapContextARM64
-    
-    /* Restore and return the old IRQL */
-    ldr x0, [sp], #16
+
+    /* Restore link register and return the old IRQL */
+    ldp x0, x30, [sp], #16
     ret
 
 /**
@@ -389,24 +446,76 @@ KeSwitchKernelStack:
     /* Save current SP as the old stack to return */
     mov x2, sp
 
-    /* Get current thread from TPIDR_EL1 (or from PCR) */
-    /* For now, assume we can get the thread from a global or PCR */
-    /* TODO: Implement proper thread pointer retrieval */
+    /* Get current thread from TPIDR_EL1 */
+    mrs x3, tpidr_el1           /* Current thread pointer stored in TPIDR_EL1 */
 
     /* Switch to the new stack */
     /* The new stack base is in x0, limit is in x1 */
     mov sp, x0
 
-    /* TODO: Update thread's stack information */
-    /* This would typically involve updating:
-     * - Thread->KernelStack
-     * - Thread->StackBase
-     * - Thread->StackLimit
-     * - PCR stack information
-     */
+    /* Update thread's stack information if we have current thread */
+    cbz x3, stack_switch_done   /* Skip if no current thread */
+
+    /* Update thread stack fields */
+    str x0, [x3, #THREAD_KERNEL_STACK]     /* Update KernelStack */
+    str x0, [x3, #THREAD_INITIAL_STACK]    /* Update StackBase */
+    /* Note: StackLimit typically stored elsewhere in thread structure */
+
+stack_switch_done:
 
     /* Return the old stack pointer in x0 */
     mov x0, x2
+    ret
+
+/**
+ * Initialize ARM64-specific processor state
+ * Called during processor initialization to set up TPIDR_EL1
+ *
+ * Parameters:
+ *   x0 = PKPRCB Prcb (Processor Control Block)
+ *   x1 = PKTHREAD IdleThread (Initial thread to set in TPIDR_EL1)
+ */
+.globl KiInitializeProcessorState
+/* .type KiInitializeProcessorState, %function - not supported by MinGW */
+KiInitializeProcessorState:
+    /* Store the idle thread pointer in TPIDR_EL1 for this processor */
+    msr tpidr_el1, x1
+
+    /* Initialize user TLS register to zero */
+    msr tpidr_el0, xzr
+
+    /* Ensure system register writes complete */
+    dsb sy
+    isb
+
+    ret
+
+/**
+ * Get current thread pointer from TPIDR_EL1
+ * Utility function for kernel code to get current thread
+ *
+ * Returns:
+ *   x0 = PKTHREAD (current thread pointer)
+ */
+.globl KeGetCurrentThread
+/* .type KeGetCurrentThread, %function - not supported by MinGW */
+KeGetCurrentThread:
+    mrs x0, tpidr_el1
+    ret
+
+/**
+ * Set current thread pointer in TPIDR_EL1
+ * Utility function for kernel code to update current thread
+ *
+ * Parameters:
+ *   x0 = PKTHREAD (new current thread pointer)
+ */
+.globl KeSetCurrentThread
+/* .type KeSetCurrentThread, %function - not supported by MinGW */
+KeSetCurrentThread:
+    msr tpidr_el1, x0
+    dsb sy
+    isb
     ret
 
 .end

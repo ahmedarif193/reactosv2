@@ -71,30 +71,18 @@ static VOID KiTrapUartPutDec(ULONG Value)
 
 /* TYPES *********************************************************************/
 
-/* ARM64 trap frame structure (must match assembly definitions) */
-typedef struct _ARM64_TRAP_FRAME
-{
-    ULONGLONG X0, X1, X2, X3, X4, X5, X6, X7;
-    ULONGLONG X8, X9, X10, X11, X12, X13, X14, X15;
-    ULONGLONG X16, X17, X18, X19, X20, X21, X22, X23;
-    ULONGLONG X24, X25, X26, X27, X28, X29, X30;
-    ULONGLONG Sp;       /* Stack pointer */
-    ULONGLONG Pc;       /* Program counter (ELR_EL1) */
-    ULONGLONG Pstate;   /* Processor state (SPSR_EL1) */
-    ULONGLONG Esr;      /* Exception syndrome register */
-    ULONGLONG Far;      /* Fault address register */
-} ARM64_TRAP_FRAME, *PARM64_TRAP_FRAME;
+/* Use the official KTRAP_FRAME structure from ketypes.h */
 
 /* FUNCTION PROTOTYPES *******************************************************/
 
 /* Forward declarations for functions defined later in this file */
-VOID NTAPI KiBreakpointTrapC(IN PARM64_TRAP_FRAME TrapFrame);
-VOID NTAPI KiBugCheck(IN PARM64_TRAP_FRAME TrapFrame);
-VOID NTAPI KiIllegalInstruction(IN PARM64_TRAP_FRAME TrapFrame);
-VOID NTAPI KiKernelDataAbort(IN PARM64_TRAP_FRAME TrapFrame);
-VOID NTAPI KiKernelInstructionAbort(IN PARM64_TRAP_FRAME TrapFrame);
-VOID NTAPI KiAlignmentFault(IN PARM64_TRAP_FRAME TrapFrame);
-VOID NTAPI KiStackAlignmentFault(IN PARM64_TRAP_FRAME TrapFrame);
+VOID NTAPI KiBreakpointTrapC(IN PKTRAP_FRAME TrapFrame);
+VOID NTAPI KiBugCheck(IN PKTRAP_FRAME TrapFrame);
+VOID NTAPI KiIllegalInstruction(IN PKTRAP_FRAME TrapFrame);
+VOID NTAPI KiKernelDataAbort(IN PKTRAP_FRAME TrapFrame);
+VOID NTAPI KiKernelInstructionAbort(IN PKTRAP_FRAME TrapFrame);
+VOID NTAPI KiAlignmentFault(IN PKTRAP_FRAME TrapFrame);
+VOID NTAPI KiStackAlignmentFault(IN PKTRAP_FRAME TrapFrame);
 
 /* ARM64 Exception Syndrome Register (ESR) definitions */
 #define ESR_ELx_EC_SHIFT        26
@@ -199,12 +187,12 @@ static VOID KiDescribeAbort(ULONG ExceptionClass, ULONG ISS, ULONGLONG FaultAddr
     KiTrapUartPuts("\n");
 }
 
-static VOID KiDumpBacktrace(PARM64_TRAP_FRAME TrapFrame)
+static VOID KiDumpBacktrace(PKTRAP_FRAME TrapFrame)
 {
     PKTHREAD Thread = KeGetCurrentThread();
     ULONG_PTR StackTop = Thread ? (ULONG_PTR)Thread->StackBase : TrapFrame->Sp;
     ULONG_PTR StackBottom = Thread ? (ULONG_PTR)Thread->StackLimit : (StackTop - KERNEL_STACK_SIZE);
-    ULONG_PTR fp_walk = (ULONG_PTR)TrapFrame->X29;
+    ULONG_PTR fp_walk = (ULONG_PTR)TrapFrame->Fp;
     ULONG frames = 0;
     const ULONG max_frames = 32;
 
@@ -276,11 +264,11 @@ static
 VOID
 KiDumpTrapFrameDebug(
     _In_ PCSTR Reason,
-    _In_ PARM64_TRAP_FRAME TrapFrame
+    _In_ PKTRAP_FRAME TrapFrame
 )
 {
     ULONGLONG *Regs = &TrapFrame->X0;
-    ULONG ExceptionClass = ESR_ELx_EC(TrapFrame->Esr);
+    ULONG ExceptionClass = ESR_ELx_EC((ULONG)TrapFrame->Esr);
 
     DbgPrintEx(DPFLTR_DEFAULT_ID,
                DPFLTR_ERROR_LEVEL,
@@ -365,10 +353,10 @@ KiDumpTrapFrameDebug(
 VOID
 NTAPI
 KiTrapHandlerC(
-    IN PARM64_TRAP_FRAME TrapFrame
+    IN PKTRAP_FRAME TrapFrame
 )
 {
-    ULONG ExceptionClass = ESR_ELx_EC(TrapFrame->Esr);
+    ULONG ExceptionClass = ESR_ELx_EC((ULONG)TrapFrame->Esr);
 
     KiDumpTrapFrameDebug("Synchronous exception", TrapFrame);
     
@@ -428,7 +416,7 @@ KiTrapHandlerC(
 VOID
 NTAPI
 KiInterruptHandlerC(
-    IN PARM64_TRAP_FRAME TrapFrame
+    IN PKTRAP_FRAME TrapFrame
 )
 {
     DPRINT("ARM64: IRQ at PC=0x%llX\n", TrapFrame->Pc);
@@ -443,7 +431,7 @@ KiInterruptHandlerC(
 VOID
 NTAPI
 KiFiqHandlerC(
-    IN PARM64_TRAP_FRAME TrapFrame
+    IN PKTRAP_FRAME TrapFrame
 )
 {
     DPRINT("ARM64: FIQ at PC=0x%llX\n", TrapFrame->Pc);
@@ -457,7 +445,7 @@ KiFiqHandlerC(
 VOID
 NTAPI
 KiSerrorHandlerC(
-    IN PARM64_TRAP_FRAME TrapFrame
+    IN PKTRAP_FRAME TrapFrame
 )
 {
     DPRINT1("ARM64: SError - ESR=0x%llX, FAR=0x%llX, PC=0x%llX\n",
@@ -473,7 +461,7 @@ KiSerrorHandlerC(
 VOID
 NTAPI
 KiSystemCallHandler64C(
-    IN PARM64_TRAP_FRAME TrapFrame
+    IN PKTRAP_FRAME TrapFrame
 )
 {
     ULONG SystemCallNumber = (ULONG)TrapFrame->X8;
@@ -491,7 +479,7 @@ KiSystemCallHandler64C(
 VOID
 NTAPI
 KiSystemCallHandler32C(
-    IN PARM64_TRAP_FRAME TrapFrame
+    IN PKTRAP_FRAME TrapFrame
 )
 {
     DPRINT("ARM64: AArch32 system call from PC=0x%llX\n", TrapFrame->Pc);
@@ -506,7 +494,7 @@ KiSystemCallHandler32C(
 VOID
 NTAPI
 KiKernelDataAbort(
-    IN PARM64_TRAP_FRAME TrapFrame
+    IN PKTRAP_FRAME TrapFrame
 )
 {
     ULONG FaultStatus = TrapFrame->Esr & ESR_ELx_DFSC_MASK;
@@ -525,7 +513,7 @@ KiKernelDataAbort(
 VOID
 NTAPI
 KiKernelInstructionAbort(
-    IN PARM64_TRAP_FRAME TrapFrame
+    IN PKTRAP_FRAME TrapFrame
 )
 {
     DPRINT1("ARM64: Kernel Instruction Abort at PC=0x%llX\n", TrapFrame->Pc);
@@ -540,7 +528,7 @@ KiKernelInstructionAbort(
 VOID
 NTAPI
 KiAlignmentFault(
-    IN PARM64_TRAP_FRAME TrapFrame
+    IN PKTRAP_FRAME TrapFrame
 )
 {
     DPRINT1("ARM64: PC Alignment Fault at PC=0x%llX\n", TrapFrame->Pc);
@@ -553,7 +541,7 @@ KiAlignmentFault(
 VOID
 NTAPI
 KiStackAlignmentFault(
-    IN PARM64_TRAP_FRAME TrapFrame
+    IN PKTRAP_FRAME TrapFrame
 )
 {
     DPRINT1("ARM64: Stack Alignment Fault - SP=0x%llX, PC=0x%llX\n",
@@ -567,7 +555,7 @@ KiStackAlignmentFault(
 VOID
 NTAPI
 KiIllegalInstruction(
-    IN PARM64_TRAP_FRAME TrapFrame
+    IN PKTRAP_FRAME TrapFrame
 )
 {
     DPRINT1("ARM64: Illegal Instruction at PC=0x%llX\n", TrapFrame->Pc);
@@ -580,7 +568,7 @@ KiIllegalInstruction(
 VOID
 NTAPI
 KiBreakpointTrapC(
-    IN PARM64_TRAP_FRAME TrapFrame
+    IN PKTRAP_FRAME TrapFrame
 )
 {
     DPRINT("ARM64: Breakpoint at PC=0x%llX\n", TrapFrame->Pc);
@@ -596,7 +584,7 @@ KiBreakpointTrapC(
 VOID
 NTAPI
 KiSingleStepTrapC(
-    IN PARM64_TRAP_FRAME TrapFrame
+    IN PKTRAP_FRAME TrapFrame
 )
 {
     DPRINT("ARM64: Single step at PC=0x%llX\n", TrapFrame->Pc);
@@ -610,7 +598,7 @@ KiSingleStepTrapC(
 VOID
 NTAPI
 KiDebugServiceC(
-    IN PARM64_TRAP_FRAME TrapFrame
+    IN PKTRAP_FRAME TrapFrame
 )
 {
     DPRINT("ARM64: Debug service at PC=0x%llX\n", TrapFrame->Pc);
@@ -662,7 +650,7 @@ KiThreadStartupC(VOID)
 VOID
 NTAPI
 KiBugCheck(
-    IN PARM64_TRAP_FRAME TrapFrame
+    IN PKTRAP_FRAME TrapFrame
 )
 {
     KiDumpTrapFrameDebug("BugCheck", TrapFrame);

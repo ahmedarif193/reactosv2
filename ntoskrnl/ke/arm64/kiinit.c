@@ -25,16 +25,16 @@ KiSystemStartupReal(IN PLOADER_PARAMETER_BLOCK LoaderBlock);
 /* GLOBALS *******************************************************************/
 
 /* ARM64 processor information */
-ULONG KiProcessorArchitecture = PROCESSOR_ARCHITECTURE_ARM;
+ULONG KiProcessorArchitecture = PROCESSOR_ARCHITECTURE_ARM64;
 ULONG KiProcessorLevel = 8;  /* ARMv8 */
 ULONG KiProcessorRevision = 0;
 
 /* ARM64 CPU features */
 ULONG64 KiArm64Features = 0;
 
-/* ARM64 Cache information */
-ULONG KiDcacheLineSize = 64;
-ULONG KiIcacheLineSize = 64;
+/* ARM64 Cache information - initialized dynamically from CTR_EL0 */
+ULONG KiDcacheLineSize = 0;
+ULONG KiIcacheLineSize = 0;
 
 /* ARM64 Timer frequency */
 ULONG64 KiTimerFrequency = 0;
@@ -129,13 +129,14 @@ KiInitializeArm64Cache(VOID)
     /* Read cache type register */
     ctr = ARM64_READ_SYSREG(ctr_el0);
     
-    /* Extract cache line sizes */
-    KiDcacheLineSize = 4 << ((ctr & 0xF0000) >> 16);
-    KiIcacheLineSize = 4 << (ctr & 0xF);
+    /* Extract cache line sizes dynamically from CTR_EL0 */
+    KiDcacheLineSize = 4 << ((ctr & 0xF0000) >> 16);  /* DminLine field */
+    KiIcacheLineSize = 4 << (ctr & 0xF);  /* IminLine field */
     
     /* Select L1 data cache */
     ARM64_WRITE_SYSREG(csselr_el1, 0);
-    ARM64_ISB();
+    ARM64_ISB();  /* Memory barrier after system register write */
+    ARM64_DSB_SY();  /* Data synchronization barrier for system register effects */
     
     ccsidr = ARM64_READ_SYSREG(ccsidr_el1);
     
@@ -167,7 +168,7 @@ KiInitializeArm64Timer(VOID)
     
     /* Disable timer interrupt initially */
     __writecntp_ctl_el0(0);
-    ARM64_ISB();
+    ARM64_ISB();  /* Memory barrier after timer control register write */
 }
 
 /**
@@ -182,10 +183,12 @@ KiInitializeArm64Mmu(VOID)
     /* Configure Memory Attribute Indirection Register */
     mair = ARM64_MAIR_VALUE;
     __writemair_el1(mair);
-    
+    ARM64_ISB();  /* Memory barrier after MAIR_EL1 write */
+
     /* Configure Translation Control Register */
     tcr = ARM64_TCR_DEFAULT;
     __writetcr_el1(tcr);
+    ARM64_ISB();  /* Memory barrier after TCR_EL1 write */
     
     /* Read current SCTLR */
     sctlr = __readsctlr_el1();
@@ -196,6 +199,7 @@ KiInitializeArm64Mmu(VOID)
         DPRINT("ARM64: Enabling MMU\n");
         sctlr |= ARM64_SCTLR_DEFAULT;
         __writesctlr_el1(sctlr);
+        ARM64_ISB();  /* Critical: ISB after SCTLR_EL1 write to ensure MMU is active */
     }
     else
     {
@@ -218,6 +222,7 @@ KiInitializeArm64Exceptions(VOID)
     /* Set Vector Base Address Register */
     vbar = (ULONGLONG)&KiExceptionVectors;
     __writevbar_el1(vbar);
+    ARM64_ISB();  /* Memory barrier after VBAR_EL1 write */
     
     DPRINT("ARM64: Exception vectors at 0x%llx\n", vbar);
 }
@@ -272,8 +277,12 @@ KiInitializeArm64Pcr(
     
     /* Initialize cache information */
     Pcr->Prcb.CacheLineSize = KiDcacheLineSize;
-    
-    DPRINT("ARM64: PCR initialized for processor %u\n", ProcessorNumber);
+
+    /* Load PCR into TPIDR_EL1 for fast per-CPU access */
+    ARM64_WRITE_SYSREG(tpidr_el1, (ULONG_PTR)Pcr);
+    ARM64_ISB();  /* Instruction synchronization barrier after TPIDR_EL1 write */
+
+    DPRINT("ARM64: PCR initialized for processor %u, loaded into TPIDR_EL1\n", ProcessorNumber);
 }
 
 /**
@@ -291,7 +300,8 @@ KiInitializeProcessor(VOID)
     
     if (el != 1)
     {
-        DPRINT1("ARM64: Warning - Not running at EL1!\n");
+        DPRINT1("ARM64: FATAL - Not running at EL1! Current EL: %llu\n", el);
+        KeBugCheckEx(UNSUPPORTED_PROCESSOR, el, ARM64_EL1, 0, 0);
     }
     
     /* Initialize ARM64 features */
@@ -332,8 +342,12 @@ KiInitializeKernel(
     /* Early processor initialization */
     KiInitializeProcessor();
 
-    /* Initialize PCR */
+    /* Initialize PCR and load into TPIDR_EL1 for per-CPU access */
     KiInitializeArm64Pcr((PKIPCR)&KiInitialPcr, Number, InitThread, IdleStack);
+
+    /* Ensure PCR is accessible via system register */
+    ARM64_WRITE_SYSREG(tpidr_el1, (ULONG_PTR)&KiInitialPcr);
+    ARM64_ISB();  /* Critical: Synchronize TPIDR_EL1 update */
     
     /* Initialize PRCB */
     RtlCopyMemory(&KiInitialPrcb, &KiInitialPcr.Prcb, sizeof(KPRCB));
@@ -367,32 +381,11 @@ KiSystemStartupBootStack(
 {
     /* Emit early debug message to track kernel handoff */
     {
-        static const CHAR Message[] = "ARM64: KiSystemStartupBootStack entry - LoaderBlock: 0x";
-        const CHAR *Current = Message;
-        volatile ULONG *const Pl011Dr = (volatile ULONG *)0x09000000;
-        ULONG_PTR Address = (ULONG_PTR)LoaderBlock;
-        ULONG i;
-
-        /* Print the message */
-        while (*Current != '\0')
-        {
-            *Pl011Dr = (UCHAR)(*Current++);
-            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
-                __asm__ __volatile__("nop");
-        }
-
-        /* Print LoaderBlock address in hex */
-        for (i = 0; i < 16; i++)
-        {
-            UCHAR nibble = (UCHAR)((Address >> (60 - i * 4)) & 0xF);
-            UCHAR hexChar = (nibble < 10) ? ('0' + nibble) : ('A' + nibble - 10);
-            *Pl011Dr = hexChar;
-            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
-                __asm__ __volatile__("nop");
-        }
-
-        *Pl011Dr = '\r';
-        *Pl011Dr = '\n';
+        CHAR Message[128];
+        RtlStringCbPrintfA(Message, sizeof(Message),
+                          "ARM64: KiSystemStartupBootStack entry - LoaderBlock: 0x%p\r\n",
+                          LoaderBlock);
+        HalDisplayString(Message);
     }
 
     DPRINT("ARM64: System startup - LoaderBlock at 0x%p\n", LoaderBlock);
@@ -400,17 +393,7 @@ KiSystemStartupBootStack(
     /* Validate LoaderBlock pointer */
     if (!LoaderBlock)
     {
-        static const CHAR ErrorMsg[] = "ARM64: FATAL - NULL LoaderBlock\r\n";
-        const CHAR *Current = ErrorMsg;
-        volatile ULONG *const Pl011Dr = (volatile ULONG *)0x09000000;
-
-        while (*Current != '\0')
-        {
-            *Pl011Dr = (UCHAR)(*Current++);
-            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
-                __asm__ __volatile__("nop");
-        }
-
+        HalDisplayString("ARM64: FATAL - NULL LoaderBlock\r\n");
         KeBugCheck(PHASE0_INITIALIZATION_FAILED);
     }
 
@@ -418,35 +401,13 @@ KiSystemStartupBootStack(
     ARM64_DISABLE_INTERRUPTS();
 
     /* Emit debug checkpoint */
-    {
-        static const CHAR Message[] = "ARM64: Starting kernel initialization\r\n";
-        const CHAR *Current = Message;
-        volatile ULONG *const Pl011Dr = (volatile ULONG *)0x09000000;
-
-        while (*Current != '\0')
-        {
-            *Pl011Dr = (UCHAR)(*Current++);
-            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
-                __asm__ __volatile__("nop");
-        }
-    }
+    HalDisplayString("ARM64: Starting kernel initialization\r\n");
 
     /* Early kernel initialization */
     KiInitializeKernel(NULL, NULL, NULL, NULL, 0, LoaderBlock);
 
     /* Emit debug checkpoint */
-    {
-        static const CHAR Message[] = "ARM64: Calling KiSystemStartup\r\n";
-        const CHAR *Current = Message;
-        volatile ULONG *const Pl011Dr = (volatile ULONG *)0x09000000;
-
-        while (*Current != '\0')
-        {
-            *Pl011Dr = (UCHAR)(*Current++);
-            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
-                __asm__ __volatile__("nop");
-        }
-    }
+    HalDisplayString("ARM64: Calling KiSystemStartup\r\n");
 
     /* Call generic kernel startup */
     KiSystemStartupReal(LoaderBlock);
@@ -469,22 +430,7 @@ KiSystemStartupReal(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     DPRINT("ARM64: KiSystemStartupReal - LoaderBlock at 0x%p\n", LoaderBlock);
 
     /* Emit a serial banner so automated tests can confirm kernel entry. */
-    {
-        static const CHAR Message[] = "ARM64 kernel entry reached\r\n";
-        const CHAR *Current = Message;
-        volatile ULONG *const Pl011Dr = (volatile ULONG *)0x09000000;
-
-        while (*Current != '\0')
-        {
-            *Pl011Dr = (UCHAR)(*Current++);
-
-            /* Crude delay to give the UART time to shift out data */
-            for (volatile ULONG Delay = 0; Delay < 1000; ++Delay)
-            {
-                __asm__ __volatile__("nop");
-            }
-        }
-    }
+    HalDisplayString("ARM64 kernel entry reached\r\n");
 
     /* TODO: Get the current CPU number - for now assume CPU 0 */
     Cpu = 0;
