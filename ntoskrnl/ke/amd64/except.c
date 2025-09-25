@@ -13,6 +13,16 @@
 #define NDEBUG
 #include <debug.h>
 
+#define MXCSR_EXCEPTION_FLAGS \
+    (_MM_EXCEPT_INVALID | \
+     _MM_EXCEPT_DENORM | \
+     _MM_EXCEPT_DIV_ZERO | \
+     _MM_EXCEPT_OVERFLOW | \
+     _MM_EXCEPT_UNDERFLOW | \
+     _MM_EXCEPT_INEXACT)
+
+#define MXCSR_EXCEPTION_MASK_SHIFT 7
+
 extern KI_INTERRUPT_DISPATCH_ENTRY KiUnexpectedRange[256];
 
 /* GLOBALS *******************************************************************/
@@ -622,6 +632,36 @@ KiGeneralProtectionFaultUserMode(
 
 NTSTATUS
 NTAPI
+KiInvalidOpcodeFaultHandler(
+    IN PKTRAP_FRAME TrapFrame)
+{
+    NTSTATUS Status = STATUS_ILLEGAL_INSTRUCTION;
+    PUCHAR InstructionPointer = (PUCHAR)TrapFrame->Rip;
+
+    _SEH2_TRY
+    {
+        ProbeForRead(InstructionPointer, 4, 1);
+
+        for (ULONG Index = 0; Index < 4; Index++)
+        {
+            if (InstructionPointer[Index] == 0xF0)
+            {
+                Status = STATUS_INVALID_LOCK_SEQUENCE;
+                break;
+            }
+        }
+    }
+    _SEH2_EXCEPT(EXCEPTION_EXECUTE_HANDLER)
+    {
+        Status = STATUS_ILLEGAL_INSTRUCTION;
+    }
+    _SEH2_END;
+
+    return Status;
+}
+
+NTSTATUS
+NTAPI
 KiGeneralProtectionFaultHandler(
     IN PKTRAP_FRAME TrapFrame)
 {
@@ -678,50 +718,61 @@ NTAPI
 KiXmmExceptionHandler(
     IN PKTRAP_FRAME TrapFrame)
 {
-    ULONG ExceptionCode;
+    ULONG StatusFlags;
+    ULONG MaskFlags;
+    ULONG UnmaskedFlags;
 
-    if ((TrapFrame->MxCsr & _MM_EXCEPT_INVALID) &&
-        !(TrapFrame->MxCsr & _MM_MASK_INVALID))
+    StatusFlags = TrapFrame->MxCsr & MXCSR_EXCEPTION_FLAGS;
+    MaskFlags = (TrapFrame->MxCsr >> MXCSR_EXCEPTION_MASK_SHIFT) & MXCSR_EXCEPTION_FLAGS;
+    UnmaskedFlags = StatusFlags & ~MaskFlags;
+
+    if (UnmaskedFlags && (UnmaskedFlags & (UnmaskedFlags - 1)))
+    {
+        return STATUS_FLOAT_MULTIPLE_TRAPS;
+    }
+
+    if ((StatusFlags & (StatusFlags - 1)) && UnmaskedFlags)
+    {
+        return STATUS_FLOAT_MULTIPLE_FAULTS;
+    }
+
+    if (UnmaskedFlags & _MM_EXCEPT_INVALID)
     {
         /* Invalid operation */
-        ExceptionCode = STATUS_FLOAT_INVALID_OPERATION;
+        return STATUS_FLOAT_INVALID_OPERATION;
     }
-    else if ((TrapFrame->MxCsr & _MM_EXCEPT_DENORM) &&
-             !(TrapFrame->MxCsr & _MM_MASK_DENORM))
+
+    if (UnmaskedFlags & _MM_EXCEPT_DENORM)
     {
         /* Denormalized operand. Yes, this is what Windows returns. */
-        ExceptionCode = STATUS_FLOAT_INVALID_OPERATION;
+        return STATUS_FLOAT_INVALID_OPERATION;
     }
-    else if ((TrapFrame->MxCsr & _MM_EXCEPT_DIV_ZERO) &&
-             !(TrapFrame->MxCsr & _MM_MASK_DIV_ZERO))
+
+    if (UnmaskedFlags & _MM_EXCEPT_DIV_ZERO)
     {
         /* Divide by zero */
-        ExceptionCode = STATUS_FLOAT_DIVIDE_BY_ZERO;
+        return STATUS_FLOAT_DIVIDE_BY_ZERO;
     }
-    else if ((TrapFrame->MxCsr & _MM_EXCEPT_OVERFLOW) &&
-             !(TrapFrame->MxCsr & _MM_MASK_OVERFLOW))
+
+    if (UnmaskedFlags & _MM_EXCEPT_OVERFLOW)
     {
         /* Overflow */
-        ExceptionCode = STATUS_FLOAT_OVERFLOW;
+        return STATUS_FLOAT_OVERFLOW;
     }
-    else if ((TrapFrame->MxCsr & _MM_EXCEPT_UNDERFLOW) &&
-             !(TrapFrame->MxCsr & _MM_MASK_UNDERFLOW))
+
+    if (UnmaskedFlags & _MM_EXCEPT_UNDERFLOW)
     {
         /* Underflow */
-        ExceptionCode = STATUS_FLOAT_UNDERFLOW;
+        return STATUS_FLOAT_UNDERFLOW;
     }
-    else if ((TrapFrame->MxCsr & _MM_EXCEPT_INEXACT) &&
-             !(TrapFrame->MxCsr & _MM_MASK_INEXACT))
+
+    if (UnmaskedFlags & _MM_EXCEPT_INEXACT)
     {
         /* Precision */
-        ExceptionCode = STATUS_FLOAT_INEXACT_RESULT;
+        return STATUS_FLOAT_INEXACT_RESULT;
     }
-    else
-    {
-        /* Should not happen */
-        // AGENT-MODIFIED: Removed ASSERT(FALSE) to prevent INT3 in release mode
-        ExceptionCode = STATUS_FLOAT_INVALID_OPERATION;
-    }
-    
-    return ExceptionCode;
+
+    /* Should not happen */
+    // AGENT-MODIFIED: Removed ASSERT(FALSE) to prevent INT3 in release mode
+    return STATUS_FLOAT_INVALID_OPERATION;
 }

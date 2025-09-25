@@ -17,6 +17,7 @@ EXTERN MmAccessFault:PROC
 EXTERN KiSystemFatalException:PROC
 EXTERN KiNpxNotAvailableFaultHandler:PROC
 EXTERN KiGeneralProtectionFaultHandler:PROC
+EXTERN KiInvalidOpcodeFaultHandler:PROC
 EXTERN KiXmmExceptionHandler:PROC
 EXTERN KiDeliverApc:PROC
 EXTERN KiDpcInterruptHandler:PROC
@@ -296,14 +297,25 @@ FUNC KiInvalidOpcodeFault
     test word ptr [rbp + KTRAP_FRAME_SegCs], 3
     jz KiInvalidOpcodeKernel
 
-    // FIXME: handle STATUS_INVALID_LOCK_SEQUENCE
+    /* User mode: check for invalid lock sequence */
+    mov rcx, rbp
+    call KiInvalidOpcodeFaultHandler
+    cmp eax, STATUS_INVALID_LOCK_SEQUENCE
+    je KiInvalidOpcodeInvalidLock
+
+KiInvalidOpcodeDispatchIllegal:
+    DispatchException STATUS_ILLEGAL_INSTRUCTION, 0, 0, 0, 0
+    jmp KiInvalidOpcodeExit
+
+KiInvalidOpcodeInvalidLock:
+    DispatchException STATUS_INVALID_LOCK_SEQUENCE, 0, 0, 0, 0
+    jmp KiInvalidOpcodeExit
 
 KiInvalidOpcodeKernel:
     /* Kernel mode fault */
-
-    /* Dispatch the exception */
     DispatchException STATUS_ILLEGAL_INSTRUCTION, 0, 0, 0, 0
 
+KiInvalidOpcodeExit:
     /* Return */
     ExitTrap TF_SAVE_ALL
 ENDFUNC
@@ -553,10 +565,21 @@ FUNC KiXmmException
     test eax, eax
     jge KiXmmExit
 
+    cmp eax, STATUS_FLOAT_MULTIPLE_TRAPS
+    je KiXmmMultipleTraps
+    cmp eax, STATUS_FLOAT_MULTIPLE_FAULTS
+    je KiXmmMultipleFaults
+
     /* Dispatch the exception */
     DispatchException eax, 2, 0, [rbp+KTRAP_FRAME_MxCsr], 0
+    jmp KiXmmExit
 
-    // FIXME: STATUS_FLOAT_MULTIPLE_TRAPS / STATUS_FLOAT_MULTIPLE_FAULTS
+KiXmmMultipleTraps:
+    DispatchException STATUS_FLOAT_MULTIPLE_TRAPS, 1, [rbp+KTRAP_FRAME_MxCsr], 0, 0
+    jmp KiXmmExit
+
+KiXmmMultipleFaults:
+    DispatchException STATUS_FLOAT_MULTIPLE_FAULTS, 1, [rbp+KTRAP_FRAME_MxCsr], 0, 0
 
 KiXmmExit:
     /* Return */

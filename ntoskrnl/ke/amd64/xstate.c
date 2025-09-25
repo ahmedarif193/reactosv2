@@ -46,7 +46,7 @@ KiGetXStateConfiguration(
     ULONG64 SupportedUserMask;
     ULONG64 SupportedSupervisorMask;
     ULONG64 SupportedComponentMask;
-    ULONG NextUserOffset, NextSupervisorOffset, NextOffset;
+    ULONG NextUserOffset, NextSupervisorOffset, NextNonLargeSupervisorOffset, NextOffset;
 
     RtlZeroMemory(XStateConfig, sizeof(*XStateConfig));
 
@@ -59,9 +59,6 @@ KiGetXStateConfiguration(
     /* Get the supported XCR0 bits */
     SupportedUserMask = (ULONG64)ExtStateMain.Edx << 32 |
                         (ULONG64)ExtStateMain.Eax.Uint32;
-
-    /* FIXME: Temporary workaround until we have dynamic kernel stack size */
-    SupportedUserMask &= ~XSTATE_MASK_LARGE_FEATURES;
 
     /* Mask the allowed components */
     SupportedUserMask &= XSTATE_MASK_ALLOWED;
@@ -98,12 +95,13 @@ KiGetXStateConfiguration(
     XStateConfig->AllFeatures[XSTATE_LEGACY_SSE] = FIELD_SIZE(XSAVE_FORMAT, XmmRegisters);
 
     /* Other components start after legacy state + header */
-    NextUserOffset = NextSupervisorOffset = sizeof(XSAVE_AREA);
+    NextUserOffset = NextSupervisorOffset = NextNonLargeSupervisorOffset = sizeof(XSAVE_AREA);
 
     /* Loop all components from 2 up */
     for (ULONG Component = 2; Component < MAXIMUM_XSTATE_FEATURES; Component++)
     {
         ULONG64 ComponentBit = (1ULL << Component);
+        BOOLEAN IsLargeFeature = (ComponentBit & XSTATE_MASK_LARGE_FEATURES) != 0;
 
         /* Query component features */
         CPUID_EXTENDED_STATE_SIZE_OFFSET_REGS ExtStateComponent;
@@ -139,6 +137,10 @@ KiGetXStateConfiguration(
             {
                 XStateConfig->AlignedFeatures |= ComponentBit;
                 NextSupervisorOffset = ALIGN_UP(NextSupervisorOffset, 64);
+                if (!IsLargeFeature)
+                {
+                    NextNonLargeSupervisorOffset = ALIGN_UP(NextNonLargeSupervisorOffset, 64);
+                }
                 if ((ComponentBit & SupportedUserMask) != 0)
                 {
                     NextUserOffset = ALIGN_UP(NextUserOffset, 64);
@@ -147,6 +149,10 @@ KiGetXStateConfiguration(
 
             /* Update the supervisor offset */
             NextSupervisorOffset += ExtStateComponent.Size;
+            if (!IsLargeFeature)
+            {
+                NextNonLargeSupervisorOffset += ExtStateComponent.Size;
+            }
 
             /* For user components save and update the offset and size */
             if ((ComponentBit & SupportedUserMask) != 0)
@@ -161,6 +167,10 @@ KiGetXStateConfiguration(
             /* Not compacted, use the offset and size specified by the CPUID */
             NextOffset = ExtStateComponent.Offset + ExtStateComponent.Size;
             NextSupervisorOffset = max(NextSupervisorOffset, NextOffset);
+            if (!IsLargeFeature)
+            {
+                NextNonLargeSupervisorOffset = max(NextNonLargeSupervisorOffset, NextOffset);
+            }
 
             /* For user components save and update the offset and size */
             if ((ComponentBit & SupportedUserMask) != 0)
@@ -183,6 +193,7 @@ KiGetXStateConfiguration(
     /* Save the calculated sizes */
     XStateConfig->Size = NextUserOffset;
     XStateConfig->AllFeatureSize = NextSupervisorOffset;
+    XStateConfig->AllNonLargeFeatureSize = NextNonLargeSupervisorOffset;
     ASSERT(XStateConfig->AllFeatureSize >= XStateConfig->Size);
 }
 
@@ -249,7 +260,7 @@ KiInitializeXStateConfiguration(
             return;
         }
 
-        KeXStateLength = SharedUserData->XState.AllFeatureSize;
+        KeXStateLength = ALIGN_UP_BY(SharedUserData->XState.AllFeatureSize, 64);
     }
     else
     {

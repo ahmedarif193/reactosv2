@@ -2535,7 +2535,6 @@ MmArmInitSystem(IN ULONG Phase,
         /* Size up paged pool and build the shadow system page directory */
         MiBuildPagedPool();
 
-        /* Debugger physical memory support is now ready to be used */
         MmDebugPte = MiAddressToPte(MiDebugMapping);
 
         /* Initialize the loaded module list */

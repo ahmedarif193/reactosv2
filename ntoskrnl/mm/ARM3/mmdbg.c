@@ -27,7 +27,7 @@ MmIsSessionAddress(
 
 /* GLOBALS ********************************************************************/
 
-PVOID MiDebugMapping = MI_DEBUG_MAPPING;
+PVOID MiDebugMapping = (PVOID)MI_DEBUG_MAPPING;
 PMMPTE MmDebugPte = NULL;
 
 /* FUNCTIONS ******************************************************************/

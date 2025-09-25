@@ -17,7 +17,7 @@
 #define MI_SYSTEM_CACHE_WS_START               0xFFFFF78000001000ULL // 512 GB - 4 KB system cache working set
 //#define MI_LOADER_MAPPINGS                   0xFFFFF80000000000ULL // 512 GB loader mappings aka KSEG0_BASE (NDK) [MiVaBootLoaded]
 #define MM_SYSTEM_SPACE_START                  0xFFFFF88000000000ULL // 128 GB system PTEs [MiVaSystemPtes]
-#define MI_DEBUG_MAPPING                (PVOID)0xFFFFF89FFFFFF000ULL // FIXME should be allocated from System PTEs
+#define MI_DEBUG_MAPPING                (PVOID)0xFFFFF89FFFFFF000ULL
 #define MI_PAGED_POOL_START             (PVOID)0xFFFFF8A000000000ULL // 128 GB paged pool [MiVaPagedPool]
 //#define MI_PAGED_POOL_END                    0xFFFFF8BFFFFFFFFFULL
 //#define MI_SESSION_SPACE_START               0xFFFFF90000000000ULL // 512 GB session space [MiVaSessionSpace]
@@ -39,7 +39,7 @@
 #define PDE_MAPPED_VA (PTE_PER_PAGE * PAGE_SIZE)
 
 /* Misc address definitions */
-//#define MI_NON_PAGED_SYSTEM_START_MIN   MM_SYSTEM_SPACE_START // FIXME
+#define MI_NON_PAGED_SYSTEM_START_MIN          ((PVOID)MM_SYSTEM_SPACE_START)
 //#define MI_SYSTEM_PTE_START             MM_SYSTEM_SPACE_START
 //#define MI_SYSTEM_PTE_END               (MI_SYSTEM_PTE_START + MI_NUMBER_SYSTEM_PTES * PAGE_SIZE - 1)
 #define MI_SYSTEM_PTE_BASE              (PVOID)MiAddressToPte(KSEG0_BASE)
@@ -182,7 +182,13 @@ MiAddressToPti(PVOID Address)
 {
     return ((((ULONG64)Address) >> PTI_SHIFT) & 0x1FF);
 }
-#define MiAddressToPteOffset(x) MiAddressToPti(x) // FIXME: bad name
+FORCEINLINE
+ULONG
+MiAddressToPteIndex(PVOID Address)
+{
+    return MiAddressToPti(Address);
+}
+#define MiAddressToPteOffset(x) MiAddressToPteIndex((PVOID)(x))
 
 /* Convert an address to a corresponding PDE offset/index */
 FORCEINLINE
@@ -369,4 +375,3 @@ MiIsPdeForAddressValid(PVOID Address)
             (MiAddressToPpe(Address)->u.Hard.Valid) &&
             (MiAddressToPde(Address)->u.Hard.Valid));
 }
-

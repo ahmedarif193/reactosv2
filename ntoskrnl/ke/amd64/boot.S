@@ -24,6 +24,10 @@ EXTERN KiSystemStartupBootStack:PROC
  * KiSwitchToBootStack(
  *     IN ULONG_PTR InitialStack<rcx>)
  */
+
+.equ BOOT_STACK_FRAME_RESERVE, (KTRAP_FRAME_LENGTH + KEXCEPTION_FRAME_LENGTH + KSTART_FRAME_LENGTH)
+.equ MISSING_RET_ADDRESS_SIZE, 8
+
 PUBLIC KiSwitchToBootStack
 .PROC KiSwitchToBootStack
 
@@ -31,9 +35,12 @@ PUBLIC KiSwitchToBootStack
     mov ax, HEX(18)
     mov ss, ax
     mov rsp, rcx
-    // Note: 8 bytes extra to compensate for the missing return address on
-    // the stack. On function entry the stack is unaligned by 8!!
-    sub rsp, HEX(308) // FIXME
+
+    /* Reserve space for the bootstrap trap/start frames and keep ABI alignment */
+    sub rsp, BOOT_STACK_FRAME_RESERVE
+
+    /* Account for the missing return address so the callee sees rsp%16 == 8 */
+    sub rsp, MISSING_RET_ADDRESS_SIZE
     .ENDPROLOG
 
     jmp KiSystemStartupBootStack
@@ -41,4 +48,3 @@ PUBLIC KiSwitchToBootStack
 .ENDP
 
 END
-

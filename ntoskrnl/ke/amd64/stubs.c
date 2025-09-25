@@ -15,7 +15,7 @@
 /* GLOBALS *******************************************************************/
 
 ULONG ProcessCount;
-SIZE_T KeXStateLength = sizeof(XSAVE_FORMAT);
+SIZE_T KeXStateLength = ALIGN_UP_BY(sizeof(XSAVE_AREA), 64);
 
 PVOID
 KiSwitchKernelStackHelper(
@@ -25,7 +25,7 @@ KiSwitchKernelStackHelper(
 /*
  * Kernel stack layout (example pointers):
  * 0xFFFFFC0F'2D008000 KTHREAD::StackBase
- *    [XSAVE_AREA size == KeXStateLength = 0x440]
+ *    [XSAVE_AREA size == KeXStateLength (runtime dependent)]
  * 0xFFFFFC0F'2D007BC0 KTHREAD::StateSaveArea _XSAVE_FORMAT
  * 0xFFFFFC0F'2D007B90 KTHREAD::InitialStack
  *    [0x190 bytes KTRAP_FRAME]

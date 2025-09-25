@@ -300,4 +300,3 @@ MmInitSystem(IN ULONG Phase,
 
     return TRUE;
 }
-
