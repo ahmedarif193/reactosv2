@@ -640,7 +640,7 @@ PiCallDriverAddDevice(
             };
             HANDLE ccsControlHandle;
 
-            Status = IopOpenRegistryKeyEx(&ccsControlHandle, NULL, &ccsControlClass, KEY_READ);
+            Status = IopOpenRegistryKeyEx(&ccsControlHandle, NULL, &ccsControlClass, KEY_READ | KEY_WRITE);
             if (!NT_SUCCESS(Status))
             {
                 DPRINT1("IopOpenRegistryKeyEx() failed for \"%wZ\" (status %x)\n",
@@ -649,7 +649,24 @@ PiCallDriverAddDevice(
             else
             {
                 // open the CCS\Control\Class\<ClassGUID> key
-                Status = IopOpenRegistryKeyEx(&ClassKey, ccsControlHandle, &classGUID, KEY_READ);
+                Status = IopOpenRegistryKeyEx(&ClassKey, ccsControlHandle, &classGUID, KEY_READ | KEY_WRITE);
+                if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+                {
+                    ULONG disposition;
+
+                    Status = IopCreateRegistryKeyEx(&ClassKey,
+                                                     ccsControlHandle,
+                                                     &classGUID,
+                                                     KEY_READ | KEY_WRITE,
+                                                     0,
+                                                     &disposition);
+
+                    if (!NT_SUCCESS(Status))
+                    {
+                        DPRINT1("Failed to create class key \"%wZ\" (status %x)\n",
+                                &classGUID, Status);
+                    }
+                }
                 ZwClose(ccsControlHandle);
                 if (!NT_SUCCESS(Status))
                 {
@@ -666,7 +683,24 @@ PiCallDriverAddDevice(
                 UNICODE_STRING properties = RTL_CONSTANT_STRING(REGSTR_KEY_DEVICE_PROPERTIES);
                 HANDLE propertiesHandle;
 
-                Status = IopOpenRegistryKeyEx(&propertiesHandle, ClassKey, &properties, KEY_READ);
+                Status = IopOpenRegistryKeyEx(&propertiesHandle, ClassKey, &properties, KEY_READ | KEY_WRITE);
+                if (Status == STATUS_OBJECT_NAME_NOT_FOUND)
+                {
+                    ULONG disposition;
+
+                    Status = IopCreateRegistryKeyEx(&propertiesHandle,
+                                                     ClassKey,
+                                                     &properties,
+                                                     KEY_READ | KEY_WRITE,
+                                                     0,
+                                                     &disposition);
+
+                    if (!NT_SUCCESS(Status))
+                    {
+                        DPRINT("Properties key creation failed for \"%wZ\" (status %x)\n",
+                               &classGUID, Status);
+                    }
+                }
                 if (!NT_SUCCESS(Status))
                 {
                     DPRINT("Properties key failed to open for \"%wZ\" (status %x)\n",

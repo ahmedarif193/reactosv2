@@ -9,6 +9,11 @@
 
 #include "scsiport.h"
 
+#define SCSIPORT_PRIMARY_VECTOR_BASE 0x30
+#define SCSIPORT_MAX_PIC_VECTOR (SCSIPORT_PRIMARY_VECTOR_BASE + 0x0F)
+#define SCSIPORT_VECTOR_FROM_IRQ(_Irq) ((UCHAR)((_Irq) + SCSIPORT_PRIMARY_VECTOR_BASE))
+#define SCSIPORT_DIRQL_FROM_IRQ(_Irq) ((KIRQL)(PROFILE_LEVEL - (_Irq)))
+
 #define NDEBUG
 #include <debug.h>
 
@@ -389,7 +394,7 @@ FdoCallHWInitialize(
         BOOLEAN InterruptShareable;
         KINTERRUPT_MODE InterruptMode[2];
         ULONG InterruptVector[2], i, MappedIrq[2];
-        KIRQL Dirql[2], MaxDirql;
+        KIRQL Dirql[2];
         KAFFINITY Affinity[2];
 
         DeviceExtension->InterruptLevel[0] = PortConfig->BusInterruptLevel;
@@ -407,20 +412,127 @@ FdoCallHWInitialize(
 
         for (i = 0; i < DeviceExtension->InterruptCount; i++)
         {
+            KAFFINITY LocalAffinity;
+            KIRQL LocalDirql;
+            ULONG BusVector, BusLevel;
+            INTERFACE_TYPE FallbackInterfaces[] = { Isa, Internal };
+            ULONG FallbackBusNumbers[] = { 0, PortConfig->SystemIoBusNumber };
+            SIZE_T j;
+
+            BusLevel = DeviceExtension->InterruptLevel[i];
+            BusVector = InterruptVector[i];
+
+            if (BusVector == 0)
+            {
+                BusVector = BusLevel;
+
+                if (i == 0)
+                    PortConfig->BusInterruptVector = BusVector;
+                else
+                    PortConfig->BusInterruptVector2 = BusVector;
+            }
+
             /* Register an interrupt handler for this device */
             MappedIrq[i] = HalGetInterruptVector(
                 PortConfig->AdapterInterfaceType, PortConfig->SystemIoBusNumber,
-                DeviceExtension->InterruptLevel[i], InterruptVector[i], &Dirql[i],
+                BusLevel, BusVector, &Dirql[i],
                 &Affinity[i]);
-        }
 
-        if (DeviceExtension->InterruptCount == 1 || Dirql[0] > Dirql[1])
-        {
-            MaxDirql = Dirql[0];
-        }
-        else
-        {
-            MaxDirql = Dirql[1];
+            if (MappedIrq[i] == 0)
+            {
+                LocalAffinity = KeQueryActiveProcessors();
+                LocalDirql = 0;
+
+                for (j = 0; j < RTL_NUMBER_OF(FallbackInterfaces) && MappedIrq[i] == 0; j++)
+                {
+                    INTERFACE_TYPE FallbackInterface = FallbackInterfaces[j];
+                    ULONG FallbackBus = FallbackBusNumbers[j];
+
+                    MappedIrq[i] = HalGetInterruptVector(FallbackInterface,
+                                                         FallbackBus,
+                                                         BusLevel,
+                                                         BusLevel,
+                                                         &LocalDirql,
+                                                         &LocalAffinity);
+
+                    if (MappedIrq[i] != 0)
+                    {
+                        Dirql[i] = LocalDirql;
+                        Affinity[i] = LocalAffinity;
+
+                        if (i == 0)
+                            PortConfig->BusInterruptVector = MappedIrq[i];
+                        else
+                            PortConfig->BusInterruptVector2 = MappedIrq[i];
+
+                        if (PortConfig->AdapterInterfaceType != FallbackInterface ||
+                            PortConfig->SystemIoBusNumber != FallbackBus)
+                        {
+                            DPRINT1("SCSIPORT: remapped interrupt via %lu/%lu -> vector %lu IRQL %lu\n",
+                                    FallbackInterface,
+                                    FallbackBus,
+                                    MappedIrq[i],
+                                    Dirql[i]);
+                        }
+
+                        PortConfig->AdapterInterfaceType = FallbackInterface;
+                        PortConfig->SystemIoBusNumber = FallbackBus;
+                    }
+                }
+            }
+
+            if (MappedIrq[i] == 0)
+            {
+                UCHAR Vector = SCSIPORT_VECTOR_FROM_IRQ((UCHAR)BusLevel);
+
+                MappedIrq[i] = Vector;
+                Dirql[i] = SCSIPORT_DIRQL_FROM_IRQ((UCHAR)BusLevel);
+#ifdef _M_AMD64
+                Dirql[i] = (KIRQL)(Vector >> 4);
+#endif
+                Affinity[i] = KeQueryActiveProcessors();
+
+                if (i == 0)
+                    PortConfig->BusInterruptVector = Vector;
+                else
+                    PortConfig->BusInterruptVector2 = Vector;
+
+                DPRINT1("SCSIPORT: synthesized ISA vector %u IRQL %u for IRQ %lu\n",
+                        Vector,
+                        Dirql[i],
+                        BusLevel);
+
+                PortConfig->AdapterInterfaceType = Internal;
+                PortConfig->SystemIoBusNumber = 0;
+            }
+            else if (MappedIrq[i] != BusVector)
+            {
+                if (i == 0)
+                    PortConfig->BusInterruptVector = MappedIrq[i];
+                else
+                    PortConfig->BusInterruptVector2 = MappedIrq[i];
+
+                DPRINT1("SCSIPORT: Hal mapped IRQ %lu to vector %lu IRQL %lu\n",
+                        BusLevel,
+                        MappedIrq[i],
+                        Dirql[i]);
+            }
+
+            if (MappedIrq[i] > SCSIPORT_MAX_PIC_VECTOR)
+            {
+                if (InterruptMode[i] != LevelSensitive)
+                {
+                    DPRINT1("SCSIPORT: forcing LevelSensitive for APIC vector %lu\n",
+                            MappedIrq[i]);
+                }
+
+                InterruptMode[i] = LevelSensitive;
+
+                if (i == 0)
+                    PortConfig->InterruptMode = LevelSensitive;
+                else
+                    PortConfig->InterruptMode2 = LevelSensitive;
+            }
         }
 
         for (i = 0; i < DeviceExtension->InterruptCount; i++)
@@ -436,12 +548,31 @@ FdoCallHWInitialize(
                 InterruptShareable = FALSE;
             }
 
+#ifdef _M_AMD64
+            {
+                KIRQL RequiredDirql = (KIRQL)(MappedIrq[i] >> 4);
+                if (Dirql[i] != RequiredDirql)
+                {
+                    DPRINT1("SCSIPORT: correcting IRQL %u -> %u for vector %lu\n",
+                            Dirql[i],
+                            RequiredDirql,
+                            MappedIrq[i]);
+                    Dirql[i] = RequiredDirql;
+                }
+            }
+#endif
+
+            DPRINT1("SCSIPORT: Connecting interrupt - Vector:%lu IRQL:%u Mode:%s Shareable:%s\n",
+                    MappedIrq[i], Dirql[i],
+                    InterruptMode[i] == Latched ? "Edge" : "Level",
+                    InterruptShareable ? "Yes" : "No");
+
             Status = IoConnectInterrupt(&DeviceExtension->Interrupt[i],
                                         ScsiPortIsr,
                                         DeviceExtension,
                                         &DeviceExtension->IrqLock,
                                         MappedIrq[i], Dirql[i],
-                                        MaxDirql,
+                                        Dirql[i],
                                         InterruptMode[i],
                                         InterruptShareable,
                                         Affinity[i],
@@ -449,7 +580,7 @@ FdoCallHWInitialize(
 
             if (!(NT_SUCCESS(Status)))
             {
-                DPRINT1("Could not connect interrupt %d\n", InterruptVector[i]);
+                DPRINT1("Could not connect interrupt %lu (Status 0x%08x)\n", MappedIrq[i], Status);
                 DeviceExtension->Interrupt[i] = NULL;
                 return Status;
             }
@@ -544,12 +675,22 @@ FdoRemoveAdapter(
             IoDisconnectInterrupt(DeviceExtension->Interrupt[DeviceExtension->InterruptCount]);
     }
 
-    // FIXME: delete LUNs
     if (DeviceExtension->Buses)
     {
         for (UINT8 pathId = 0; pathId < DeviceExtension->NumberOfBuses; pathId++)
         {
             PSCSI_BUS_INFO bus = &DeviceExtension->Buses[pathId];
+
+            while (!IsListEmpty(&bus->LunsListHead))
+            {
+                PLIST_ENTRY lunEntry = RemoveHeadList(&bus->LunsListHead);
+                PSCSI_PORT_LUN_EXTENSION lunExt =
+                    CONTAINING_RECORD(lunEntry, SCSI_PORT_LUN_EXTENSION, LunEntry);
+
+                lunExt->Common.LowerDevice = NULL;
+                IoDeleteDevice(lunExt->Common.DeviceObject);
+            }
+
             if (bus->RegistryMapKey)
             {
                 ZwDeleteKey(bus->RegistryMapKey);
@@ -559,6 +700,9 @@ FdoRemoveAdapter(
         }
 
         ExFreePoolWithTag(DeviceExtension->Buses, TAG_SCSIPORT);
+        DeviceExtension->Buses = NULL;
+        DeviceExtension->NumberOfBuses = 0;
+        DeviceExtension->TotalLUCount = 0;
     }
 
     /* Free PortConfig */
@@ -598,6 +742,13 @@ FdoRemoveAdapter(
         DeviceExtension->MappedAddressList = DeviceExtension->MappedAddressList->NextMappedAddress;
 
         ExFreePoolWithTag(ptr, TAG_SCSIPORT);
+    }
+
+    if (DeviceExtension->Common.LowerDevice)
+    {
+        IoDetachDevice(DeviceExtension->Common.LowerDevice);
+        ObDereferenceObject(DeviceExtension->Common.LowerDevice);
+        DeviceExtension->Common.LowerDevice = NULL;
     }
 
     IoDeleteDevice(DeviceExtension->Common.DeviceObject);

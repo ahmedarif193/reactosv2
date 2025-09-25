@@ -2756,19 +2756,53 @@ TryNextAd:
 
             /* Return respectively */
             if (Found)
-                return STATUS_SUCCESS;
+                Status = STATUS_SUCCESS;
             else
-                return STATUS_DEVICE_DOES_NOT_EXIST;
+                Status = STATUS_DEVICE_DOES_NOT_EXIST;
         }
         else
         {
-            return STATUS_DEVICE_DOES_NOT_EXIST;
+            Status = STATUS_DEVICE_DOES_NOT_EXIST;
         }
     }
     else
     {
-        return STATUS_SUCCESS;
+        Status = STATUS_SUCCESS;
     }
+
+    if (NT_SUCCESS(Status) &&
+        ConfigInfo->BusInterruptLevel != 0 &&
+        ConfigInfo->BusInterruptVector == 0)
+    {
+        KAFFINITY Affinity;
+        KIRQL Dirql;
+        ULONG MappedVector;
+
+        MappedVector = HalGetInterruptVector(ConfigInfo->AdapterInterfaceType,
+                                             ConfigInfo->SystemIoBusNumber,
+                                             ConfigInfo->BusInterruptLevel,
+                                             ConfigInfo->BusInterruptLevel,
+                                             &Dirql,
+                                             &Affinity);
+
+        if (MappedVector != 0)
+        {
+            ConfigInfo->BusInterruptVector = MappedVector;
+
+            if (ConfigInfo->InterruptMode == Latched &&
+                (ConfigInfo->AdapterInterfaceType == PCIBus ||
+                 ConfigInfo->AdapterInterfaceType == Internal))
+            {
+                ConfigInfo->InterruptMode = LevelSensitive;
+            }
+        }
+        else
+        {
+            ConfigInfo->BusInterruptVector = ConfigInfo->BusInterruptLevel;
+        }
+    }
+
+    return Status;
 }
 
 static VOID

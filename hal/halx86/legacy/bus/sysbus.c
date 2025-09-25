@@ -127,9 +127,19 @@ HalpGetSystemInterruptVector(IN PBUS_HANDLER BusHandler,
                                         Irql,
                                         Affinity);
 
-    /* Check if the vector is owned by the HAL and fail if it is */
-    if (HalpIDTUsageFlags[Vector].Flags & IDT_REGISTERED) DPRINT1("Vector %lx is ALREADY IN USE!\n", Vector);
-    return (HalpIDTUsageFlags[Vector].Flags & IDT_REGISTERED) ? 0 : Vector;
+    /*
+     * If the vector is already registered for a device interrupt we allow
+     * another sharer.  Only treat HAL-internal or read-only reservations as
+     * fatal.
+     */
+    if ((HalpIDTUsageFlags[Vector].Flags & IDT_REGISTERED) &&
+        !(HalpIDTUsageFlags[Vector].Flags & IDT_DEVICE))
+    {
+        DPRINT1("Vector %lx is ALREADY IN USE!\n", Vector);
+        return 0;
+    }
+
+    return Vector;
 }
 
 /* EOF */
