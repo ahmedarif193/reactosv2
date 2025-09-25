@@ -997,30 +997,137 @@ KeSetTargetProcessorDpc(IN PKDPC Dpc,
 /*
  * @implemented
  */
+typedef struct _KI_GENERIC_CALL_DPC_CONTEXT
+{
+    PKDEFERRED_ROUTINE Routine;
+    PVOID DeferredContext;
+    volatile LONG Barrier;
+    DEFERRED_REVERSE_BARRIER ReverseBarrier;
+} KI_GENERIC_CALL_DPC_CONTEXT, *PKI_GENERIC_CALL_DPC_CONTEXT;
+
+static
 VOID
 NTAPI
-KeGenericCallDpc(IN PKDEFERRED_ROUTINE Routine,
-                 IN PVOID Context)
+KiGenericCallDpcRoutine(
+    _In_ PKDPC Dpc,
+    _In_opt_ PVOID DeferredContext,
+    _In_opt_ PVOID SystemArgument1,
+    _In_opt_ PVOID SystemArgument2)
 {
-    ULONG Barrier = KeNumberProcessors;
+    PKI_GENERIC_CALL_DPC_CONTEXT Context;
+
+    Context = (PKI_GENERIC_CALL_DPC_CONTEXT)DeferredContext;
+    ASSERT(Context != NULL);
+
+    Context->Routine(Dpc,
+                     Context->DeferredContext,
+                     SystemArgument1,
+                     SystemArgument2);
+}
+
+VOID
+NTAPI
+KeGenericCallDpc(
+    _In_ PKDEFERRED_ROUTINE Routine,
+    _In_opt_ PVOID Context)
+{
+    KI_GENERIC_CALL_DPC_CONTEXT CallContext;
+    PKPRCB CurrentPrcb;
     KIRQL OldIrql;
-    DEFERRED_REVERSE_BARRIER ReverseBarrier;
-    ASSERT(KeGetCurrentIrql () < DISPATCH_LEVEL);
+    ULONG ProcessorCount = 0;
+    ULONG ProcessorIndex;
 
-    //
-    // The barrier is the number of processors, each processor will decrement it
-    // by one, so when all processors have run the DPC, the barrier reaches zero
-    //
-    ReverseBarrier.Barrier = Barrier;
-    ReverseBarrier.TotalProcessors = Barrier;
+    ASSERT(Routine != NULL);
+    ASSERT(KeGetCurrentIrql() < DISPATCH_LEVEL);
 
-    //
-    // But we don't need the barrier on UP, since we can simply call the routine
-    // directly while at DISPATCH_LEVEL and not worry about anything else
-    //
+    CallContext.Routine = Routine;
+    CallContext.DeferredContext = Context;
+    CallContext.Barrier = 0;
+    CallContext.ReverseBarrier.Barrier = 0;
+    CallContext.ReverseBarrier.TotalProcessors = 0;
+
+    /* Count the number of active processors */
+    for (ProcessorIndex = 0; ProcessorIndex < KeNumberProcessors; ProcessorIndex++)
+    {
+        if (!(KeActiveProcessors & ((KAFFINITY)1 << ProcessorIndex)))
+            continue;
+
+        ProcessorCount++;
+    }
+
+    if (ProcessorCount == 0)
+    {
+        return;
+    }
+
+    CallContext.Barrier = (LONG)ProcessorCount;
+    CallContext.ReverseBarrier.Barrier = ProcessorCount;
+    CallContext.ReverseBarrier.TotalProcessors = ProcessorCount;
+
+    if (ProcessorCount == 1)
+    {
+        KeRaiseIrql(DISPATCH_LEVEL, &OldIrql);
+        Routine(&KeGetCurrentPrcb()->CallDpc,
+                Context,
+                (PVOID)&CallContext.Barrier,
+                (PVOID)&CallContext.ReverseBarrier);
+        KeLowerIrql(OldIrql);
+
+        while (CallContext.Barrier != 0)
+        {
+            YieldProcessor();
+            KeMemoryBarrierWithoutFence();
+        }
+
+        return;
+    }
+
+    ExAcquireFastMutex(&KiGenericCallDpcMutex);
+
+    CurrentPrcb = KeGetCurrentPrcb();
+
+    /* Queue the DPC on every other processor */
+    for (ProcessorIndex = 0; ProcessorIndex < KeNumberProcessors; ProcessorIndex++)
+    {
+        PKPRCB Prcb;
+        PKDPC Dpc;
+
+        if (!(KeActiveProcessors & ((KAFFINITY)1 << ProcessorIndex)))
+            continue;
+
+        Prcb = KiProcessorBlock[ProcessorIndex];
+        Dpc = &Prcb->CallDpc;
+
+        KeRemoveQueueDpc(Dpc);
+
+        Dpc->DeferredRoutine = KiGenericCallDpcRoutine;
+        Dpc->DeferredContext = &CallContext;
+        KeSetTargetProcessorDpc(Dpc, (CCHAR)ProcessorIndex);
+        KeSetImportanceDpc(Dpc, HighImportance);
+
+        if (Prcb != CurrentPrcb)
+        {
+            KeInsertQueueDpc(Dpc,
+                             (PVOID)&CallContext.Barrier,
+                             (PVOID)&CallContext.ReverseBarrier);
+        }
+    }
+
+    /* Execute the routine on the current processor */
     KeRaiseIrql(DISPATCH_LEVEL, &OldIrql);
-    Routine(&KeGetCurrentPrcb()->CallDpc, Context, &Barrier, &ReverseBarrier);
+    KiGenericCallDpcRoutine(&CurrentPrcb->CallDpc,
+                            &CallContext,
+                            (PVOID)&CallContext.Barrier,
+                            (PVOID)&CallContext.ReverseBarrier);
     KeLowerIrql(OldIrql);
+
+    while (CallContext.Barrier != 0)
+    {
+        YieldProcessor();
+        KeMemoryBarrierWithoutFence();
+    }
+
+    ExReleaseFastMutex(&KiGenericCallDpcMutex);
 }
 
 /*

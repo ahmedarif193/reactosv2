@@ -38,6 +38,40 @@ static const CHAR CmpIntelID[]       = "GenuineIntel";
 static const CHAR CmpAmdID[]         = "AuthenticAMD";
 static const CHAR CmpCentaurID[]     = "CentaurHauls";
 
+typedef struct _KI_TB_FLUSH_CONTEXT
+{
+    BOOLEAN FlushCaches;
+} KI_TB_FLUSH_CONTEXT, *PKI_TB_FLUSH_CONTEXT;
+
+static
+VOID
+NTAPI
+KiFlushEntireTbDpcRoutine(
+    _In_ PKDPC Dpc,
+    _In_opt_ PVOID DeferredContext,
+    _In_opt_ PVOID SystemArgument1,
+    _In_opt_ PVOID SystemArgument2)
+{
+    PKI_TB_FLUSH_CONTEXT Context;
+
+    UNREFERENCED_PARAMETER(Dpc);
+
+    Context = (PKI_TB_FLUSH_CONTEXT)DeferredContext;
+
+    /* Flush the local translation buffer */
+    KeFlushCurrentTb();
+
+    /* Optionally invalidate caches */
+    if (Context && Context->FlushCaches)
+    {
+        KeInvalidateAllCaches();
+    }
+
+    /* Synchronize with the generic call barrier */
+    KeSignalCallDpcSynchronize(SystemArgument2);
+    KeSignalCallDpcDone(SystemArgument1);
+}
+
 typedef union _CPU_SIGNATURE
 {
     struct
@@ -662,18 +696,30 @@ KeFlushEntireTb(IN BOOLEAN Invalid,
                 IN BOOLEAN AllProcessors)
 {
     KIRQL OldIrql;
+    BOOLEAN Broadcast;
 
-    // FIXME: halfplemented
-    /* Raise the IRQL for the TB Flush */
+    Broadcast = (AllProcessors && (KeNumberProcessors > 1));
+
+    if (Broadcast)
+    {
+        KI_TB_FLUSH_CONTEXT Context;
+
+        Context.FlushCaches = Invalid;
+        KeGenericCallDpc(KiFlushEntireTbDpcRoutine, &Context);
+    }
+    else
+    {
+        KeFlushCurrentTb();
+        if (Invalid)
+        {
+            KeInvalidateAllCaches();
+        }
+    }
+
+    /* Update the flush stamp while at synch level */
     OldIrql = KeRaiseIrqlToSynchLevel();
-
-    /* Flush the TB for the Current CPU, and update the flush stamp */
-    KeFlushCurrentTb();
-
-    /* Update the flush stamp and return to original IRQL */
-    InterlockedExchangeAdd(&KiTbFlushTimeStamp, 1);
+    InterlockedIncrement(&KiTbFlushTimeStamp);
     KeLowerIrql(OldIrql);
-
 }
 
 NTSTATUS

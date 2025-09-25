@@ -17,6 +17,21 @@
                                KF_LARGE_PAGE|KF_FAST_SYSCALL|KF_GLOBAL_PAGE| \
                                KF_CMOV|KF_PAT|KF_MMX|KF_FXSR|KF_NX_BIT|KF_MTRR)
 
+/* PAT/MTRR helpers */
+#define IA32_MTRR_DEF_TYPE_ENABLE       (1ULL << 11)
+#define IA32_MTRR_DEF_TYPE_FIXED_ENABLE (1ULL << 10)
+
+#ifndef MSR_IA32_MTRR_DEF_TYPE
+#define MSR_IA32_MTRR_DEF_TYPE          0x000002FF
+#endif
+
+static ULONG_PTR NTAPI KiAmd64EnableLargePageWorker(ULONG_PTR Context);
+static ULONG_PTR NTAPI KiAmd64EnableGlobalPageWorker(ULONG_PTR Context);
+static ULONG_PTR NTAPI KiAmd64WritePatMsrWorker(ULONG_PTR Context);
+static ULONG_PTR NTAPI KiAmd64EnableMtrrWorker(ULONG_PTR Context);
+static VOID KiAmd64BroadcastToAllProcessors(PKIPI_BROADCAST_WORKER Worker,
+                                            ULONG_PTR Context);
+
 /* GLOBALS *******************************************************************/
 
 /* Function pointer for early debug prints */
@@ -27,6 +42,92 @@ KSPIN_LOCK KiFreezeExecutionLock;
 
 
 KIPCR KiInitialPcr;
+
+static ULONG_PTR
+NTAPI
+KiAmd64EnableLargePageWorker(
+    _In_ ULONG_PTR Context)
+{
+    ULONG64 Cr4;
+
+    UNREFERENCED_PARAMETER(Context);
+
+    Cr4 = __readcr4();
+    if (!(Cr4 & CR4_PSE))
+    {
+        __writecr4(Cr4 | CR4_PSE);
+
+        /* Reload CR3 to ensure the new setting is globally visible. */
+        __writecr3(__readcr3());
+    }
+
+    return 0;
+}
+
+static ULONG_PTR
+NTAPI
+KiAmd64EnableGlobalPageWorker(
+    _In_ ULONG_PTR Context)
+{
+    ULONG64 Cr4;
+
+    UNREFERENCED_PARAMETER(Context);
+
+    Cr4 = __readcr4();
+    if (!(Cr4 & CR4_PGE))
+    {
+        __writecr4(Cr4 | CR4_PGE);
+
+        /* Flush the TLB so that global translations pick up the new bit. */
+        __writecr3(__readcr3());
+    }
+
+    return 0;
+}
+
+static ULONG_PTR
+NTAPI
+KiAmd64WritePatMsrWorker(
+    _In_ ULONG_PTR Context)
+{
+    __writemsr(MSR_PAT, (ULONG64)Context);
+    return 0;
+}
+
+static ULONG_PTR
+NTAPI
+KiAmd64EnableMtrrWorker(
+    _In_ ULONG_PTR Context)
+{
+    ULONGLONG CurrentValue, NewValue;
+
+    UNREFERENCED_PARAMETER(Context);
+
+    CurrentValue = __readmsr(MSR_IA32_MTRR_DEF_TYPE);
+    NewValue = CurrentValue | IA32_MTRR_DEF_TYPE_ENABLE | IA32_MTRR_DEF_TYPE_FIXED_ENABLE;
+    if (NewValue != CurrentValue)
+    {
+        KeInvalidateAllCaches();
+        __writemsr(MSR_IA32_MTRR_DEF_TYPE, NewValue);
+    }
+
+    return 0;
+}
+
+static VOID
+KiAmd64BroadcastToAllProcessors(
+    _In_ PKIPI_BROADCAST_WORKER Worker,
+    _In_ ULONG_PTR Context)
+{
+    if (KeNumberProcessors > 1)
+    {
+        KeIpiGenericCall(Worker, Context);
+    }
+    else
+    {
+        Worker(Context);
+    }
+}
 
 /* Boot and double-fault/NMI/DPC stack */
 UCHAR DECLSPEC_ALIGN(16) KiP0BootStackData[KERNEL_STACK_SIZE] = {0};
@@ -47,44 +148,51 @@ VOID
 NTAPI
 KiInitMachineDependent(VOID)
 {
-    /* Check for large page support */
+    BOOLEAN FrameBufferCaching = FALSE;
+    ULONG ReturnLength = 0;
+    NTSTATUS Status;
+
     if (KeFeatureBits & KF_LARGE_PAGE)
     {
-        /* FIXME: Support this */
-        DPRINT("Large Page support detected but not yet taken advantage of!\n");
+        KiAmd64BroadcastToAllProcessors(KiAmd64EnableLargePageWorker, 0);
+        DPRINT("Large page support enabled on all processors\n");
     }
 
-    /* Check for global page support */
     if (KeFeatureBits & KF_GLOBAL_PAGE)
     {
-        /* FIXME: Support this */
-        DPRINT("Global Page support detected but not yet taken advantage of!\n");
+        KiAmd64BroadcastToAllProcessors(KiAmd64EnableGlobalPageWorker, 0);
+        DPRINT("Global page support enabled on all processors\n");
     }
 
-    /* Check if we have MTRR */
-    if (KeFeatureBits & KF_MTRR)
+    if (KeFeatureBits & (KF_PAT | KF_MTRR))
     {
-        /* FIXME: Support this */
-        DPRINT("MTRR support detected but not yet taken advantage of!\n");
+        Status = HalQuerySystemInformation(HalFrameBufferCachingInformation,
+                                           sizeof(FrameBufferCaching),
+                                           &FrameBufferCaching,
+                                           &ReturnLength);
+        if (NT_SUCCESS(Status) && FrameBufferCaching)
+        {
+            KeFeatureBits &= ~(KF_PAT | KF_MTRR);
+            DPRINT1("Disabling PAT/MTRR usage due to HAL framebuffer restrictions\n");
+        }
     }
 
-    /* Check for PAT and/or MTRR support */
     if (KeFeatureBits & KF_PAT)
     {
-        /* FIXME: Support this */
-        DPRINT("PAT support detected but not yet taken advantage of!\n");
+        ULONGLONG PatValue;
+
+        PatValue = (PAT_WB << 0)  | (PAT_WC << 8) | (PAT_UCM << 16) | (PAT_UC << 24) |
+                   (PAT_WB << 32) | (PAT_WC << 40) | (PAT_UCM << 48) | (PAT_UC << 56);
+
+        KiAmd64BroadcastToAllProcessors(KiAmd64WritePatMsrWorker, (ULONG_PTR)PatValue);
+        DPRINT("PAT configured for write-back/write-combining defaults\n");
     }
 
-//        /* Allocate the IOPM save area */
-//        Ki386IopmSaveArea = ExAllocatePoolWithTag(PagedPool,
-//                                                  IOPM_SIZE,
-//                                                  '  eK');
-//        if (!Ki386IopmSaveArea)
-//        {
-//            /* Bugcheck. We need this for V86/VDM support. */
-//            KeBugCheckEx(NO_PAGES_AVAILABLE, 2, IOPM_SIZE, 0, 0);
-//        }
-
+    if (KeFeatureBits & KF_MTRR)
+    {
+        KiAmd64BroadcastToAllProcessors(KiAmd64EnableMtrrWorker, 0);
+        DPRINT("MTRR default type enabled\n");
+    }
 }
 
 static
@@ -141,7 +249,14 @@ KiInitializePcr(
     /* Set TssBase */
     Pcr->TssBase = TssBase;
 
-    Pcr->Prcb.RspBase = Pcr->TssBase->Rsp0; // FIXME
+    if (IdleThread && IdleThread->InitialStack)
+    {
+        Pcr->Prcb.RspBase = (ULONG64)(ULONG_PTR)IdleThread->InitialStack;
+    }
+    else
+    {
+        Pcr->Prcb.RspBase = Pcr->TssBase->Rsp0;
+    }
 
     /* Set DPC Stack */
     Pcr->Prcb.DpcStack = DpcStack;
@@ -269,8 +384,8 @@ KiInitializeTss(
     /* Zero out the TSS */
     RtlZeroMemory(Tss, sizeof(KTSS64));
 
-    /* FIXME: I/O Map? */
-    Tss->IoMapBase = 0x68;
+    /* No I/O permission map is present for the boot processor. */
+    Tss->IoMapBase = sizeof(KTSS64);
 
     /* Setup ring 0 stack pointer */
     Tss->Rsp0 = (ULONG64)InitialStack;
@@ -513,8 +628,13 @@ KiSystemStartup(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     BootCycles = __rdtsc();
 
 
-    /* Get the current CPU number */
-    Cpu = KeNumberProcessors++; // FIXME
+    /* Get a unique processor number */
+    do
+    {
+        Cpu = KeNumberProcessors;
+    } while (_InterlockedCompareExchange8((volatile CHAR*)&KeNumberProcessors,
+                                          (CHAR)(Cpu + 1),
+                                          (CHAR)Cpu) != (CHAR)Cpu);
 
     /* LoaderBlock initialization for Cpu 0 */
     if (Cpu == 0)
@@ -598,4 +718,3 @@ KiSystemStartup(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     /* Switch to new kernel stack and start kernel bootstrapping */
     KiSwitchToBootStack(InitialStack);
 }
-

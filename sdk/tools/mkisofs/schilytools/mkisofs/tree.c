@@ -386,11 +386,12 @@ sort_n_finish(this_dir)
 				rootname[5] = 0;
 		}
 		new_reclen = strlen(rootname);
-		snprintf(newname, sizeof(newname), "%s000%s%s",
-				rootname,
-				extname,
-				((s_entry->isorec.flags[0] & ISO_DIRECTORY) ||
-				omit_version_number ? "" : ";1"));
+		newname[0] = '\0';
+		strlcpy(newname, rootname, sizeof (newname));
+		(void)strlcat(newname, "000", sizeof (newname));
+		(void)strlcat(newname, extname, sizeof (newname));
+		if (!((s_entry->isorec.flags[0] & ISO_DIRECTORY) || omit_version_number))
+			(void)strlcat(newname, ";1", sizeof (newname));
 
 		for (d1 = 0; d1 < 36; d1++) {
 			for (d2 = 0; d2 < 36; d2++) {
@@ -2180,8 +2181,12 @@ insert_file_entry(this_dir, whole_path, short_name, statp, have_rsrc)
 			nchar = -1;
 #endif
 			symlink_buff[nchar < 0 ? 0 : nchar] = 0;
-			snprintf(buffer, sizeof(buffer), "L\t%s\t%s\n",
-				s_entry->name, symlink_buff);
+			buffer[0] = '\0';
+			strlcpy(buffer, "L\t", sizeof (buffer));
+			(void)strlcat(buffer, s_entry->name, sizeof (buffer));
+			(void)strlcat(buffer, "\t", sizeof (buffer));
+			(void)strlcat(buffer, symlink_buff, sizeof (buffer));
+			(void)strlcat(buffer, "\n", sizeof (buffer));
 			break;
 #endif
 #ifdef S_IFSOCK

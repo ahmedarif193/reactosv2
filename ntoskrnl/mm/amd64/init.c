@@ -18,6 +18,7 @@
 #include <fltkernel.h>
 
 extern PMMPTE MmDebugPte;
+extern MMPFNLIST MmBadPageListHead;
 
 /* Helper macros */
 #define IS_PAGE_ALIGNED(addr) IS_ALIGNED(addr, PAGE_SIZE)
@@ -188,7 +189,7 @@ MiMapPTEs(
             TmplPte.u.Hard.PageFrameNumber = MxGetNextPage(1);
             MI_WRITE_VALID_PTE(PointerPte, TmplPte);
 
-            /* Zero out the page (FIXME: not always neccessary) */
+            /* Ensure the freshly allocated page table starts out clean */
             RtlZeroMemory(MiPteToAddress(PointerPte), PAGE_SIZE);
         }
     }
@@ -563,7 +564,7 @@ MiAddDescriptorToDatabase(
         while (PageCount--)
         {
             /* Add it to the free list */
-            Pfn->u3.e1.CacheAttribute = MiNonCached; // FIXME: Windows ASSERTs MiChached, but why not MiNotMapped?
+            Pfn->u3.e1.CacheAttribute = MiCached;
             MiInsertPageInFreeList(BasePage + PageCount);
 
             /* Go to the previous page */
@@ -593,8 +594,32 @@ MiAddDescriptorToDatabase(
     }
     else if (MemoryType == LoaderBad)
     {
-        // FIXME: later
-        ASSERT(FALSE);
+        while (PageCount--)
+        {
+            PFN_NUMBER PageIndex = BasePage++;
+            PMMPFN BadPfn = MI_PFN_ELEMENT(PageIndex);
+            PFN_NUMBER OldHead;
+
+            RtlZeroMemory(BadPfn, sizeof(*BadPfn));
+            BadPfn->u3.e1.CacheAttribute = MiNotMapped;
+            BadPfn->u3.e1.PageLocation = BadPageList;
+            BadPfn->u1.Flink = LIST_HEAD;
+            BadPfn->u2.Blink = LIST_HEAD;
+
+            OldHead = MmBadPageListHead.Flink;
+            BadPfn->u1.Flink = OldHead;
+            if (OldHead != LIST_HEAD)
+            {
+                MI_PFN_ELEMENT(OldHead)->u2.Blink = PageIndex;
+            }
+            else
+            {
+                MmBadPageListHead.Blink = PageIndex;
+            }
+
+            MmBadPageListHead.Flink = PageIndex;
+            MmBadPageListHead.Total++;
+        }
     }
     else
     {
