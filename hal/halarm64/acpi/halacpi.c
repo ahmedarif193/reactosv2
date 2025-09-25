@@ -2,7 +2,7 @@
  * PROJECT:     ReactOS Hardware Abstraction Layer
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 ACPI Support
- * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:   Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  */
 
 /* INCLUDES *******************************************************************/
@@ -14,6 +14,7 @@
 /* DEFINITIONS ****************************************************************/
 
 /* ARM64-specific ACPI table signatures */
+#define ACPI_MADT_SIGNATURE     0x43495041  /* 'APIC' - Multiple APIC Description Table */
 #define ACPI_GTDT_SIGNATURE     0x54444D47  /* 'GTDT' - Generic Timer Description Table */
 #define ACPI_IORT_SIGNATURE     0x54524F49  /* 'IORT' - IO Remapping Table */
 #define ACPI_PPTT_SIGNATURE     0x54545050  /* 'PPTT' - Processor Properties Topology Table */

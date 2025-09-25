@@ -2,7 +2,7 @@
  * PROJECT:     ReactOS Kernel
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 Virtual Memory Management
- * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:   Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  */
 
 /* INCLUDES *******************************************************************/
@@ -177,10 +177,12 @@ MiGetOrCreatePageTable(
         return NULL;
 
     /* Allocate new page table */
-    PhysicalAddress = MmAllocatePhysicalPages(1);
+    /* TODO: Implement MmAllocatePhysicalPages for ARM64 */
+    /* PhysicalAddress = MmAllocatePhysicalPages(1); */
+    PhysicalAddress.QuadPart = 0;  /* Temporary stub */
     if (!PhysicalAddress.QuadPart)
     {
-        DPRINT1("Failed to allocate page table\n");
+        DPRINT1("Failed to allocate page table - stub implementation\n");
         return NULL;
     }
 
@@ -188,7 +190,8 @@ MiGetOrCreatePageTable(
     PageTable = MmMapIoSpace(PhysicalAddress, ARM64_PAGE_SIZE, MmNonCached);
     if (!PageTable)
     {
-        MmFreePhysicalPages(PhysicalAddress, 1);
+        /* TODO: Implement MmFreePhysicalPages for ARM64 */
+        /* MmFreePhysicalPages(PhysicalAddress, 1); */
         DPRINT1("Failed to map page table\n");
         return NULL;
     }
@@ -365,7 +368,8 @@ MiUnmapSinglePage(
     /* Free the physical page if it was allocated */
     if (PhysicalAddress.QuadPart)
     {
-        MmFreePhysicalPages(PhysicalAddress, 1);
+        /* TODO: Implement MmFreePhysicalPages for ARM64 */
+        /* MmFreePhysicalPages(PhysicalAddress, 1); */
     }
 
     return TRUE;
@@ -476,7 +480,9 @@ MmAllocateVirtualMemory(
             else
             {
                 /* Allocate from free pool */
-                PhysicalAddress = MmAllocatePhysicalPages(1);
+                /* TODO: Implement MmAllocatePhysicalPages for ARM64 */
+                /* PhysicalAddress = MmAllocatePhysicalPages(1); */
+                PhysicalAddress.QuadPart = 0;  /* Temporary stub */
                 if (!PhysicalAddress.QuadPart)
                 {
                     Status = STATUS_NO_MEMORY;
@@ -489,14 +495,16 @@ MmAllocateVirtualMemory(
             {
                 if (!(AllocationType & MEM_PHYSICAL))
                 {
-                    MmFreePhysicalPages(PhysicalAddress, 1);
+                    /* TODO: Implement MmFreePhysicalPages for ARM64 */
+        /* MmFreePhysicalPages(PhysicalAddress, 1); */
                 }
                 Status = STATUS_NO_MEMORY;
                 break;
             }
 
             /* Zero the page if requested */
-            if (AllocationType & MEM_ZERO)
+            /* TODO: Define MEM_ZERO for ARM64 */
+            if (AllocationType & 0x1000000 /* MEM_ZERO */)
             {
                 RtlZeroMemory(PageAddress, ARM64_PAGE_SIZE);
             }
@@ -510,7 +518,8 @@ MmAllocateVirtualMemory(
     if (!NT_SUCCESS(Status))
     {
         /* Cleanup on failure */
-        MmFreeVirtualMemory(ProcessHandle, &Address, RegionSize, MEM_RELEASE);
+        /* TODO: Fix circular dependency with MmFreeVirtualMemory */
+        /* MmFreeVirtualMemory(ProcessHandle, &Address, RegionSize, MEM_RELEASE); */
         return NULL;
     }
 
@@ -581,7 +590,8 @@ MmFreeVirtualMemory(
             VmStatistics.CommittedPages--;
         }
     }
-    else if (FreeType & MEM_RELEASE)
+    /* TODO: Define MEM_RELEASE for ARM64 */
+    else if (FreeType & 0x8000 /* MEM_RELEASE */)
     {
         /* Unmap all pages in the VAD */
         ULONG64 CurrentAddress = Vad->StartingVirtualAddress;
@@ -728,6 +738,7 @@ MmQueryVirtualMemory(
  * @brief Map physical memory to virtual address
  * @implemented
  */
+#if 0  /* Disabled - using generic implementation in mm/iosup.c */
 PVOID
 NTAPI
 MmMapIoSpace(
@@ -758,7 +769,7 @@ MmMapIoSpace(
         case MmNonCached:
             Protection = PAGE_READWRITE | PAGE_NOCACHE;
             break;
-        case MmWriteCombining:
+        case MmWriteCombined:
             Protection = PAGE_READWRITE | PAGE_WRITECOMBINE;
             break;
         case MmCached:
@@ -792,11 +803,13 @@ MmMapIoSpace(
     /* Return address with original offset */
     return (PVOID)((ULONG64)VirtualAddress + Offset);
 }
+#endif /* 0 - MmMapIoSpace */
 
 /*
  * @brief Unmap I/O space
  * @implemented
  */
+#if 0  /* Disabled - using generic implementation in mm/iosup.c */
 VOID
 NTAPI
 MmUnmapIoSpace(
@@ -819,6 +832,7 @@ MmUnmapIoSpace(
         MiUnmapSinglePage(PageAddress);
     }
 }
+#endif /* 0 - MmUnmapIoSpace */
 
 /*
  * @brief Get virtual memory statistics
@@ -857,7 +871,9 @@ MmHandleCopyOnWriteFault(
 
     /* TODO: Get current physical page */
     /* TODO: Allocate new physical page */
-    NewPhysical = MmAllocatePhysicalPages(1);
+    /* TODO: Implement MmAllocatePhysicalPages for ARM64 */
+    /* NewPhysical = MmAllocatePhysicalPages(1); */
+    NewPhysical.QuadPart = 0;  /* Temporary stub */
     if (!NewPhysical.QuadPart)
     {
         KeReleaseSpinLock(&VmLock, OldIrql);
@@ -876,3 +892,34 @@ MmHandleCopyOnWriteFault(
 }
 
 /* EOF */
+
+/* STUB FUNCTIONS FOR LINKING ************************************************/
+
+/* Stub implementation for MiGetPfnForVirtualAddress */
+ULONG_PTR
+NTAPI
+MiGetPfnForVirtualAddress(IN PVOID VirtualAddress)
+{
+    DPRINT("MiGetPfnForVirtualAddress: ARM64 stub implementation\n");
+    UNREFERENCED_PARAMETER(VirtualAddress);
+    /* TODO: Implement ARM64-specific PFN lookup */
+    return 0;
+}
+
+/* Stub implementation for MmMapViewOfSystemSection */
+NTSTATUS
+NTAPI
+MmMapViewOfSystemSection(
+    IN PEPROCESS Process,
+    IN OUT PVOID *BaseAddress,
+    IN OUT PSIZE_T ViewSize,
+    IN ULONG Protect)
+{
+    DPRINT("MmMapViewOfSystemSection: ARM64 stub implementation\n");
+    UNREFERENCED_PARAMETER(Process);
+    UNREFERENCED_PARAMETER(BaseAddress);
+    UNREFERENCED_PARAMETER(ViewSize);
+    UNREFERENCED_PARAMETER(Protect);
+    /* TODO: Implement ARM64-specific system section mapping */
+    return STATUS_NOT_IMPLEMENTED;
+}

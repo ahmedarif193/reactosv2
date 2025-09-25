@@ -2,7 +2,7 @@
  * PROJECT:     ReactOS Boot Video Driver for ARM64 devices
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     Main file for ARM64 boot video support
- * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:   Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  */
 
 #include "precomp.h"

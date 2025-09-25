@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT:       Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:       Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  * PROJECT:         ReactOS Runtime Library
  * PURPOSE:         Exception handling for ARM64
  * FILE:            lib/rtl/arm64/except.c

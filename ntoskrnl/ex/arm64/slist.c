@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  * PROJECT:         ReactOS Kernel
  * PURPOSE:         ARM64 SList (Singly Linked List) Interlocked Operations
  * FILE:            ntoskrnl/ex/arm64/slist.c

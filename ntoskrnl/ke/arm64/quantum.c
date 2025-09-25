@@ -2,7 +2,7 @@
  * PROJECT:         ReactOS Kernel
  * LICENSE:         GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:         ARM64 Thread Quantum Management and Timer Integration
- * COPYRIGHT:       Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:       Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  * PROGRAMMER:      ARM64 Port Team
  */
 
@@ -180,7 +180,8 @@ KiQuantumTimerHandler(
         if (CurrentThread->Quantum == 0)
         {
             /* Quantum expired, request reschedule */
-            Reschedule = KiQuantumEnd(Prcb);
+            Prcb->QuantumEnd = TRUE;
+            Reschedule = TRUE;
         }
 
         /* Update thread timing */

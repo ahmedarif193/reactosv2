@@ -2,7 +2,7 @@
  * PROJECT:     ReactOS Hardware Abstraction Layer
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 HAL Initialization
- * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:   Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  */
 
 /* INCLUDES *******************************************************************/
@@ -544,23 +544,7 @@ HalInitializeDMA(VOID)
     DPRINT("Initializing ARM64 DMA support\n");
 }
 
-/*
- * @brief Initialize ARM64 power management
- */
-VOID
-NTAPI
-HalInitializePowerManagement(VOID)
-{
-    /* TODO: Initialize ARM64 power management
-     * - Set up CPU idle states (WFI, WFE)
-     * - Initialize PSCI (Power State Coordination Interface)
-     * - Configure dynamic voltage and frequency scaling
-     * - Set up thermal management
-     * - Initialize system suspend/resume support
-     */
-
-    DPRINT("Initializing ARM64 power management\n");
-}
+/* Note: HalInitializePowerManagement is implemented in generic/power.c */
 
 /*
  * @brief Initialize ARM64 performance monitoring

@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  * PROJECT:         ReactOS HAL
  * PURPOSE:         ARM64 Hardware Abstraction Layer Main File
  * FILE:            hal/halarm64/halarm64.c
@@ -39,17 +39,7 @@ KIRQL HalpCurrentIrql[32] = { PASSIVE_LEVEL };
 
 /* FUNCTIONS *****************************************************************/
 
-/**
- * @brief Get current IRQL (HAL implementation for ARM64)
- */
-KIRQL
-NTAPI
-KeGetCurrentIrql(VOID)
-{
-    /* TODO: Get actual processor number */
-    /* For now, assume processor 0 */
-    return HalpCurrentIrql[0];
-}
+/* KeGetCurrentIrql removed - provided by kernel, not HAL */
 
 /**
  * @brief Raise IRQL (Fast version)
@@ -112,76 +102,7 @@ KeLowerIrql(IN KIRQL NewIrql)
     KfLowerIrql(NewIrql);
 }
 
-/*
- * @brief Initialize the Hardware Abstraction Layer for ARM64
- *
- * HAL provides abstraction for:
- * - Interrupt controllers (GIC)
- * - Timers (Generic Timer, platform timers)
- * - Power management
- * - Bus interfaces (PCIe, platform buses)
- * - ACPI or Device Tree
- *
- * @param LoaderBlock - Boot loader parameter block
- * @return NTSTATUS - Success or failure status
- */
-NTSTATUS
-NTAPI
-HalInitSystem(
-    IN ULONG Phase,
-    IN PLOADER_PARAMETER_BLOCK LoaderBlock)
-{
-    DPRINT1("HalInitSystem: Phase %u - ARM64 HAL init stub\n", Phase);
-
-    if (Phase == 0)
-    {
-        /* Phase 0: Early HAL initialization */
-
-        /* TODO: Detect platform type */
-        /* ARM64 platforms can be:
-         * - ACPI-based (Server Base Boot Requirements)
-         * - Device Tree based (embedded/mobile)
-         * - Hybrid (both ACPI and DT)
-         */
-
-        /* TODO: Initialize HAL private dispatch table */
-        HalpInitializePrivateTable();
-
-        /* TODO: Parse ACPI tables or Device Tree */
-        /* ACPI tables:
-         * - MADT: Multiple APIC Description Table (GIC info)
-         * - GTDT: Generic Timer Description Table
-         * - SPCR: Serial Port Console Redirection
-         * - IORT: IO Remapping Table
-         * - MCFG: PCIe configuration
-         */
-
-        /* TODO: Initialize console for early debugging */
-        /* UART types:
-         * - PL011 (ARM standard UART)
-         * - 16550 compatible
-         * - Platform-specific UARTs
-         */
-    }
-    else if (Phase == 1)
-    {
-        /* Phase 1: Late HAL initialization */
-
-        /* TODO: Initialize interrupt controller */
-        HalpInitializeGic();
-
-        /* TODO: Initialize system timers */
-        HalpInitializeTimers();
-
-        /* TODO: Initialize power management */
-        HalpInitializePowerManagement();
-
-        /* TODO: Enumerate and initialize platform devices */
-        HalpInitializePlatformDevices();
-    }
-
-    return STATUS_SUCCESS;
-}
+/* HalInitSystem removed - implemented in generic/halinit.c */
 
 /*
  * @brief Initialize HAL private dispatch table

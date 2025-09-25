@@ -2,7 +2,7 @@
  * PROJECT:     ReactOS Kernel
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 Context Switching
- * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:   Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  */
 
 #include <arm64/arm64.h>
@@ -64,9 +64,9 @@
  *   x0 = PKTHREAD OldThread
  *   x1 = PKTHREAD NewThread
  */
-.globl KiSwapContext
-/* .type KiSwapContext, %function - not supported by MinGW */
-KiSwapContext:
+.globl KiSwapContextARM64
+/* .type KiSwapContextARM64, %function - not supported by MinGW */
+KiSwapContextARM64:
     /* Disable interrupts during context switch */
     mrs x2, daif
     msr daifset, #0xF
@@ -284,7 +284,7 @@ KiAtomicSwapContext:
     str x2, [sp, #-16]!
     
     /* Perform the context switch */
-    bl KiSwapContext
+    bl KiSwapContextARM64
     
     /* Restore and return the old IRQL */
     ldr x0, [sp], #16

@@ -2,7 +2,7 @@
  * PROJECT:         ReactOS Kernel
  * LICENSE:         GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:         ARM64 Scheduler Initialization and Integration
- * COPYRIGHT:       Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:       Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  * PROGRAMMER:      ARM64 Port Team
  */
 
@@ -389,4 +389,35 @@ KiSchedulerStartup(
 
     DPRINT("KiSchedulerStartup: ARM64 scheduler startup completed successfully\n");
     return STATUS_SUCCESS;
+}
+
+/* STUB FUNCTIONS FOR LINKING ************************************************/
+
+/* Stub implementation for KiInitializeScheduler */
+VOID
+NTAPI
+KiInitializeScheduler(VOID)
+{
+    DPRINT("KiInitializeScheduler: ARM64 stub implementation\n");
+    /* TODO: Implement ARM64-specific scheduler initialization */
+}
+
+/* Stub implementation for KiInitializeReadyQueues */
+VOID
+NTAPI
+KiInitializeReadyQueues(IN PKPRCB Prcb)
+{
+    DPRINT("KiInitializeReadyQueues: ARM64 stub implementation\n");
+    UNREFERENCED_PARAMETER(Prcb);
+    /* TODO: Implement ARM64-specific ready queue initialization */
+}
+
+/* Stub implementation for KiCheckForReschedule */
+BOOLEAN
+FASTCALL
+KiCheckForReschedule(VOID)
+{
+    DPRINT("KiCheckForReschedule: ARM64 stub implementation\n");
+    /* TODO: Implement ARM64-specific reschedule check */
+    return FALSE;
 }

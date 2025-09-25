@@ -2,7 +2,7 @@
  * PROJECT:     ReactOS Hardware Abstraction Layer
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 Generic Interrupt Controller (GIC) Support
- * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:   Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  */
 
 /* INCLUDES *******************************************************************/
@@ -340,7 +340,7 @@ BOOLEAN
 NTAPI
 HalInitializeGicv3CpuInterface(VOID)
 {
-    ULONG64 IccCtlrEl1, IccPmrEl1;
+    ULONG64 IccCtlrEl1, IccPmrEl1, EnableValue;
 
     DPRINT("Initializing GICv3 CPU Interface\n");
 
@@ -369,11 +369,11 @@ HalInitializeGicv3CpuInterface(VOID)
     );
 
     /* Enable Group 1 interrupts at the CPU interface */
+    EnableValue = 1;
     __asm__ __volatile__ (
-        "mov x0, #1\n"
-        "msr " ICC_IGRPEN1_EL1 ", x0\n"
+        "msr " ICC_IGRPEN1_EL1 ", %0\n"
         "isb\n"
-        ::: "x0"
+        :: "r"(EnableValue)
     );
 
     DPRINT("GICv3 CPU Interface initialized\n");
@@ -573,6 +573,9 @@ HalSendSoftwareInterrupt(
     /* TODO: Write to Software Generated Interrupt Register */
     // WRITE_REGISTER_ULONG((PULONG)((PUCHAR)GicDistributorBase + GICD_SGIR), SgiRegister);
 
+    /* Avoid unused variable warning */
+    (VOID)SgiRegister;
+
     DPRINT("Sent SGI %lu to CPU %lu\n", InterruptNumber, TargetCpu);
 }
 
@@ -608,6 +611,12 @@ HalSetInterruptPriority(
 
     /* TODO: Write back the modified value */
     // WRITE_REGISTER_ULONG((PULONG)((PUCHAR)GicDistributorBase + GICD_IPRIORITYR + RegisterOffset), CurrentValue);
+
+    /* Avoid unused variable warnings */
+    (VOID)RegisterOffset;
+    (VOID)ByteOffset;
+    (VOID)CurrentValue;
+    (VOID)PriorityValue;
 
     DPRINT("Set interrupt %lu priority to %lu\n", InterruptNumber, Priority);
 }

@@ -2,7 +2,7 @@
  * PROJECT:     ReactOS Hardware Abstraction Layer
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 Interrupt Handling Framework
- * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:   Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  */
 
 /* INCLUDES *******************************************************************/
@@ -82,7 +82,7 @@ typedef struct _ARM64_EXCEPTION_FRAME
     ULONG64 PC;             /* Program counter (ELR_EL1) */
     ULONG64 PSTATE;         /* Processor state (SPSR_EL1) */
     ULONG64 ESR;            /* Exception syndrome register (ESR_EL1) */
-    ULONG64 FAR;            /* Fault address register (FAR_EL1) */
+    ULONG64 FAR_EL1;        /* Fault address register (FAR_EL1) */
 } ARM64_EXCEPTION_FRAME, *PARM64_EXCEPTION_FRAME;
 
 /* Interrupt handler function pointer */
@@ -118,7 +118,6 @@ static ULONG64 UnhandledExceptions = 0;
 /*
  * @brief Get exception class from ESR register
  */
-static
 FORCEINLINE
 ULONG
 HalGetExceptionClass(
@@ -130,7 +129,6 @@ HalGetExceptionClass(
 /*
  * @brief Get instruction specific syndrome from ESR register
  */
-static
 FORCEINLINE
 ULONG
 HalGetInstructionSyndrome(
@@ -157,7 +155,7 @@ HalSynchronousExceptionHandler(
     InstructionSyndrome = HalGetInstructionSyndrome(ExceptionFrame->ESR);
 
     DPRINT("ARM64 Synchronous Exception: Class=0x%02lx, ISS=0x%06lx, PC=0x%016llx, FAR=0x%016llx\n",
-           ExceptionClass, InstructionSyndrome, ExceptionFrame->PC, ExceptionFrame->FAR);
+           ExceptionClass, InstructionSyndrome, ExceptionFrame->PC, ExceptionFrame->FAR_EL1);
 
     switch (ExceptionClass)
     {
@@ -171,7 +169,7 @@ HalSynchronousExceptionHandler(
         case ESR_EL1_EC_DABT_CUR:
             /* Data abort - memory access violation */
             DPRINT1("Data Abort: PC=0x%016llx, FAR=0x%016llx, ISS=0x%06lx\n",
-                   ExceptionFrame->PC, ExceptionFrame->FAR, InstructionSyndrome);
+                   ExceptionFrame->PC, ExceptionFrame->FAR_EL1, InstructionSyndrome);
 
             /* TODO: Handle data abort - potentially recoverable page fault */
             break;
@@ -180,7 +178,7 @@ HalSynchronousExceptionHandler(
         case ESR_EL1_EC_IABT_CUR:
             /* Instruction abort - instruction fetch violation */
             DPRINT1("Instruction Abort: PC=0x%016llx, FAR=0x%016llx, ISS=0x%06lx\n",
-                   ExceptionFrame->PC, ExceptionFrame->FAR, InstructionSyndrome);
+                   ExceptionFrame->PC, ExceptionFrame->FAR_EL1, InstructionSyndrome);
             break;
 
         case ESR_EL1_EC_PC_ALIGN:
@@ -329,7 +327,7 @@ HalSErrorHandler(
     IN PARM64_EXCEPTION_FRAME ExceptionFrame)
 {
     DPRINT1("ARM64 SError: PC=0x%016llx, ESR=0x%016llx, FAR=0x%016llx\n",
-           ExceptionFrame->PC, ExceptionFrame->ESR, ExceptionFrame->FAR);
+           ExceptionFrame->PC, ExceptionFrame->ESR, ExceptionFrame->FAR_EL1);
 
     /* SError indicates a serious system error */
     UnhandledExceptions++;
@@ -346,7 +344,7 @@ BOOLEAN
 NTAPI
 HalRegisterInterruptHandler(
     IN ULONG InterruptNumber,
-    IN PINTERRUPT_HANDLER Handler,
+    IN PVOID Handler,
     IN PVOID Context)
 {
     PINTERRUPT_HANDLER_ENTRY HandlerEntry;
@@ -366,7 +364,7 @@ HalRegisterInterruptHandler(
     }
 
     /* Register the handler */
-    HandlerEntry->Handler = Handler;
+    HandlerEntry->Handler = (PINTERRUPT_HANDLER)Handler;
     HandlerEntry->Context = Context;
     HandlerEntry->Registered = TRUE;
     HandlerEntry->Usage = 0;

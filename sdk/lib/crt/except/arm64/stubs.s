@@ -2,7 +2,7 @@
  * PROJECT:     ReactOS CRT
  * LICENSE:     GPL-2.0-or-later
  * PURPOSE:     ARM64 exception handling stubs
- * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:   Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  */
 
 /* ARM64 assembly stubs for exception handling functions */

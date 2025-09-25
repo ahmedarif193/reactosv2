@@ -1,0 +1,3271 @@
+diff --git a/ntoskrnl/include/internal/arm64/ke.h b/ntoskrnl/include/internal/arm64/ke.h
+index e91df045ae5..f3f18fc70c9 100644
+--- a/ntoskrnl/include/internal/arm64/ke.h
++++ b/ntoskrnl/include/internal/arm64/ke.h
+@@ -195,12 +195,7 @@ KiSwapContextARM64(
+     IN PKTHREAD OldThread,
+     IN PKTHREAD NewThread);
+ 
+-/* Generic KiSwapContext wrapper for ARM64 compatibility */
+-BOOLEAN
+-FASTCALL
+-KiSwapContext(
+-    IN KIRQL WaitIrql,
+-    IN PKTHREAD CurrentThread);
++/* KiSwapContext is declared in generic ke.h - no ARM64 specific version needed */
+ 
+ /* ARM64 specific PCR access */
+ #define KeGetPcr() PCR
+diff --git a/ntoskrnl/ke/arm64/event.c b/ntoskrnl/ke/arm64/event.c
+index 41356e9dc82..eda0f496554 100644
+--- a/ntoskrnl/ke/arm64/event.c
++++ b/ntoskrnl/ke/arm64/event.c
+@@ -1,7 +1,7 @@
+ /*
+  * PROJECT:     ReactOS Kernel
+  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
+- * PURPOSE:     ARM64 Event Dispatcher Object Implementation
++ * PURPOSE:     ARM64 Event Dispatcher Object Helpers
+  * COPYRIGHT:   Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
+  */
+ 
+@@ -21,475 +21,18 @@
+ #define ARM64_EVENT_RELEASE_BARRIER()  __dmb(ishst)
+ #define ARM64_EVENT_FULL_BARRIER()     __dmb(ish)
+ 
+-/* Event signaling optimizations for ARM64 multi-core */
+-#define ARM64_EVENT_SIGNAL_BARRIER()   do { ARM64_EVENT_FULL_BARRIER(); __sev(); } while(0)
+-
+ /* FUNCTIONS *****************************************************************/
+ 
+ /*
+- * @implemented
+- */
+-VOID
+-NTAPI
+-KeInitializeEvent(OUT PKEVENT Event,
+-                  IN EVENT_TYPE Type,
+-                  IN BOOLEAN State)
+-{
+-    ASSERT(Event != NULL);
+-    ASSERT((Type == NotificationEvent) || (Type == SynchronizationEvent));
+-
+-    DPRINT("KeInitializeEvent: Event=%p, Type=%d, State=%d\n",
+-           Event, Type, State);
+-
+-    /* Initialize the Dispatcher Header */
+-    Event->Header.Type = (Type == NotificationEvent) ? EventNotificationObject : EventSynchronizationObject;
+-    Event->Header.Size = sizeof(KEVENT) / sizeof(ULONG);
+-    Event->Header.SignalState = State ? 1 : 0;
+-    InitializeListHead(&(Event->Header.WaitListHead));
+-
+-    /* ARM64: Ensure initialization is visible to all cores */
+-    ARM64_EVENT_FULL_BARRIER();
+-
+-    DPRINT("KeInitializeEvent: Initialized Event=%p as %s event\n",
+-           Event, (Type == NotificationEvent) ? "Notification" : "Synchronization");
+-}
+-
+-/*
+- * @implemented
+- */
+-VOID
+-NTAPI
+-KeClearEvent(IN PKEVENT Event)
+-{
+-    ASSERT_EVENT(Event);
+-
+-    DPRINT("KeClearEvent: Event=%p\n", Event);
+-
+-    /* ARM64: Use atomic store with release semantics */
+-    _InterlockedExchange(&Event->Header.SignalState, 0);
+-
+-    /* ARM64: Memory barrier to ensure state change is visible */
+-    ARM64_EVENT_RELEASE_BARRIER();
+-
+-    DPRINT("KeClearEvent: Event cleared\n");
+-}
+-
+-/*
+- * @implemented
+- */
+-LONG
+-NTAPI
+-KeReadStateEvent(IN PKEVENT Event)
+-{
+-    LONG SignalState;
+-
+-    ASSERT_EVENT(Event);
+-
+-    DPRINT("KeReadStateEvent: Event=%p\n", Event);
+-
+-    /* ARM64: Load with acquire semantics for proper ordering */
+-    ARM64_EVENT_ACQUIRE_BARRIER();
+-
+-    /* Read the signal state atomically */
+-    SignalState = Event->Header.SignalState;
+-
+-    /* ARM64: Memory barrier to ensure read completes */
+-    ARM64_EVENT_ACQUIRE_BARRIER();
+-
+-    DPRINT("KeReadStateEvent: SignalState=%ld\n", SignalState);
+-
+-    return SignalState;
+-}
+-
+-/*
+- * @implemented
+- */
+-LONG
+-NTAPI
+-KeResetEvent(IN PKEVENT Event)
+-{
+-    KIRQL OldIrql;
+-    LONG PreviousState;
+-
+-    ASSERT_EVENT(Event);
+-    ASSERT_IRQL_LESS_OR_EQUAL(DISPATCH_LEVEL);
+-
+-    DPRINT("KeResetEvent: Event=%p\n", Event);
+-
+-    /* ARM64: Memory barrier before critical section */
+-    ARM64_EVENT_ACQUIRE_BARRIER();
+-
+-    /* Lock the Dispatcher Database */
+-    OldIrql = KiAcquireDispatcherLock();
+-
+-    /* ARM64: Additional barrier after acquiring lock for multi-core coherency */
+-    ARM64_EVENT_ACQUIRE_BARRIER();
+-
+-    /* Save the Previous State */
+-    PreviousState = Event->Header.SignalState;
+-
+-    /* ARM64: Atomically reset the event */
+-    _InterlockedExchange(&Event->Header.SignalState, 0);
+-
+-    /* ARM64: Memory barrier to ensure state change is visible */
+-    ARM64_EVENT_RELEASE_BARRIER();
+-
+-    /* Release Dispatcher Database and return previous state */
+-    KiReleaseDispatcherLock(OldIrql);
+-
+-    DPRINT("KeResetEvent: PreviousState=%ld\n", PreviousState);
+-
+-    return PreviousState;
+-}
+-
+-/*
+- * @implemented
+- */
+-LONG
+-NTAPI
+-KeSetEvent(IN PKEVENT Event,
+-           IN KPRIORITY Increment,
+-           IN BOOLEAN Wait)
+-{
+-    KIRQL OldIrql;
+-    LONG PreviousState;
+-    PKTHREAD Thread;
+-
+-    ASSERT_EVENT(Event);
+-    ASSERT_IRQL_LESS_OR_EQUAL(DISPATCH_LEVEL);
+-
+-    DPRINT("KeSetEvent: Event=%p, Increment=%d, Wait=%d\n",
+-           Event, Increment, Wait);
+-
+-    /*
+-     * ARM64 Optimization: Check if this is a signaled notification event without an upcoming wait.
+-     * In this case, we can immediately return TRUE, without locking.
+-     */
+-    if ((Event->Header.Type == EventNotificationObject) &&
+-        (Event->Header.SignalState == 1) &&
+-        !(Wait))
+-    {
+-        /* ARM64: Memory barrier to ensure we read consistent state */
+-        ARM64_EVENT_ACQUIRE_BARRIER();
+-
+-        /* Verify the state hasn't changed after the barrier */
+-        if (Event->Header.SignalState == 1)
+-        {
+-            DPRINT("KeSetEvent: Fast path - notification event already signaled\n");
+-            return TRUE;
+-        }
+-        /* State changed, fall through to locked path */
+-    }
+-
+-    /* ARM64: Memory barrier before critical section */
+-    ARM64_EVENT_ACQUIRE_BARRIER();
+-
+-    /* Lock the Dispatcher Database */
+-    OldIrql = KiAcquireDispatcherLock();
+-
+-    /* ARM64: Additional barrier after acquiring lock for multi-core coherency */
+-    ARM64_EVENT_ACQUIRE_BARRIER();
+-
+-    /* Save the Previous State */
+-    PreviousState = Event->Header.SignalState;
+-
+-    /* ARM64: Atomically set the Event to Signaled */
+-    _InterlockedExchange(&Event->Header.SignalState, 1);
+-
+-    /* ARM64: Full memory barrier to ensure state change is visible, then signal other cores */
+-    ARM64_EVENT_SIGNAL_BARRIER();
+-
+-    /* Check if the event just became signaled now, and it has waiters */
+-    if (!(PreviousState) && !(IsListEmpty(&Event->Header.WaitListHead)))
+-    {
+-        DPRINT("KeSetEvent: Waking waiting threads\n");
+-
+-        /* Check the type of event */
+-        if (Event->Header.Type == EventNotificationObject)
+-        {
+-            /* Notification event: wake all waiters */
+-            KxUnwaitThread(&Event->Header, Increment);
+-        }
+-        else
+-        {
+-            /* Synchronization event: wake one waiter and auto-reset */
+-            KxUnwaitThreadForEvent(Event, Increment);
+-        }
+-    }
+-
+-    /* Check what wait state was requested */
+-    if (!Wait)
+-    {
+-        /* ARM64: Release barrier before unlocking */
+-        ARM64_EVENT_RELEASE_BARRIER();
+-
+-        /* Wait not requested, release Dispatcher Database and return */
+-        KiReleaseDispatcherLock(OldIrql);
+-    }
+-    else
+-    {
+-        /* Set wait state - the lock will be released by the wait operation */
+-        Thread = KeGetCurrentThread();
+-        Thread->WaitNext = TRUE;
+-        Thread->WaitIrql = OldIrql;
+-
+-        /* ARM64: Memory barrier for wait state visibility */
+-        ARM64_EVENT_FULL_BARRIER();
+-    }
+-
+-    DPRINT("KeSetEvent: Returning PreviousState=%ld\n", PreviousState);
+-
+-    /* Return the previous State */
+-    return PreviousState;
+-}
+-
+-/*
+- * @implemented
++ * ARM64-specific event optimizations can be added here if needed.
++ * The generic implementations from ke/eventobj.c are used for standard APIs.
+  */
+-LONG
+-NTAPI
+-KePulseEvent(IN PKEVENT Event,
+-             IN KPRIORITY Increment,
+-             IN BOOLEAN Wait)
+-{
+-    KIRQL OldIrql;
+-    LONG PreviousState;
+-    PKTHREAD Thread;
+-
+-    ASSERT_EVENT(Event);
+-    ASSERT_IRQL_LESS_OR_EQUAL(DISPATCH_LEVEL);
+-
+-    DPRINT("KePulseEvent: Event=%p, Increment=%d, Wait=%d\n",
+-           Event, Increment, Wait);
+-
+-    /* ARM64: Memory barrier before critical section */
+-    ARM64_EVENT_ACQUIRE_BARRIER();
+-
+-    /* Lock the Dispatcher Database */
+-    OldIrql = KiAcquireDispatcherLock();
+-
+-    /* ARM64: Additional barrier after acquiring lock for multi-core coherency */
+-    ARM64_EVENT_ACQUIRE_BARRIER();
+-
+-    /* Save the Old State */
+-    PreviousState = Event->Header.SignalState;
+-
+-    /* Check if we are non-signaled and we have stuff in the Wait Queue */
+-    if (!PreviousState && !IsListEmpty(&Event->Header.WaitListHead))
+-    {
+-        /* ARM64: Atomically set the Event to Signaled */
+-        _InterlockedExchange(&Event->Header.SignalState, 1);
+-
+-        /* ARM64: Full memory barrier to ensure state change is visible, then signal other cores */
+-        ARM64_EVENT_SIGNAL_BARRIER();
+-
+-        DPRINT("KePulseEvent: Waking waiting threads\n");
+ 
+-        /* Wake the Event */
+-        KiWaitTest(&Event->Header, Increment);
+-    }
+-
+-    /* ARM64: Atomically unsignal the event (pulse behavior) */
+-    _InterlockedExchange(&Event->Header.SignalState, 0);
+-
+-    /* ARM64: Memory barrier to ensure pulse completion is visible */
+-    ARM64_EVENT_RELEASE_BARRIER();
+-
+-    /* Check what wait state was requested */
+-    if (Wait == FALSE)
+-    {
+-        /* ARM64: Release barrier before unlocking */
+-        ARM64_EVENT_RELEASE_BARRIER();
+-
+-        /* Wait not requested, release Dispatcher Database and return */
+-        KiReleaseDispatcherLock(OldIrql);
+-    }
+-    else
+-    {
+-        /* Set wait state - the lock will be released by the wait operation */
+-        Thread = KeGetCurrentThread();
+-        Thread->WaitNext = TRUE;
+-        Thread->WaitIrql = OldIrql;
+-
+-        /* ARM64: Memory barrier for wait state visibility */
+-        ARM64_EVENT_FULL_BARRIER();
+-    }
+-
+-    DPRINT("KePulseEvent: Returning PreviousState=%ld\n", PreviousState);
+-
+-    /* Return the previous State */
+-    return PreviousState;
+-}
+-
+-/*
+- * @implemented
+- */
++/* Placeholder for ARM64-specific event helpers */
+ VOID
+ NTAPI
+-KeSetEventBoostPriority(IN PKEVENT Event,
+-                        IN PKTHREAD *WaitingThread OPTIONAL)
+-{
+-    KIRQL OldIrql;
+-    PKWAIT_BLOCK WaitBlock;
+-    PKTHREAD Thread = KeGetCurrentThread(), WaitThread;
+-
+-    ASSERT(Event->Header.Type == EventSynchronizationObject);
+-    ASSERT_IRQL_LESS_OR_EQUAL(DISPATCH_LEVEL);
+-
+-    DPRINT("KeSetEventBoostPriority: Event=%p, WaitingThread=%p\n",
+-           Event, WaitingThread);
+-
+-    /* ARM64: Memory barrier before critical section */
+-    ARM64_EVENT_ACQUIRE_BARRIER();
+-
+-    /* Acquire Dispatcher Database Lock */
+-    OldIrql = KiAcquireDispatcherLock();
+-
+-    /* ARM64: Additional barrier after acquiring lock for multi-core coherency */
+-    ARM64_EVENT_ACQUIRE_BARRIER();
+-
+-    /* Check if the list is empty */
+-    if (IsListEmpty(&Event->Header.WaitListHead))
+-    {
+-        /* ARM64: Atomically set the Event to Signaled */
+-        _InterlockedExchange(&Event->Header.SignalState, 1);
+-
+-        /* ARM64: Full memory barrier and signal cores */
+-        ARM64_EVENT_SIGNAL_BARRIER();
+-
+-        DPRINT("KeSetEventBoostPriority: No waiters, event signaled\n");
+-
+-        /* Release lock and return */
+-        KiReleaseDispatcherLock(OldIrql);
+-        return;
+-    }
+-
+-    /* Get the first wait block */
+-    WaitBlock = CONTAINING_RECORD(Event->Header.WaitListHead.Flink,
+-                                  KWAIT_BLOCK,
+-                                  WaitListEntry);
+-
+-    DPRINT("KeSetEventBoostPriority: WaitBlock=%p, WaitType=%d\n",
+-           WaitBlock, WaitBlock->WaitType);
+-
+-    /* Check if this is a WaitAll */
+-    if (WaitBlock->WaitType == WaitAll)
+-    {
+-        /* ARM64: Atomically set the Event to Signaled */
+-        _InterlockedExchange(&Event->Header.SignalState, 1);
+-
+-        /* ARM64: Full memory barrier and signal cores */
+-        ARM64_EVENT_SIGNAL_BARRIER();
+-
+-        /* Unwait the thread and unsignal the event (synchronization event behavior) */
+-        KxUnwaitThreadForEvent(Event, EVENT_INCREMENT);
+-    }
+-    else
+-    {
+-        /* Get the waiting thread */
+-        WaitThread = WaitBlock->Thread;
+-        if (WaitingThread) *WaitingThread = WaitThread;
+-
+-        DPRINT("KeSetEventBoostPriority: Boosting priority for thread %p\n", WaitThread);
+-
+-        /* Calculate new priority */
+-        Thread->Priority = KiComputeNewPriority(Thread, 0);
+-
+-        /* ARM64: Memory barrier before thread operations */
+-        ARM64_EVENT_ACQUIRE_BARRIER();
+-
+-        /* Unlink the waiting thread */
+-        KiUnlinkThread(WaitThread, STATUS_SUCCESS);
+-
+-        /* Request priority boosting */
+-        WaitThread->AdjustIncrement = Thread->Priority;
+-        WaitThread->AdjustReason = AdjustBoost;
+-
+-        /* ARM64: Memory barrier before making thread ready */
+-        ARM64_EVENT_RELEASE_BARRIER();
+-
+-        /* Ready the thread */
+-        KiReadyThread(WaitThread);
+-
+-        /* ARM64: Signal other cores that thread state changed */
+-        __sev();
+-    }
+-
+-    /* ARM64: Final barrier before releasing lock */
+-    ARM64_EVENT_RELEASE_BARRIER();
+-
+-    /* Release the Dispatcher Database Lock */
+-    KiReleaseDispatcherLock(OldIrql);
+-
+-    DPRINT("KeSetEventBoostPriority: Completed\n");
+-}
+-
+-/*
+- * @brief ARM64-specific event wait satisfaction logic
+- *
+- * This function handles the ARM64-specific aspects of event wait satisfaction.
+- * Called from the generic wait system when an event needs to be processed.
+- */
+-BOOLEAN
+-FASTCALL
+-KiArm64EventWaitSatisfaction(IN PKEVENT Event,
+-                             IN PKTHREAD Thread)
++KiArm64EventBarrier(VOID)
+ {
+-    LONG CurrentState;
+-    LONG NewState;
+-    LONG PreviousState;
+-
+-    ASSERT_EVENT(Event);
+-    ASSERT(Thread != NULL);
+-
+-    DPRINT("KiArm64EventWaitSatisfaction: Event=%p, Thread=%p, Type=%d\n",
+-           Event, Thread, Event->Header.Type);
+-
+-    /* ARM64: Load current state with acquire semantics */
+-    ARM64_EVENT_ACQUIRE_BARRIER();
+-    CurrentState = Event->Header.SignalState;
+-
+-    /* Check if event is signaled */
+-    if (CurrentState <= 0)
+-    {
+-        DPRINT("KiArm64EventWaitSatisfaction: Event not signaled (state=%ld)\n",
+-               CurrentState);
+-        return FALSE;
+-    }
+-
+-    /* Handle based on event type */
+-    if (Event->Header.Type == EventNotificationObject)
+-    {
+-        /* Notification events stay signaled */
+-        DPRINT("KiArm64EventWaitSatisfaction: Notification event satisfied\n");
+-        return TRUE;
+-    }
+-    else
+-    {
+-        /* Synchronization events auto-reset */
+-        NewState = 0;
+-
+-        /* ARM64: Atomic compare-and-swap with proper memory ordering */
+-        PreviousState = _InterlockedCompareExchange(&Event->Header.SignalState,
+-                                                   NewState,
+-                                                   CurrentState);
+-
+-        if (PreviousState == CurrentState)
+-        {
+-            /* ARM64: Success - ensure the reset is visible */
+-            ARM64_EVENT_RELEASE_BARRIER();
+-
+-            DPRINT("KiArm64EventWaitSatisfaction: Synchronization event satisfied and reset\n");
+-            return TRUE;
+-        }
+-        else
+-        {
+-            /* ARM64: CAS failed - another thread modified the event */
+-            DPRINT("KiArm64EventWaitSatisfaction: CAS failed - expected %ld, found %ld\n",
+-                   CurrentState, PreviousState);
+-            return FALSE;
+-        }
+-    }
+-}
+-
+-/* EOF */
+\ No newline at end of file
++    /* Full memory barrier for ARM64 event operations */
++    ARM64_EVENT_FULL_BARRIER();
++}
+\ No newline at end of file
+diff --git a/ntoskrnl/ke/arm64/quantum.c b/ntoskrnl/ke/arm64/quantum.c
+index 284aaa287b3..f1d07ed2668 100644
+--- a/ntoskrnl/ke/arm64/quantum.c
++++ b/ntoskrnl/ke/arm64/quantum.c
+@@ -180,7 +180,8 @@ KiQuantumTimerHandler(
+         if (CurrentThread->Quantum == 0)
+         {
+             /* Quantum expired, request reschedule */
+-            Reschedule = KiQuantumEnd(Prcb);
++            Prcb->QuantumEnd = TRUE;
++            Reschedule = TRUE;
+         }
+ 
+         /* Update thread timing */
+diff --git a/ntoskrnl/ke/arm64/queue.c b/ntoskrnl/ke/arm64/queue.c
+index 00597e86e3c..dc091f64217 100644
+--- a/ntoskrnl/ke/arm64/queue.c
++++ b/ntoskrnl/ke/arm64/queue.c
+@@ -1,7 +1,7 @@
+ /*
+  * PROJECT:         ReactOS Kernel
+  * LICENSE:         GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
+- * PURPOSE:         ARM64 Thread Scheduling and Queue Management
++ * PURPOSE:         ARM64 Thread Scheduling Helpers
+  * COPYRIGHT:       Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
+  * PROGRAMMER:      ARM64 Port Team
+  */
+@@ -12,663 +12,18 @@
+ #define NDEBUG
+ #include <debug.h>
+ 
+-/* GLOBALS *******************************************************************/
++/* FUNCTIONS ******************************************************************/
+ 
+-/* Priority bitmasks for fast priority scanning */
+-extern KAFFINITY KiIdleSummary;
+-extern ULONG KiReadySummary;
+-
+-/* Maximum priorities (0-31, with 32 total levels) */
+-#define PRIORITY_LEVELS 32
+-#define LOW_PRIORITY 0
+-#define HIGH_PRIORITY 31
+-#define LOW_REALTIME_PRIORITY 16
+-#define HIGH_REALTIME_PRIORITY 31
+-
+-/* Quantum constants for ARM64 are now defined in ke.h */
+-
+-/* ARM64-specific constants */
+-#define ARM64_CACHE_LINE_SIZE 64
+-
+-/* PRIVATE FUNCTIONS *********************************************************/
+-
+-/**
+- * @brief Find the highest priority thread in ready queues
+- *
+- * Uses ARM64 optimized bit scanning to quickly locate the highest priority
+- * thread ready to run. ARM64's CLZ (Count Leading Zeros) instruction provides
+- * efficient priority scanning.
+- *
+- * @param Prcb - Processor control block
+- * @return PKTHREAD - Highest priority ready thread, or NULL if none
+- */
+-FORCEINLINE
+-PKTHREAD
+-KiFindHighestPriorityThread(
+-    IN PKPRCB Prcb)
+-{
+-    ULONG ReadySummary;
+-    ULONG HighestPriority;
+-    PLIST_ENTRY ListEntry;
+-    PKTHREAD Thread;
+-
+-    /* Get the ready summary with proper memory barriers for ARM64 */
+-    ARM64_DMB_SY();
+-    ReadySummary = Prcb->ReadySummary;
+-
+-    if (ReadySummary == 0)
+-    {
+-        /* No threads ready */
+-        return NULL;
+-    }
+-
+-    /* Use ARM64 CLZ instruction for efficient bit scanning */
+-    /* CLZ counts leading zeros, so 31-CLZ gives us highest set bit */
+-    __asm__ volatile(
+-        "clz %w0, %w1\n\t"
+-        "mov %w0, #31\n\t"
+-        "sub %w0, %w0, %w0"
+-        : "=r" (HighestPriority)
+-        : "r" (ReadySummary)
+-        : "memory"
+-    );
+-
+-    /* Alternative implementation if CLZ assembly fails */
+-    if (HighestPriority > 31)
+-    {
+-        /* Fallback: scan from highest priority down */
+-        for (HighestPriority = 31; HighestPriority != (ULONG)-1; HighestPriority--)
+-        {
+-            if (ReadySummary & (1UL << HighestPriority))
+-                break;
+-        }
+-
+-        if (HighestPriority == (ULONG)-1)
+-            return NULL;
+-    }
+-
+-    /* Get the ready list for this priority */
+-    ListEntry = Prcb->DispatcherReadyListHead[HighestPriority].Flink;
+-
+-    if (ListEntry == &Prcb->DispatcherReadyListHead[HighestPriority])
+-    {
+-        /* List is empty, clear the bit and try again */
+-        InterlockedAnd((PLONG)&Prcb->ReadySummary, ~(1UL << HighestPriority));
+-        return KiFindHighestPriorityThread(Prcb);
+-    }
+-
+-    /* Get the thread from the list entry */
+-    Thread = CONTAINING_RECORD(ListEntry, KTHREAD, WaitListEntry);
+-
+-    return Thread;
+-}
+-
+-/**
+- * @brief Remove a thread from ready queues
+- *
+- * @param Thread - Thread to remove from ready queue
+- * @param Prcb - Processor control block
+- */
+-FORCEINLINE
+-VOID
+-KiRemoveThreadFromReadyQueue(
+-    IN PKTHREAD Thread,
+-    IN PKPRCB Prcb)
+-{
+-    ULONG Priority;
+-    PLIST_ENTRY ReadyListHead;
+-
+-    ASSERT(Thread->State == Ready);
+-    ASSERT(Thread->Priority >= 0 && Thread->Priority <= HIGH_PRIORITY);
+-
+-    Priority = Thread->Priority;
+-    ReadyListHead = &Prcb->DispatcherReadyListHead[Priority];
+-
+-    /* Remove from the ready list */
+-    RemoveEntryList(&Thread->WaitListEntry);
+-
+-    /* If list is now empty, clear the priority bit */
+-    if (IsListEmpty(ReadyListHead))
+-    {
+-        InterlockedAnd((PLONG)&Prcb->ReadySummary, ~(1UL << Priority));
+-    }
+-
+-    /* Ensure memory ordering for ARM64 weak memory model */
+-    ARM64_DMB_SY();
+-}
+-
+-/**
+- * @brief Insert thread into ready queue at specified priority
+- *
+- * @param Thread - Thread to insert
+- * @param Priority - Priority level (0-31)
+- * @param Prcb - Processor control block
+- * @param Head - TRUE to insert at head (preempt), FALSE for tail (fair)
+- */
+-FORCEINLINE
+-VOID
+-KiInsertThreadInReadyQueue(
+-    IN PKTHREAD Thread,
+-    IN KPRIORITY Priority,
+-    IN PKPRCB Prcb,
+-    IN BOOLEAN Head)
+-{
+-    PLIST_ENTRY ReadyListHead;
+-
+-    ASSERT(Priority >= 0 && Priority <= HIGH_PRIORITY);
+-
+-    ReadyListHead = &Prcb->DispatcherReadyListHead[Priority];
+-
+-    /* Set thread state and priority */
+-    Thread->State = Ready;
+-    Thread->Priority = (SCHAR)Priority;
+-
+-    /* Insert into ready queue */
+-    if (Head)
+-    {
+-        /* Insert at head for immediate scheduling */
+-        InsertHeadList(ReadyListHead, &Thread->WaitListEntry);
+-    }
+-    else
+-    {
+-        /* Insert at tail for round-robin fairness */
+-        InsertTailList(ReadyListHead, &Thread->WaitListEntry);
+-    }
+-
+-    /* Set the priority bit in summary */
+-    InterlockedOr((PLONG)&Prcb->ReadySummary, (1UL << Priority));
+-
+-    /* Memory barrier to ensure visibility on ARM64 */
+-    ARM64_DMB_SY();
+-}
+-
+-/**
+- * @brief Calculate thread quantum based on priority and system load
+- *
+- * ARM64-specific quantum calculation that considers:
+- * - Thread priority (higher priority gets longer quantum)
+- * - Real-time vs variable priority classes
+- * - System responsiveness requirements
+- *
+- * @param Thread - Thread to calculate quantum for
+- * @return UCHAR - Quantum value
+- */
+-FORCEINLINE
+-UCHAR
+-KiCalculateQuantum(
+-    IN PKTHREAD Thread)
+-{
+-    UCHAR Quantum;
+-    KPRIORITY Priority = Thread->Priority;
+-
+-    /* Real-time threads get longer quantum */
+-    if (Priority >= LOW_REALTIME_PRIORITY)
+-    {
+-        /* Real-time priority: base quantum + priority boost */
+-        Quantum = THREAD_QUANTUM + (Priority - LOW_REALTIME_PRIORITY) / 2;
+-    }
+-    else
+-    {
+-        /* Variable priority: shorter quantum for better responsiveness */
+-        Quantum = THREAD_QUANTUM - (LOW_REALTIME_PRIORITY - Priority) / 4;
+-    }
+-
+-    /* Clamp to valid range */
+-    if (Quantum < THREAD_QUANTUM_MIN)
+-        Quantum = THREAD_QUANTUM_MIN;
+-    else if (Quantum > THREAD_QUANTUM_MAX)
+-        Quantum = THREAD_QUANTUM_MAX;
+-
+-    return Quantum;
+-}
+-
+-/* PUBLIC FUNCTIONS **********************************************************/
+-
+-/**
+- * @brief Make a thread ready for execution
+- *
+- * This is the main entry point for making threads ready. Handles priority
+- * boosts, quantum assignment, and proper queue insertion.
+- *
+- * @param Thread - Thread to make ready
+- */
+-VOID
+-FASTCALL
+-KiReadyThread(
+-    IN PKTHREAD Thread)
+-{
+-    PKPRCB Prcb;
+-    KIRQL OldIrql;
+-    KPRIORITY Priority;
+-    BOOLEAN Preempt = FALSE;
+-
+-    ASSERT(Thread != NULL);
+-    ASSERT(Thread->State != Ready);
+-
+-    /* Get current PRCB - for now assume UP, later extend for SMP */
+-    Prcb = KeGetCurrentPrcb();
+-
+-    /* Raise IRQL to DISPATCH_LEVEL for scheduler operations */
+-    OldIrql = KeRaiseIrqlToDpcLevel();
+-
+-    /* Acquire thread lock for safe manipulation */
+-    KiAcquireThreadLock(Thread);
+-
+-    /* Determine target priority */
+-    Priority = Thread->Priority;
+-
+-    /* Apply priority boosts if needed */
+-    if (Thread->AdjustReason == AdjustBoost)
+-    {
+-        KPRIORITY NewPriority;
+-
+-        /* Only boost variable priority threads */
+-        if (Priority < LOW_REALTIME_PRIORITY && !Thread->DisableBoost)
+-        {
+-            /* Calculate boosted priority */
+-            NewPriority = min(Priority + Thread->AdjustIncrement,
+-                             LOW_REALTIME_PRIORITY - 1);
+-
+-            if (NewPriority > Priority)
+-            {
+-                Thread->PriorityDecrement += (SCHAR)(NewPriority - Priority);
+-                Priority = NewPriority;
+-                Thread->Priority = (SCHAR)Priority;
+-                Preempt = TRUE;
+-            }
+-        }
+-
+-        Thread->AdjustReason = AdjustNone;
+-    }
+-
+-    /* Calculate new quantum */
+-    Thread->Quantum = KiCalculateQuantum(Thread);
+-
+-    /* Insert into appropriate ready queue */
+-    if (Thread->State == DeferredReady)
+-    {
+-        /* Handle deferred ready threads */
+-        Thread->State = Ready;
+-        /* TODO: Add to deferred ready list for DPC-level processing */
+-    }
+-    else
+-    {
+-        /* Direct insertion into ready queue */
+-        KiInsertThreadInReadyQueue(Thread, Priority, Prcb, Preempt);
+-    }
+-
+-    /* Check if we should preempt current thread */
+-    if (Prcb->CurrentThread &&
+-        Priority > Prcb->CurrentThread->Priority)
+-    {
+-        /* Request reschedule */
+-        Prcb->CurrentThread->Preempted = TRUE;
+-        HalRequestSoftwareInterrupt(DISPATCH_LEVEL);
+-    }
+-
+-    /* Release locks and restore IRQL */
+-    KiReleaseThreadLock(Thread);
+-    KeLowerIrql(OldIrql);
+-}
+-
+-/**
+- * @brief Select the next thread to run
+- *
+- * ARM64 optimized thread selection with support for:
+- * - Priority-based scheduling
+- * - Round-robin within priority levels
+- * - Idle thread selection
+- * - Future SMP load balancing
+- *
+- * @param Prcb - Current processor control block
+- * @return PKTHREAD - Next thread to run
+- */
+-PKTHREAD
+-FASTCALL
+-KiSelectNextThread(
+-    IN PKPRCB Prcb)
+-{
+-    PKTHREAD NextThread;
+-    PKTHREAD CurrentThread;
+-
+-    ASSERT(KeGetCurrentIrql() >= DISPATCH_LEVEL);
+-
+-    CurrentThread = Prcb->CurrentThread;
+-
+-    /* First, try to find a ready thread */
+-    NextThread = KiFindHighestPriorityThread(Prcb);
+-
+-    if (NextThread)
+-    {
+-        /* Remove from ready queue */
+-        KiRemoveThreadFromReadyQueue(NextThread, Prcb);
+-        NextThread->State = Running;
+-        return NextThread;
+-    }
+-
+-    /* No ready threads, return idle thread */
+-    NextThread = Prcb->IdleThread;
+-    if (NextThread)
+-    {
+-        NextThread->State = Running;
+-        return NextThread;
+-    }
+-
+-    /* Should never happen - we must have an idle thread */
+-    KeBugCheckEx(NO_MORE_IRP_STACK_LOCATIONS,
+-                 (ULONG_PTR)Prcb,
+-                 (ULONG_PTR)CurrentThread,
+-                 0, 0);
+-
+-    /* Not reached */
+-    return NULL;
+-}
+-
+-/**
+- * @brief Handle quantum expiration for current thread
+- *
+- * Called by timer interrupt when thread's quantum expires.
+- * Implements round-robin scheduling within same priority level.
+- *
+- * @param Prcb - Current processor control block
+- * @return BOOLEAN - TRUE if reschedule needed
+- */
+-BOOLEAN
+-FASTCALL
+-KiQuantumEnd(
+-    IN PKPRCB Prcb)
+-{
+-    PKTHREAD CurrentThread;
+-    KPRIORITY Priority;
+-    PLIST_ENTRY ReadyListHead;
+-
+-    ASSERT(KeGetCurrentIrql() >= DISPATCH_LEVEL);
+-
+-    CurrentThread = Prcb->CurrentThread;
+-    if (!CurrentThread || CurrentThread == Prcb->IdleThread)
+-    {
+-        /* No quantum management for idle thread */
+-        return FALSE;
+-    }
+-
+-    Priority = CurrentThread->Priority;
+-    ReadyListHead = &Prcb->DispatcherReadyListHead[Priority];
+-
+-    /* Check if there are other threads at same priority */
+-    if (IsListEmpty(ReadyListHead))
+-    {
+-        /* No other threads at same priority, reset quantum and continue */
+-        CurrentThread->Quantum = KiCalculateQuantum(CurrentThread);
+-        return FALSE;
+-    }
+-
+-    /* Apply priority decay for variable priority threads */
+-    if (Priority < LOW_REALTIME_PRIORITY && CurrentThread->PriorityDecrement > 0)
+-    {
+-        KPRIORITY NewPriority = Priority - 1;
+-
+-        /* Don't decay below base priority */
+-        if (NewPriority >= CurrentThread->BasePriority)
+-        {
+-            CurrentThread->Priority = (SCHAR)NewPriority;
+-            CurrentThread->PriorityDecrement--;
+-        }
+-    }
+-
+-    /* Reset quantum for next execution */
+-    CurrentThread->Quantum = KiCalculateQuantum(CurrentThread);
+-
+-    /* Move to end of ready queue for round-robin */
+-    CurrentThread->State = Ready;
+-    KiInsertThreadInReadyQueue(CurrentThread, CurrentThread->Priority, Prcb, FALSE);
+-
+-    /* Request reschedule */
+-    return TRUE;
+-}
+-
+-/**
+- * @brief Initialize processor ready queues
+- *
+- * Sets up the ready queue data structures for a processor.
+- * Called during processor initialization.
+- *
+- * @param Prcb - Processor control block to initialize
+- */
+-VOID
+-FASTCALL
+-KiInitializeReadyQueues(
+-    IN PKPRCB Prcb)
+-{
+-    ULONG Priority;
+-
+-    DPRINT("KiInitializeReadyQueues: Initializing ARM64 ready queues for PRCB %p\n", Prcb);
+-
+-    /* Initialize all 32 priority levels */
+-    for (Priority = 0; Priority < PRIORITY_LEVELS; Priority++)
+-    {
+-        InitializeListHead(&Prcb->DispatcherReadyListHead[Priority]);
+-    }
+-
+-    /* Clear ready summary */
+-    Prcb->ReadySummary = 0;
+-    Prcb->QueueIndex = 0;
+-
+-    /* Initialize deferred ready list */
+-    Prcb->DeferredReadyListHead.Next = NULL;
+-
+-    /* Ensure ARM64 memory ordering */
+-    ARM64_DSB_SY();
+-    ARM64_ISB();
+-
+-    DPRINT("KiInitializeReadyQueues: ARM64 ready queues initialized\n");
+-}
+-
+-/**
+- * @brief Process deferred ready threads at DPC level
+- *
+- * ARM64-specific implementation that processes threads marked as DeferredReady.
+- * This is called at DPC level to avoid holding locks too long.
+- *
+- * @param Prcb - Current processor control block
+- */
+-VOID
+-FASTCALL
+-KiProcessDeferredReadyList(
+-    IN PKPRCB Prcb)
+-{
+-    PSINGLE_LIST_ENTRY ListEntry;
+-    PKTHREAD Thread;
+-    KIRQL OldIrql;
+-
+-    ASSERT(KeGetCurrentIrql() >= DISPATCH_LEVEL);
+-
+-    /* Check if deferred list has entries */
+-    if (Prcb->DeferredReadyListHead.Next == NULL)
+-    {
+-        return;
+-    }
+-
+-    /* Process all deferred ready threads */
+-    while ((ListEntry = PopEntryList(&Prcb->DeferredReadyListHead)) != NULL)
+-    {
+-        /* Get thread from list entry */
+-        Thread = CONTAINING_RECORD(ListEntry, KTHREAD, SwapListEntry);
+-
+-        ASSERT(Thread->State == DeferredReady);
+-
+-        /* Make thread ready */
+-        KiReadyThread(Thread);
+-    }
+-
+-    /* Ensure ARM64 memory consistency */
+-    ARM64_DMB_SY();
+-}
+-
+-/**
+- * @brief Check if reschedule is needed
+- *
+- * ARM64-optimized check for determining if the scheduler should run.
+- * Called from various points including interrupt handlers.
+- *
+- * @return BOOLEAN - TRUE if reschedule is needed
+- */
+-BOOLEAN
+-FASTCALL
+-KiCheckForReschedule(VOID)
+-{
+-    PKPRCB Prcb;
+-    PKTHREAD CurrentThread;
+-    ULONG HighestPriority;
+-
+-    Prcb = KeGetCurrentPrcb();
+-    CurrentThread = Prcb->CurrentThread;
+-
+-    /* Always reschedule if requested */
+-    if (CurrentThread && CurrentThread->Preempted)
+-    {
+-        return TRUE;
+-    }
+-
+-    /* Check if there are higher priority threads ready */
+-    if (Prcb->ReadySummary == 0)
+-    {
+-        return FALSE;
+-    }
+-
+-    /* Find highest ready priority using ARM64 CLZ */
+-    __asm__ volatile(
+-        "clz %w0, %w1\n\t"
+-        "mov %w0, #31\n\t"
+-        "sub %w0, %w0, %w0"
+-        : "=r" (HighestPriority)
+-        : "r" (Prcb->ReadySummary)
+-        : "memory"
+-    );
+-
+-    /* Compare with current thread priority */
+-    if (CurrentThread && HighestPriority > CurrentThread->Priority)
+-    {
+-        return TRUE;
+-    }
+-
+-    return FALSE;
+-}
+-
+-/**
+- * @brief ARM64 scheduler dispatcher
+- *
+- * Main scheduler entry point. Handles thread switching with proper
+- * ARM64 context management, memory barriers, and cache coherency.
+- *
+- * @param OldThread - Currently running thread
+- * @return PKTHREAD - New thread to run
++/*
++ * ARM64-specific thread queue and scheduling optimizations can be added here.
++ * The generic implementations from ke/thrdschd.c are used for standard APIs.
+  */
+-PKTHREAD
+-FASTCALL
+-KiDispatchThread(
+-    IN PKTHREAD OldThread)
+-{
+-    PKPRCB Prcb;
+-    PKTHREAD NewThread;
+-    KIRQL OldIrql;
+-
+-    ASSERT(KeGetCurrentIrql() >= DISPATCH_LEVEL);
+-
+-    Prcb = KeGetCurrentPrcb();
+-
+-    /* Clear preemption flag */
+-    if (OldThread)
+-    {
+-        OldThread->Preempted = FALSE;
+-    }
+-
+-    /* Select next thread to run */
+-    NewThread = KiSelectNextThread(Prcb);
+-
+-    if (NewThread == OldThread)
+-    {
+-        /* Same thread continues running */
+-        return NewThread;
+-    }
+ 
+-    /* Update PRCB thread pointers */
+-    Prcb->CurrentThread = NewThread;
+-
+-    /* Update context switch count for statistics */
+-    Prcb->KeContextSwitches++;
+-
+-    /* Ensure ARM64 memory ordering before context switch */
+-    ARM64_DSB_SY();
+-
+-    DPRINT("KiDispatchThread: ARM64 switching from %p to %p\n", OldThread, NewThread);
+-
+-    return NewThread;
+-}
+-
+-/**
+- * @brief Set thread priority with ARM64 optimizations
+- *
+- * @param Thread - Thread to modify
+- * @param Priority - New priority (0-31)
+- * @param Boost - TRUE if this is a temporary boost
+- */
++/* Placeholder for ARM64-specific thread scheduling helpers */
+ VOID
+-FASTCALL
+-KiSetPriority(
+-    IN PKTHREAD Thread,
+-    IN KPRIORITY Priority,
+-    IN BOOLEAN Boost)
++NTAPI
++KiArm64ThreadBarrier(VOID)
+ {
+-    PKPRCB Prcb;
+-    KIRQL OldIrql;
+-    KPRIORITY OldPriority;
+-
+-    ASSERT(Priority >= LOW_PRIORITY && Priority <= HIGH_PRIORITY);
+-    ASSERT(Thread != NULL);
+-
+-    Prcb = KeGetCurrentPrcb();
+-    OldIrql = KeRaiseIrqlToDpcLevel();
+-    KiAcquireThreadLock(Thread);
+-
+-    OldPriority = Thread->Priority;
+-
+-    if (Priority == OldPriority)
+-    {
+-        goto Exit;
+-    }
+-
+-    /* Remove from current ready queue if ready */
+-    if (Thread->State == Ready)
+-    {
+-        KiRemoveThreadFromReadyQueue(Thread, Prcb);
+-    }
+-
+-    /* Set new priority */
+-    Thread->Priority = (SCHAR)Priority;
+-
+-    /* Handle priority boost tracking */
+-    if (Boost && Priority > Thread->BasePriority)
+-    {
+-        Thread->PriorityDecrement = (SCHAR)(Priority - Thread->BasePriority);
+-    }
+-
+-    /* Re-insert into ready queue if ready */
+-    if (Thread->State == Ready)
+-    {
+-        KiInsertThreadInReadyQueue(Thread, Priority, Prcb, Priority > OldPriority);
+-    }
+-
+-    /* Check for preemption */
+-    if (Thread->State == Running || Thread->State == Ready)
+-    {
+-        if (Priority > Prcb->CurrentThread->Priority)
+-        {
+-            Prcb->CurrentThread->Preempted = TRUE;
+-            HalRequestSoftwareInterrupt(DISPATCH_LEVEL);
+-        }
+-    }
+-
+-Exit:
+-    KiReleaseThreadLock(Thread);
+-    KeLowerIrql(OldIrql);
++    /* Memory barrier for ARM64 thread operations */
++    __dmb(ish);
+ }
+\ No newline at end of file
+diff --git a/ntoskrnl/ke/arm64/sched_init.c b/ntoskrnl/ke/arm64/sched_init.c
+index eb9aa5076ff..b481438b98c 100644
+--- a/ntoskrnl/ke/arm64/sched_init.c
++++ b/ntoskrnl/ke/arm64/sched_init.c
+@@ -389,4 +389,35 @@ KiSchedulerStartup(
+ 
+     DPRINT("KiSchedulerStartup: ARM64 scheduler startup completed successfully\n");
+     return STATUS_SUCCESS;
+-}
+\ No newline at end of file
++}
++
++/* STUB FUNCTIONS FOR LINKING ************************************************/
++
++/* Stub implementation for KiInitializeScheduler */
++VOID
++NTAPI
++KiInitializeScheduler(VOID)
++{
++    DPRINT("KiInitializeScheduler: ARM64 stub implementation\n");
++    /* TODO: Implement ARM64-specific scheduler initialization */
++}
++
++/* Stub implementation for KiInitializeReadyQueues */
++VOID
++NTAPI
++KiInitializeReadyQueues(IN PKPRCB Prcb)
++{
++    DPRINT("KiInitializeReadyQueues: ARM64 stub implementation\n");
++    UNREFERENCED_PARAMETER(Prcb);
++    /* TODO: Implement ARM64-specific ready queue initialization */
++}
++
++/* Stub implementation for KiCheckForReschedule */
++BOOLEAN
++FASTCALL
++KiCheckForReschedule(VOID)
++{
++    DPRINT("KiCheckForReschedule: ARM64 stub implementation\n");
++    /* TODO: Implement ARM64-specific reschedule check */
++    return FALSE;
++}
+diff --git a/ntoskrnl/ke/arm64/scheduler.c b/ntoskrnl/ke/arm64/scheduler.c
+index 031b9a6a144..a3b9cbdb122 100644
+--- a/ntoskrnl/ke/arm64/scheduler.c
++++ b/ntoskrnl/ke/arm64/scheduler.c
+@@ -1,7 +1,7 @@
+ /*
+  * PROJECT:         ReactOS Kernel
+  * LICENSE:         GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
+- * PURPOSE:         ARM64 Thread Scheduler Support Functions
++ * PURPOSE:         ARM64 Thread Scheduler Helpers
+  * COPYRIGHT:       Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
+  * PROGRAMMER:      ARM64 Port Team
+  */
+@@ -12,469 +12,18 @@
+ #define NDEBUG
+ #include <debug.h>
+ 
+-/* GLOBALS *******************************************************************/
++/* FUNCTIONS ******************************************************************/
+ 
+-/* Scheduler statistics */
+-ULONG KiSchedulerStatistics[32] = {0}; /* Per-priority scheduling counts */
+-LARGE_INTEGER KiTotalContextSwitches = {0};
+-
+-/* Thread lock for SMP safety */
+-KSPIN_LOCK KiThreadLock;
+-
+-/* Priority boost settings */
+-#define PRIORITY_BOOST_MAXIMUM 15
+-#define PRIORITY_BOOST_IO 8
+-#define PRIORITY_BOOST_CPU 2
+-
+-/* PRIVATE FUNCTIONS *********************************************************/
+-
+-/**
+- * @brief Apply CPU boost to thread after CPU-intensive operation
+- *
+- * @param Thread - Thread to boost
+- * @param Increment - Boost amount
+- */
+-FORCEINLINE
+-VOID
+-KiApplyCpuBoost(
+-    IN PKTHREAD Thread,
+-    IN KPRIORITY Increment)
+-{
+-    KPRIORITY NewPriority;
+-
+-    if (Thread->DisableBoost || Thread->Priority >= LOW_REALTIME_PRIORITY)
+-        return;
+-
+-    NewPriority = min(Thread->Priority + Increment, LOW_REALTIME_PRIORITY - 1);
+-    if (NewPriority > Thread->Priority)
+-    {
+-        Thread->PriorityDecrement = (SCHAR)(NewPriority - Thread->BasePriority);
+-        Thread->Priority = (SCHAR)NewPriority;
+-        Thread->AdjustReason = AdjustBoost;
+-    }
+-}
+-
+-/**
+- * @brief Apply I/O completion boost to thread
+- *
+- * @param Thread - Thread completing I/O
+- * @param IoBoost - I/O boost amount
+- */
+-FORCEINLINE
+-VOID
+-KiApplyIoBoost(
+-    IN PKTHREAD Thread,
+-    IN KPRIORITY IoBoost)
+-{
+-    KPRIORITY NewPriority;
+-
+-    if (Thread->DisableBoost || Thread->Priority >= LOW_REALTIME_PRIORITY)
+-        return;
+-
+-    NewPriority = min(Thread->Priority + IoBoost, LOW_REALTIME_PRIORITY - 1);
+-    if (NewPriority > Thread->Priority)
+-    {
+-        Thread->PriorityDecrement = (SCHAR)(NewPriority - Thread->BasePriority);
+-        Thread->Priority = (SCHAR)NewPriority;
+-        Thread->AdjustReason = AdjustBoost;
+-    }
+-}
+-
+-/* PUBLIC FUNCTIONS **********************************************************/
+-
+-/**
+- * @brief Initialize ARM64 scheduler subsystem
+- *
+- * Called during kernel initialization to set up scheduler data structures
+- * and ARM64-specific optimizations.
+- */
+-VOID
+-NTAPI
+-KiInitializeScheduler(VOID)
+-{
+-    ULONG i;
+-
+-    DPRINT("KiInitializeScheduler: Initializing ARM64 scheduler\n");
+-
+-    /* Initialize thread lock for SMP support */
+-    KeInitializeSpinLock(&KiThreadLock);
+-
+-    /* Clear scheduler statistics */
+-    for (i = 0; i < 32; i++)
+-    {
+-        KiSchedulerStatistics[i] = 0;
+-    }
+-
+-    KiTotalContextSwitches.QuadPart = 0;
+-
+-    /* ARM64-specific scheduler initialization */
+-    /* Set up any ARM64 performance counters for scheduler profiling */
+-    /* TODO: Configure ARM64 PMU for scheduler metrics */
+-
+-    DPRINT("KiInitializeScheduler: ARM64 scheduler initialized\n");
+-}
+-
+-/**
+- * @brief Acquire thread lock for safe manipulation
+- *
+- * ARM64-specific implementation using proper memory barriers
+- *
+- * @param Thread - Thread to lock
+- */
+-VOID
+-FASTCALL
+-KiAcquireThreadLock(
+-    IN PKTHREAD Thread)
+-{
+-    KIRQL OldIrql;
+-
+-    /* For UP builds, just disable interrupts */
+-    /* For SMP builds, acquire the thread's lock */
+-#ifdef CONFIG_SMP
+-    /* TODO: Implement per-thread locking for SMP */
+-    OldIrql = KeAcquireSpinLockRaiseToSynch(&KiThreadLock);
+-    KeGetCurrentPrcb()->ThreadLockIrql = OldIrql;
+-#else
+-    KeRaiseIrql(SYNCH_LEVEL, &OldIrql);
+-    KeGetCurrentPrcb()->ThreadLockIrql = OldIrql;
+-#endif
+-
+-    /* ARM64 memory barrier to ensure lock acquisition visibility */
+-    ARM64_DMB_SY();
+-}
+-
+-/**
+- * @brief Release thread lock
+- *
+- * @param Thread - Thread to unlock
+- */
+-VOID
+-FASTCALL
+-KiReleaseThreadLock(
+-    IN PKTHREAD Thread)
+-{
+-    KIRQL OldIrql = KeGetCurrentPrcb()->ThreadLockIrql;
+-
+-    /* Ensure memory ordering before releasing lock */
+-    ARM64_DMB_SY();
+-
+-#ifdef CONFIG_SMP
+-    /* TODO: Release per-thread lock for SMP */
+-    KeReleaseSpinLock(&KiThreadLock, OldIrql);
+-#else
+-    KeLowerIrql(OldIrql);
+-#endif
+-}
+-
+-/**
+- * @brief Make a deferred ready thread ready immediately
+- *
+- * Called from DPC level to convert deferred ready threads to ready state
+- *
+- * @param Thread - Thread in DeferredReady state
+- */
+-VOID
+-FASTCALL
+-KiDeferredReadyThread(
+-    IN PKTHREAD Thread)
+-{
+-    ASSERT(Thread->State == DeferredReady);
+-    ASSERT(KeGetCurrentIrql() >= DISPATCH_LEVEL);
+-
+-    /* Apply any pending boosts */
+-    if (Thread->AdjustReason != AdjustNone)
+-    {
+-        switch (Thread->AdjustReason)
+-        {
+-        case AdjustBoost:
+-            /* Priority boost already calculated */
+-            break;
+-
+-        case AdjustUnwait:
+-            /* Apply I/O completion boost */
+-            KiApplyIoBoost(Thread, PRIORITY_BOOST_IO);
+-            break;
+-
+-        default:
+-            Thread->AdjustReason = AdjustNone;
+-            break;
+-        }
+-    }
+-
+-    /* Make thread ready */
+-    KiReadyThread(Thread);
+-}
+-
+-/**
+- * @brief Boost thread priority for I/O completion
+- *
+- * @param Thread - Thread completing I/O operation
+- * @param Increment - Boost increment
+- */
+-VOID
+-FASTCALL
+-KiBoostPriorityThread(
+-    IN PKTHREAD Thread,
+-    IN KPRIORITY Increment)
+-{
+-    PKPRCB Prcb;
+-    KIRQL OldIrql;
+-
+-    if (!Thread || Thread->DisableBoost || Thread->Priority >= LOW_REALTIME_PRIORITY)
+-        return;
+-
+-    Prcb = KeGetCurrentPrcb();
+-    OldIrql = KeRaiseIrqlToDpcLevel();
+-    KiAcquireThreadLock(Thread);
+-
+-    /* Apply boost */
+-    Thread->AdjustIncrement = (SCHAR)min(Increment, PRIORITY_BOOST_MAXIMUM);
+-    Thread->AdjustReason = AdjustBoost;
+-
+-    /* If thread is waiting, it will get the boost when it becomes ready */
+-    if (Thread->State == Ready || Thread->State == Running)
+-    {
+-        KiApplyCpuBoost(Thread, Thread->AdjustIncrement);
+-    }
+-
+-    KiReleaseThreadLock(Thread);
+-    KeLowerIrql(OldIrql);
+-}
+-
+-/**
+- * @brief Handle thread preemption request
+- *
+- * ARM64-specific preemption handling with proper context save/restore
+- *
+- * @param CurrentThread - Thread being preempted
+- * @param NewThread - Thread to switch to
+- * @return BOOLEAN - TRUE if context switch occurred
+- */
+-BOOLEAN
+-FASTCALL
+-KiPreemptThread(
+-    IN PKTHREAD CurrentThread,
+-    IN PKTHREAD NewThread)
+-{
+-    PKPRCB Prcb;
+-
+-    if (!CurrentThread || !NewThread || CurrentThread == NewThread)
+-        return FALSE;
+-
+-    Prcb = KeGetCurrentPrcb();
+-
+-    ASSERT(KeGetCurrentIrql() >= DISPATCH_LEVEL);
+-
+-    /* Update scheduler statistics */
+-    InterlockedIncrement((PLONG)&KiSchedulerStatistics[NewThread->Priority]);
+-    InterlockedIncrement64(&KiTotalContextSwitches.QuadPart);
+-
+-    /* ARM64: Ensure cache coherency before context switch */
+-    ARM64_DSB_SY();
+-
+-    /* Update PRCB current thread */
+-    Prcb->CurrentThread = NewThread;
+-    Prcb->NextThread = NULL;
+-
+-    /* Call the low-level ARM64 context switch routine */
+-    /* This will save current context and restore new thread context */
+-    /* ARM64 implementation expects two thread parameters */
+-    /* Use the ARM64-specific context switch function */
+-    KiSwapContextARM64(CurrentThread, NewThread);
+-
+-    /* ARM64: Ensure instruction coherency after context switch */
+-    ARM64_ISB();
+-
+-    return TRUE;
+-}
+-
+-/**
+- * @brief Handle idle thread scheduling
+- *
+- * Called when no other threads are ready to run.
+- * Implements ARM64 power-saving features.
+- *
+- * @param Prcb - Current processor control block
+- * @return PKTHREAD - Always returns idle thread
+- */
+-PKTHREAD
+-FASTCALL
+-KiIdleSchedule(
+-    IN PKPRCB Prcb)
+-{
+-    PKTHREAD IdleThread = Prcb->IdleThread;
+-
+-    ASSERT(IdleThread != NULL);
+-
+-    /* ARM64 power management: Enable power-saving features */
+-    /* TODO: Implement ARM64 CPU power states (C-states) */
+-
+-    /* Mark processor as idle for SMP load balancing */
+-    InterlockedOr((PLONG)&KiIdleSummary, AFFINITY_MASK(Prcb->Number));
+-
+-    /* Update idle thread state */
+-    IdleThread->State = Running;
+-
+-    return IdleThread;
+-}
+-
+-/**
+- * @brief Calculate thread affinity for SMP systems
+- *
+- * @param Thread - Thread to calculate affinity for
+- * @return KAFFINITY - Calculated processor affinity
+- */
+-KAFFINITY
+-FASTCALL
+-KiCalculateThreadAffinity(
+-    IN PKTHREAD Thread)
+-{
+-    KAFFINITY ProcessAffinity;
+-    KAFFINITY ThreadAffinity;
+-
+-    /* Get process affinity */
+-    ProcessAffinity = Thread->ApcState.Process->Affinity;
+-
+-    /* Start with thread's affinity */
+-    ThreadAffinity = Thread->Affinity;
+-
+-    /* Mask with process affinity */
+-    ThreadAffinity &= ProcessAffinity;
+-
+-    /* Ensure at least one processor is available */
+-    if (ThreadAffinity == 0)
+-    {
+-        ThreadAffinity = ProcessAffinity;
+-    }
+-
+-    /* Mask with active processors */
+-    ThreadAffinity &= KeActiveProcessors;
+-
+-    return ThreadAffinity;
+-}
+-
+-/**
+- * @brief Set thread affinity
+- *
+- * @param Thread - Thread to set affinity for
+- * @param Affinity - New processor affinity mask
+- * @return KAFFINITY - Previous affinity
++/*
++ * ARM64-specific thread scheduler optimizations can be added here.
++ * The generic implementations from ke/thrdschd.c are used for standard APIs.
+  */
+-KAFFINITY
+-FASTCALL
+-KiSetAffinityThread(
+-    IN PKTHREAD Thread,
+-    IN KAFFINITY Affinity)
+-{
+-    KAFFINITY OldAffinity;
+-    PKPRCB Prcb;
+-    KIRQL OldIrql;
+-
+-    Prcb = KeGetCurrentPrcb();
+-    OldIrql = KeRaiseIrqlToDpcLevel();
+-    KiAcquireThreadLock(Thread);
+-
+-    /* Save old affinity */
+-    OldAffinity = Thread->Affinity;
+ 
+-    /* Set new affinity */
+-    Thread->Affinity = Affinity & KeActiveProcessors;
+-
+-    /* Ensure at least one processor */
+-    if (Thread->Affinity == 0)
+-    {
+-        Thread->Affinity = AFFINITY_MASK(0); /* Default to processor 0 */
+-    }
+-
+-    /* If thread is running on incompatible processor, reschedule */
+-    if (Thread->State == Running &&
+-        !(Thread->Affinity & AFFINITY_MASK(Prcb->Number)))
+-    {
+-        Thread->Preempted = TRUE;
+-        HalRequestSoftwareInterrupt(DISPATCH_LEVEL);
+-    }
+-
+-    KiReleaseThreadLock(Thread);
+-    KeLowerIrql(OldIrql);
+-
+-    return OldAffinity;
+-}
+-
+-/**
+- * @brief Update thread quantum after I/O completion
+- *
+- * @param Thread - Thread that completed I/O
+- * @param IoTime - Time spent in I/O wait
+- */
++/* Placeholder for ARM64-specific scheduler helpers */
+ VOID
+-FASTCALL
+-KiUpdateQuantumAfterIo(
+-    IN PKTHREAD Thread,
+-    IN ULONG IoTime)
+-{
+-    /* Threads that waited for I/O get bonus quantum */
+-    if (IoTime > 0)
+-    {
+-        UCHAR BonusQuantum = (UCHAR)min(IoTime / 1000, 3); /* Up to 3 extra ticks */
+-        Thread->Quantum += BonusQuantum;
+-
+-        if (Thread->Quantum > THREAD_QUANTUM_MAX)
+-            Thread->Quantum = THREAD_QUANTUM_MAX;
+-    }
+-}
+-
+-/**
+- * @brief ARM64 scheduler main dispatch interrupt handler
+- *
+- * Called by the dispatcher interrupt to handle thread scheduling decisions.
+- * This is the main entry point from the interrupt system.
+- */
+-VOID
+-FASTCALL
+-KiDispatchInterruptHandler(VOID)
+-{
+-    PKPRCB Prcb;
+-    PKTHREAD OldThread, NewThread;
+-    KIRQL OldIrql;
+-
+-    /* We should be at DISPATCH_LEVEL */
+-    ASSERT(KeGetCurrentIrql() >= DISPATCH_LEVEL);
+-
+-    Prcb = KeGetCurrentPrcb();
+-    OldThread = Prcb->CurrentThread;
+-
+-    /* Process any deferred ready threads first */
+-    if (Prcb->DeferredReadyListHead.Next != NULL)
+-    {
+-        KiProcessDeferredReadyList(Prcb);
+-    }
+-
+-    /* Select next thread to run */
+-    NewThread = KiDispatchThread(OldThread);
+-
+-    if (NewThread != OldThread)
+-    {
+-        /* Perform context switch */
+-        KiPreemptThread(OldThread, NewThread);
+-    }
+-}
+-
+-/**
+- * @brief Get scheduler statistics for debugging
+- *
+- * @param Statistics - Buffer to receive statistics
+- * @param Size - Size of statistics buffer
+- * @return NTSTATUS - Status code
+- */
+-NTSTATUS
+ NTAPI
+-KiGetSchedulerStatistics(
+-    OUT PVOID Statistics,
+-    IN ULONG Size)
++KiArm64SchedulerBarrier(VOID)
+ {
+-    if (Size < sizeof(KiSchedulerStatistics))
+-        return STATUS_BUFFER_TOO_SMALL;
+-
+-    RtlCopyMemory(Statistics, KiSchedulerStatistics, sizeof(KiSchedulerStatistics));
+-    return STATUS_SUCCESS;
++    /* Memory barrier for ARM64 scheduler operations */
++    __dmb(ish);
+ }
+\ No newline at end of file
+diff --git a/ntoskrnl/ke/arm64/semaphore.c b/ntoskrnl/ke/arm64/semaphore.c
+index 9ab8047e371..0e7cb0e21ce 100644
+--- a/ntoskrnl/ke/arm64/semaphore.c
++++ b/ntoskrnl/ke/arm64/semaphore.c
+@@ -1,7 +1,7 @@
+ /*
+  * PROJECT:     ReactOS Kernel
+  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
+- * PURPOSE:     ARM64 Semaphore Dispatcher Object Implementation
++ * PURPOSE:     ARM64 Semaphore Dispatcher Object Helpers
+  * COPYRIGHT:   Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
+  */
+ 
+@@ -24,211 +24,15 @@
+ /* FUNCTIONS *****************************************************************/
+ 
+ /*
+- * @implemented
++ * ARM64-specific semaphore optimizations can be added here if needed.
++ * The generic implementations from ke/semphobj.c are used for standard APIs.
+  */
++
++/* Placeholder for ARM64-specific semaphore helpers */
+ VOID
+ NTAPI
+-KeInitializeSemaphore(IN PKSEMAPHORE Semaphore,
+-                      IN LONG Count,
+-                      IN LONG Limit)
++KiArm64SemaphoreBarrier(VOID)
+ {
+-    ASSERT(Semaphore != NULL);
+-    ASSERT(Count >= 0);
+-    ASSERT(Limit > 0);
+-    ASSERT(Count <= Limit);
+-
+-    DPRINT("KeInitializeSemaphore: Semaphore=%p, Count=%ld, Limit=%ld\n",
+-           Semaphore, Count, Limit);
+-
+-    /* Initialize the Dispatcher Header */
+-    Semaphore->Header.Type = SemaphoreObject;
+-    Semaphore->Header.Size = sizeof(KSEMAPHORE) / sizeof(ULONG);
+-    Semaphore->Header.SignalState = Count;
+-    InitializeListHead(&(Semaphore->Header.WaitListHead));
+-
+-    /* Set the Limit */
+-    Semaphore->Limit = Limit;
+-
+-    /* ARM64: Ensure initialization is visible to all cores */
++    /* Full memory barrier for ARM64 semaphore operations */
+     ARM64_SEMAPHORE_FULL_BARRIER();
+-}
+-
+-/*
+- * @implemented
+- */
+-LONG
+-NTAPI
+-KeReadStateSemaphore(IN PKSEMAPHORE Semaphore)
+-{
+-    LONG SignalState;
+-
+-    ASSERT_SEMAPHORE(Semaphore);
+-
+-    DPRINT("KeReadStateSemaphore: Semaphore=%p\n", Semaphore);
+-
+-    /* ARM64: Load with acquire semantics for proper ordering */
+-    ARM64_SEMAPHORE_ACQUIRE_BARRIER();
+-
+-    /* Read the signal state atomically */
+-    SignalState = Semaphore->Header.SignalState;
+-
+-    /* ARM64: Memory barrier to ensure read completes */
+-    ARM64_SEMAPHORE_ACQUIRE_BARRIER();
+-
+-    DPRINT("KeReadStateSemaphore: SignalState=%ld\n", SignalState);
+-
+-    return SignalState;
+-}
+-
+-/*
+- * @implemented
+- */
+-LONG
+-NTAPI
+-KeReleaseSemaphore(IN PKSEMAPHORE Semaphore,
+-                   IN KPRIORITY Increment,
+-                   IN LONG Adjustment,
+-                   IN BOOLEAN Wait)
+-{
+-    LONG InitialState, State;
+-    KIRQL OldIrql;
+-    PKTHREAD CurrentThread;
+-
+-    ASSERT_SEMAPHORE(Semaphore);
+-    ASSERT_IRQL_LESS_OR_EQUAL(DISPATCH_LEVEL);
+-    ASSERT(Adjustment > 0);
+-
+-    DPRINT("KeReleaseSemaphore: Semaphore=%p, Increment=%d, Adjustment=%ld, Wait=%d\n",
+-           Semaphore, Increment, Adjustment, Wait);
+-
+-    /* ARM64: Memory barrier before critical section */
+-    ARM64_SEMAPHORE_ACQUIRE_BARRIER();
+-
+-    /* Lock the Dispatcher Database */
+-    OldIrql = KiAcquireDispatcherLock();
+-
+-    /* ARM64: Additional barrier after acquiring lock for multi-core coherency */
+-    ARM64_SEMAPHORE_ACQUIRE_BARRIER();
+-
+-    /* Save the Old State and compute new state atomically */
+-    InitialState = Semaphore->Header.SignalState;
+-    State = InitialState + Adjustment;
+-
+-    DPRINT("KeReleaseSemaphore: InitialState=%ld, NewState=%ld, Limit=%ld\n",
+-           InitialState, State, Semaphore->Limit);
+-
+-    /* Check if the Limit was exceeded or integer overflow occurred */
+-    if ((Semaphore->Limit < State) || (InitialState > State))
+-    {
+-        DPRINT1("KeReleaseSemaphore: Limit exceeded - Limit=%ld, NewState=%ld\n",
+-                Semaphore->Limit, State);
+-
+-        /* ARM64: Release barrier before unlocking */
+-        ARM64_SEMAPHORE_RELEASE_BARRIER();
+-
+-        /* Release the lock and raise error */
+-        KiReleaseDispatcherLock(OldIrql);
+-        ExRaiseStatus(STATUS_SEMAPHORE_LIMIT_EXCEEDED);
+-    }
+-
+-    /* ARM64: Use atomic store for the new state with release semantics */
+-    _InterlockedExchange(&Semaphore->Header.SignalState, State);
+-
+-    /* ARM64: Full memory barrier to ensure state change is visible */
+-    ARM64_SEMAPHORE_FULL_BARRIER();
+-
+-    /* Check if we should wake waiting threads */
+-    if (!(InitialState) && !(IsListEmpty(&Semaphore->Header.WaitListHead)))
+-    {
+-        DPRINT("KeReleaseSemaphore: Waking waiting threads\n");
+-
+-        /* Wake the Semaphore - this handles ARM64 scheduling appropriately */
+-        KiWaitTest(&Semaphore->Header, Increment);
+-    }
+-
+-    /* Check if the caller wants to wait after this release */
+-    if (Wait == FALSE)
+-    {
+-        /* ARM64: Release barrier before unlocking */
+-        ARM64_SEMAPHORE_RELEASE_BARRIER();
+-
+-        /* Release the Lock */
+-        KiReleaseDispatcherLock(OldIrql);
+-    }
+-    else
+-    {
+-        /* Set a wait - the lock will be released by the wait operation */
+-        CurrentThread = KeGetCurrentThread();
+-        CurrentThread->WaitNext = TRUE;
+-        CurrentThread->WaitIrql = OldIrql;
+-
+-        /* ARM64: Memory barrier for wait state visibility */
+-        ARM64_SEMAPHORE_FULL_BARRIER();
+-    }
+-
+-    DPRINT("KeReleaseSemaphore: Returning InitialState=%ld\n", InitialState);
+-
+-    /* Return the previous state */
+-    return InitialState;
+-}
+-
+-/*
+- * @brief ARM64-specific semaphore wait satisfaction logic
+- *
+- * This function handles the ARM64-specific aspects of semaphore wait satisfaction.
+- * Called from the generic wait system when a semaphore needs to be decremented.
+- */
+-BOOLEAN
+-FASTCALL
+-KiArm64SemaphoreWaitSatisfaction(IN PKSEMAPHORE Semaphore,
+-                                 IN PKTHREAD Thread)
+-{
+-    LONG CurrentState;
+-    LONG NewState;
+-    LONG PreviousState;
+-
+-    ASSERT_SEMAPHORE(Semaphore);
+-    ASSERT(Thread != NULL);
+-
+-    DPRINT("KiArm64SemaphoreWaitSatisfaction: Semaphore=%p, Thread=%p\n",
+-           Semaphore, Thread);
+-
+-    /* ARM64: Load current state with acquire semantics */
+-    ARM64_SEMAPHORE_ACQUIRE_BARRIER();
+-    CurrentState = Semaphore->Header.SignalState;
+-
+-    /* Check if semaphore is available */
+-    if (CurrentState <= 0)
+-    {
+-        DPRINT("KiArm64SemaphoreWaitSatisfaction: Semaphore not available (state=%ld)\n",
+-               CurrentState);
+-        return FALSE;
+-    }
+-
+-    /* Calculate new state after decrementing */
+-    NewState = CurrentState - 1;
+-
+-    /* ARM64: Atomic compare-and-swap with proper memory ordering */
+-    PreviousState = _InterlockedCompareExchange(&Semaphore->Header.SignalState,
+-                                               NewState,
+-                                               CurrentState);
+-
+-    if (PreviousState == CurrentState)
+-    {
+-        /* ARM64: Success - ensure the decrement is visible */
+-        ARM64_SEMAPHORE_RELEASE_BARRIER();
+-
+-        DPRINT("KiArm64SemaphoreWaitSatisfaction: Success - decremented from %ld to %ld\n",
+-               CurrentState, NewState);
+-        return TRUE;
+-    }
+-    else
+-    {
+-        /* ARM64: CAS failed - another thread modified the semaphore */
+-        DPRINT("KiArm64SemaphoreWaitSatisfaction: CAS failed - expected %ld, found %ld\n",
+-               CurrentState, PreviousState);
+-        return FALSE;
+-    }
+-}
+-
+-/* EOF */
+\ No newline at end of file
++}
+\ No newline at end of file
+diff --git a/ntoskrnl/ke/arm64/wait.c b/ntoskrnl/ke/arm64/wait.c
+index 3685a8a2e19..ab3488f805e 100644
+--- a/ntoskrnl/ke/arm64/wait.c
++++ b/ntoskrnl/ke/arm64/wait.c
+@@ -114,7 +114,7 @@ FASTCALL
+ KiInsertWaitList(
+     IN PKTHREAD Thread)
+ {
+-    PLIST_ENTRY WaitEntry;
++    /* PLIST_ENTRY WaitEntry; */ /* Unused variable */
+     PKWAIT_BLOCK WaitBlock;
+     DISPATCHER_HEADER *Object;
+ 
+@@ -163,7 +163,7 @@ KiWakeThread(
+     IN NTSTATUS WaitStatus,
+     IN KPRIORITY Increment)
+ {
+-    KIRQL OldIrql;
++    /* KIRQL OldIrql; */ /* Unused variable */
+ 
+     DPRINT("Waking thread %p with status 0x%08lx\n", Thread, WaitStatus);
+ 
+@@ -222,6 +222,7 @@ KiInitializeWaitSystem(VOID)
+  * @brief Wait for single object
+  * @implemented
+  */
++#if 0  /* Disabled - using generic implementation in ke/wait.c */
+ NTSTATUS
+ NTAPI
+ KeWaitForSingleObject(
+@@ -313,11 +314,13 @@ KeWaitForSingleObject(
+ 
+     return Status;
+ }
++#endif /* 0 - KeWaitForSingleObject */
+ 
+ /*
+  * @brief Wait for multiple objects
+  * @implemented
+  */
++#if 0  /* Disabled - using generic implementation in ke/wait.c */
+ NTSTATUS
+ NTAPI
+ KeWaitForMultipleObjects(
+@@ -452,11 +455,13 @@ KeWaitForMultipleObjects(
+ 
+     return Status;
+ }
++#endif /* 0 - KeWaitForMultipleObjects */
+ 
+ /*
+  * @brief Signal object and check waiters
+  * @implemented
+  */
++#if 0  /* Disabled - using generic implementation in ke/eventobj.c */
+ LONG
+ NTAPI
+ KeSetEvent(
+@@ -526,7 +531,9 @@ KeSetEvent(
+ 
+     return OldState;
+ }
++#endif /* 0 - KeSetEvent */
+ 
++#if 0  /* Disabled - using generic implementation in ke/eventobj.c */
+ /*
+  * @brief Reset event to non-signaled
+  * @implemented
+@@ -555,7 +562,9 @@ KeResetEvent(
+ 
+     return OldState;
+ }
++#endif /* 0 - KeResetEvent */
+ 
++#if 0  /* Disabled - using generic implementation in ke/eventobj.c */
+ /*
+  * @brief Clear event (reset without returning old state)
+  * @implemented
+@@ -567,7 +576,9 @@ KeClearEvent(
+ {
+     Event->Header.SignalState = 0;
+ }
++#endif /* 0 - KeClearEvent */
+ 
++#if 0  /* Disabled - using generic implementation in ke/eventobj.c */
+ /*
+  * @brief Initialize event object
+  * @implemented
+@@ -587,11 +598,13 @@ KeInitializeEvent(
+     Event->Header.SignalState = State ? 1 : 0;
+     InitializeListHead(&Event->Header.WaitListHead);
+ }
++#endif /* 0 - KeInitializeEvent */
+ 
+ /*
+  * @brief Delay thread execution
+  * @implemented
+  */
++#if 0  /* Disabled - using generic implementation in ke/wait.c */
+ NTSTATUS
+ NTAPI
+ KeDelayExecutionThread(
+@@ -626,11 +639,13 @@ KeDelayExecutionThread(
+ 
+     return Status;
+ }
++#endif /* 0 - KeDelayExecutionThread */
+ 
+ /*
+  * @brief Ready thread for execution
+  * @implemented
+  */
++#if 0  /* Disabled - using generic implementation in ke/thrdschd.c */
+ VOID
+ FASTCALL
+ KiReadyThread(
+@@ -666,6 +681,7 @@ KiReadyThread(
+     KeReleaseSpinLockFromDpcLevel(&DispatcherLock);
+     KeLowerIrql(OldIrql);
+ }
++#endif /* 0 - KiReadyThread */
+ 
+ /* ARM64-specific KiSwapContext implementation and wrapper */
+ 
+diff --git a/ntoskrnl/ke/dpc.c b/ntoskrnl/ke/dpc.c
+index 39e2c16b9d7..74aeb6b279e 100644
+--- a/ntoskrnl/ke/dpc.c
++++ b/ntoskrnl/ke/dpc.c
+@@ -460,6 +460,7 @@ KiTimerListExpire(IN PLIST_ENTRY ExpiredListHead,
+     }
+ }
+ 
++#ifndef _M_ARM64
+ _Requires_lock_not_held_(Prcb->PrcbLock)
+ VOID
+ NTAPI
+@@ -556,6 +557,7 @@ KiQuantumEnd(VOID)
+     /* Lower IRQL back to DISPATCH_LEVEL */
+     KeLowerIrql(DISPATCH_LEVEL);
+ }
++#endif /* !_M_ARM64 */
+ 
+ VOID
+ FASTCALL
+diff --git a/ntoskrnl/mm/arm64/pool.c b/ntoskrnl/mm/arm64/pool.c
+index d32731205bb..16704efa6b4 100644
+--- a/ntoskrnl/mm/arm64/pool.c
++++ b/ntoskrnl/mm/arm64/pool.c
+@@ -2,7 +2,7 @@
+  * PROJECT:         ReactOS Kernel
+  * LICENSE:         BSD - See COPYING.ARM in the top level directory
+  * FILE:            ntoskrnl/mm/arm64/pool.c
+- * PURPOSE:         ARM64 Pool Allocator
++ * PURPOSE:         ARM64 Pool Allocator Helpers
+  * PROGRAMMERS:     ReactOS Portable Systems Group
+  */
+ 
+@@ -25,900 +25,28 @@
+ #define ARM64_CACHE_LINE_MASK       (ARM64_CACHE_LINE_SIZE - 1)
+ #define ARM64_CACHE_ALIGN(size)     (((size) + ARM64_CACHE_LINE_MASK) & ~ARM64_CACHE_LINE_MASK)
+ 
+-/* ARM64 Pool Block Sizes - optimized for common allocations */
+-#define ARM64_POOL_BLOCK_SIZE       16  /* Minimum allocation unit */
+-#define ARM64_POOL_BLOCK_SHIFT      4   /* log2(16) */
++/* FUNCTIONS ******************************************************************/
+ 
+-/* Pool size classes - powers of 2 up to PAGE_SIZE */
+-#define ARM64_POOL_SIZE_CLASSES     9
+-static const SIZE_T Arm64PoolSizeClasses[ARM64_POOL_SIZE_CLASSES] = {
+-    16, 32, 64, 128, 256, 512, 1024, 2048, 4096
+-};
+-
+-/* ARM64 Pool Header - aligned to cache line boundary */
+-typedef struct DECLSPEC_ALIGN(ARM64_CACHE_LINE_SIZE) _ARM64_POOL_HEADER {
+-    union {
+-        struct {
+-            USHORT PreviousSize : 9;      /* Size of previous block in units */
+-            USHORT PoolIndex : 7;         /* Pool descriptor index */
+-            USHORT BlockSize : 9;         /* Size of this block in units */
+-            USHORT PoolType : 7;          /* Pool type and flags */
+-        };
+-        ULONG Ulong1;
+-    };
+-
+-    ULONG PoolTag;                        /* Pool tag for tracking */
+-
+-    union {
+-        PEPROCESS ProcessBilled;          /* Process billed for this allocation */
+-        struct {
+-            USHORT AllocatorBackTraceIndex; /* For debugging */
+-            USHORT PoolTagHash;           /* Hash of pool tag */
+-        };
+-    };
+-
+-    /* ARM64-specific fields for cache optimization */
+-    ULONGLONG TimeStamp;                  /* Allocation timestamp */
+-    PVOID NextFree;                       /* Next free block in size class */
+-
+-    /* Padding to cache line boundary */
+-    UCHAR Padding[ARM64_CACHE_LINE_SIZE -
+-                  (sizeof(ULONG) + sizeof(ULONG) + sizeof(PEPROCESS) +
+-                   sizeof(ULONGLONG) + sizeof(PVOID))];
+-} ARM64_POOL_HEADER, *PARM64_POOL_HEADER;
+-
+-C_ASSERT(sizeof(ARM64_POOL_HEADER) == ARM64_CACHE_LINE_SIZE);
+-
+-/* ARM64 Pool Descriptor */
+-typedef struct _ARM64_POOL_DESCRIPTOR {
+-    POOL_TYPE PoolType;                   /* Pool type (paged/non-paged) */
+-    SIZE_T TotalBytes;                    /* Total bytes allocated */
+-    SIZE_T FreeBytes;                     /* Free bytes available */
+-    ULONG TotalAllocations;               /* Total allocation count */
+-    ULONG FailedAllocations;              /* Failed allocation count */
+-
+-    /* Free lists for each size class */
+-    LIST_ENTRY FreeListHeads[ARM64_POOL_SIZE_CLASSES];
+-    KSPIN_LOCK FreeListLocks[ARM64_POOL_SIZE_CLASSES];
+-
+-    /* Large allocation tracking */
+-    LIST_ENTRY LargeAllocations;
+-    KSPIN_LOCK LargeAllocationLock;
+-
+-    /* Pool expansion */
+-    PVOID PoolStart;                      /* Start of pool region */
+-    PVOID PoolEnd;                        /* End of pool region */
+-    SIZE_T PoolSize;                      /* Total pool size */
+-
+-    /* ARM64-specific optimization fields */
+-    volatile LONG FastAllocHits;          /* Fast path allocation hits */
+-    volatile LONG SlowAllocHits;          /* Slow path allocation hits */
+-    ULONG PreferredNode;                  /* NUMA node preference */
+-
+-} ARM64_POOL_DESCRIPTOR, *PARM64_POOL_DESCRIPTOR;
+-
+-/* Global pool descriptors - ARM64 implementation */
+-static ARM64_POOL_DESCRIPTOR Arm64NonPagedPoolDescriptor;
+-static ARM64_POOL_DESCRIPTOR Arm64PagedPoolDescriptor;
+-
+-/* Standard pool descriptors for external interface compatibility */
+-POOL_DESCRIPTOR NonPagedPoolDescriptor;
+-POOL_DESCRIPTOR PagedPoolDescriptor;
+-
+-/* Pool debugging and statistics */
+-static BOOLEAN PoolDebuggingEnabled = FALSE;
+-static ULONG PoolCorruptionDetected = 0;
+-static KSPIN_LOCK PoolStatisticsLock;
+-
+-/* Pool tag tracking table */
+-#define POOL_TAG_TABLE_SIZE 2048
+-typedef struct _ARM64_POOL_TAG_ENTRY {
+-    ULONG Tag;
+-    LONG NonPagedAllocs;
+-    LONG NonPagedFrees;
+-    SIZE_T NonPagedBytes;
+-    LONG PagedAllocs;
+-    LONG PagedFrees;
+-    SIZE_T PagedBytes;
+-} ARM64_POOL_TAG_ENTRY, *PARM64_POOL_TAG_ENTRY;
+-
+-static ARM64_POOL_TAG_ENTRY PoolTagTable[POOL_TAG_TABLE_SIZE];
+-static KSPIN_LOCK PoolTagTableLock;
+-
+-/* PRIVATE FUNCTIONS **********************************************************/
+-
+-/**
+- * @brief ARM64-specific memory barrier for pool operations
+- */
+-FORCEINLINE
+-VOID
+-Arm64PoolMemoryBarrier(VOID)
+-{
+-    /* ARM64 data memory barrier - ensures ordering of memory operations */
+-    _ReadWriteBarrier();
+-    KeMemoryBarrier();
+-}
+-
+-/**
+- * @brief ARM64-specific cache line flush
+- */
+-FORCEINLINE
+-VOID
+-Arm64FlushCacheLine(PVOID Address)
+-{
+-    /* On ARM64, ensure cache coherency */
+-    _ReadWriteBarrier();
+-    KeMemoryBarrier();
+-    /* Note: Actual cache operations would be handled by the HAL */
+-}
+-
+-/**
+- * @brief Get size class index for a given size
+- */
+-FORCEINLINE
+-ULONG
+-Arm64GetSizeClassIndex(SIZE_T Size)
+-{
+-    ULONG Index;
+-
+-    /* Find the appropriate size class */
+-    for (Index = 0; Index < ARM64_POOL_SIZE_CLASSES; Index++) {
+-        if (Size <= Arm64PoolSizeClasses[Index]) {
+-            return Index;
+-        }
+-    }
+-
+-    /* Size too large for fixed size classes */
+-    return ARM64_POOL_SIZE_CLASSES;
+-}
+-
+-/**
+- * @brief Calculate pool tag hash for fast lookup
+- */
+-FORCEINLINE
+-ULONG
+-Arm64CalculateTagHash(ULONG Tag)
+-{
+-    /* Simple hash function for pool tag */
+-    ULONG Hash = Tag;
+-    Hash ^= (Hash >> 16);
+-    Hash ^= (Hash >> 8);
+-    return Hash % POOL_TAG_TABLE_SIZE;
+-}
+-
+-/**
+- * @brief Update pool tag statistics
+- */
+-VOID
+-Arm64UpdatePoolTagStats(
+-    _In_ ULONG Tag,
+-    _In_ POOL_TYPE PoolType,
+-    _In_ SIZE_T Size,
+-    _In_ BOOLEAN IsAllocation
+-)
+-{
+-    ULONG Hash;
+-    PARM64_POOL_TAG_ENTRY Entry;
+-    KIRQL OldIrql;
+-
+-    if (!Tag) return;
+-
+-    Hash = Arm64CalculateTagHash(Tag);
+-    Entry = &PoolTagTable[Hash];
+-
+-    KeAcquireSpinLock(&PoolTagTableLock, &OldIrql);
+-
+-    /* Find or create entry */
+-    if (Entry->Tag == 0) {
+-        Entry->Tag = Tag;
+-    } else if (Entry->Tag != Tag) {
+-        /* Hash collision - for simplicity, just increment first available */
+-        ULONG i;
+-        for (i = 1; i < POOL_TAG_TABLE_SIZE; i++) {
+-            Entry = &PoolTagTable[(Hash + i) % POOL_TAG_TABLE_SIZE];
+-            if (Entry->Tag == 0 || Entry->Tag == Tag) {
+-                if (Entry->Tag == 0) Entry->Tag = Tag;
+-                break;
+-            }
+-        }
+-    }
+-
+-    /* Update statistics */
+-    if ((PoolType & BASE_POOL_TYPE_MASK) == NonPagedPool) {
+-        if (IsAllocation) {
+-            Entry->NonPagedAllocs++;
+-            Entry->NonPagedBytes += Size;
+-        } else {
+-            Entry->NonPagedFrees++;
+-            Entry->NonPagedBytes -= Size;
+-        }
+-    } else {
+-        if (IsAllocation) {
+-            Entry->PagedAllocs++;
+-            Entry->PagedBytes += Size;
+-        } else {
+-            Entry->PagedFrees++;
+-            Entry->PagedBytes -= Size;
+-        }
+-    }
+-
+-    KeReleaseSpinLock(&PoolTagTableLock, OldIrql);
+-}
+-
+-/**
+- * @brief Validate pool header for corruption detection
+- */
+-BOOLEAN
+-Arm64ValidatePoolHeader(
+-    _In_ PARM64_POOL_HEADER Header,
+-    _In_ SIZE_T ExpectedSize
+-)
+-{
+-    if (!PoolDebuggingEnabled) {
+-        return TRUE;
+-    }
+-
+-    /* Basic validation checks */
+-    if ((ULONG_PTR)Header & ARM64_CACHE_LINE_MASK) {
+-        DPRINT1("ARM64 Pool: Header not cache-line aligned: %p\n", Header);
+-        InterlockedIncrement((PLONG)&PoolCorruptionDetected);
+-        return FALSE;
+-    }
+-
+-    if (Header->BlockSize == 0 || Header->BlockSize > (PAGE_SIZE / ARM64_POOL_BLOCK_SIZE)) {
+-        DPRINT1("ARM64 Pool: Invalid block size: %u\n", Header->BlockSize);
+-        InterlockedIncrement((PLONG)&PoolCorruptionDetected);
+-        return FALSE;
+-    }
+-
+-    if (ExpectedSize && (Header->BlockSize * ARM64_POOL_BLOCK_SIZE) < ExpectedSize) {
+-        DPRINT1("ARM64 Pool: Block size too small for allocation\n");
+-        InterlockedIncrement((PLONG)&PoolCorruptionDetected);
+-        return FALSE;
+-    }
+-
+-    return TRUE;
+-}
+-
+-/**
+- * @brief Allocate from pool expansion area
+- */
+-PVOID
+-Arm64ExpandPool(
+-    _In_ PARM64_POOL_DESCRIPTOR Descriptor,
+-    _In_ SIZE_T Size,
+-    _In_ ULONG Tag
+-)
+-{
+-    PVOID BaseVa;
+-    SIZE_T PagesNeeded;
+-    PARM64_POOL_HEADER Header;
+-
+-    /* Calculate pages needed (round up) */
+-    PagesNeeded = BYTES_TO_PAGES(Size + sizeof(ARM64_POOL_HEADER));
+-
+-    /* Allocate pages from MM */
+-    BaseVa = MiAllocatePoolPages(Descriptor->PoolType, PagesNeeded * PAGE_SIZE);
+-    if (!BaseVa) {
+-        return NULL;
+-    }
+-
+-    /* Initialize pool header */
+-    Header = (PARM64_POOL_HEADER)BaseVa;
+-    RtlZeroMemory(Header, sizeof(ARM64_POOL_HEADER));
+-
+-    Header->BlockSize = (USHORT)((Size + ARM64_POOL_BLOCK_SIZE - 1) / ARM64_POOL_BLOCK_SIZE);
+-    Header->PoolType = (USHORT)(Descriptor->PoolType & 0x7F);
+-    Header->PoolTag = Tag;
+-    Header->TimeStamp = KeQueryPerformanceCounter(NULL).QuadPart;
+-
+-    /* Update descriptor statistics */
+-    InterlockedExchangeAdd((PLONG)&Descriptor->TotalBytes, Size);
+-    InterlockedIncrement((PLONG)&Descriptor->TotalAllocations);
+-
+-    /* Flush cache line to ensure header is visible */
+-    Arm64FlushCacheLine(Header);
+-
+-    return (PVOID)((PCHAR)Header + sizeof(ARM64_POOL_HEADER));
+-}
+-
+-/**
+- * @brief Fast path allocation from free list
+- */
+-PVOID
+-Arm64FastPoolAlloc(
+-    _In_ PARM64_POOL_DESCRIPTOR Descriptor,
+-    _In_ ULONG SizeClass,
+-    _In_ SIZE_T Size,
+-    _In_ ULONG Tag
+-)
+-{
+-    PLIST_ENTRY FreeList;
+-    PLIST_ENTRY Entry;
+-    PARM64_POOL_HEADER Header;
+-    KIRQL OldIrql;
+-    PVOID Result = NULL;
+-
+-    FreeList = &Descriptor->FreeListHeads[SizeClass];
+-
+-    /* Acquire spinlock for this size class */
+-    KeAcquireSpinLock(&Descriptor->FreeListLocks[SizeClass], &OldIrql);
+-
+-    if (!IsListEmpty(FreeList)) {
+-        /* Get first free block */
+-        Entry = RemoveHeadList(FreeList);
+-        Header = CONTAINING_RECORD(Entry, ARM64_POOL_HEADER, NextFree);
+-
+-        /* Validate header */
+-        if (Arm64ValidatePoolHeader(Header, Size)) {
+-            /* Update header */
+-            Header->PoolTag = Tag;
+-            Header->TimeStamp = KeQueryPerformanceCounter(NULL).QuadPart;
+-
+-            /* Clear free list pointer */
+-            Header->NextFree = NULL;
+-
+-            Result = (PVOID)((PCHAR)Header + sizeof(ARM64_POOL_HEADER));
+-
+-            /* Update statistics */
+-            InterlockedIncrement((PLONG)&Descriptor->FastAllocHits);
+-        }
+-    }
+-
+-    KeReleaseSpinLock(&Descriptor->FreeListLocks[SizeClass], OldIrql);
+-
+-    return Result;
+-}
+-
+-/**
+- * @brief Free block to appropriate free list
+- */
+-VOID
+-Arm64FastPoolFree(
+-    _In_ PARM64_POOL_DESCRIPTOR Descriptor,
+-    _In_ PARM64_POOL_HEADER Header
+-)
+-{
+-    ULONG SizeClass;
+-    SIZE_T BlockSize;
+-    KIRQL OldIrql;
+-
+-    BlockSize = Header->BlockSize * ARM64_POOL_BLOCK_SIZE;
+-    SizeClass = Arm64GetSizeClassIndex(BlockSize);
+-
+-    if (SizeClass >= ARM64_POOL_SIZE_CLASSES) {
+-        /* Large allocation - handle separately */
+-        MiFreePoolPages((PVOID)Header);
+-        return;
+-    }
+-
+-    /* Clear sensitive data */
+-    Header->PoolTag = 0;
+-    Header->ProcessBilled = NULL;
+-    Header->TimeStamp = 0;
+-
+-    /* Add to free list */
+-    KeAcquireSpinLock(&Descriptor->FreeListLocks[SizeClass], &OldIrql);
+-    InsertHeadList(&Descriptor->FreeListHeads[SizeClass],
+-                   (PLIST_ENTRY)&Header->NextFree);
+-    KeReleaseSpinLock(&Descriptor->FreeListLocks[SizeClass], OldIrql);
+-
+-    /* Update statistics */
+-    InterlockedExchangeAdd((PLONG)&Descriptor->FreeBytes, BlockSize);
+-}
+-
+-/* PUBLIC FUNCTIONS ***********************************************************/
+-
+-/**
+- * @brief Initialize ARM64 pool allocator
+- */
+-CODE_SEG("INIT")
+-NTSTATUS
+-NTAPI
+-MiInitializeArm64Pool(VOID)
+-{
+-    ULONG i;
+-    PARM64_POOL_DESCRIPTOR Descriptor;
+-
+-    DPRINT("Initializing ARM64 Pool Allocator\n");
+-
+-    /* Initialize global locks */
+-    KeInitializeSpinLock(&PoolStatisticsLock);
+-    KeInitializeSpinLock(&PoolTagTableLock);
+-
+-    /* Clear pool tag table */
+-    RtlZeroMemory(PoolTagTable, sizeof(PoolTagTable));
+-
+-    /* Initialize NonPaged Pool Descriptor */
+-    Descriptor = &Arm64NonPagedPoolDescriptor;
+-    RtlZeroMemory(Descriptor, sizeof(ARM64_POOL_DESCRIPTOR));
+-
+-    Descriptor->PoolType = NonPagedPool;
+-    Descriptor->PoolStart = MmNonPagedPoolStart;
+-    Descriptor->PoolEnd = MmNonPagedPoolEnd;
+-    Descriptor->PoolSize = (ULONG_PTR)MmNonPagedPoolEnd - (ULONG_PTR)MmNonPagedPoolStart;
+-
+-    /* Initialize free lists and locks */
+-    for (i = 0; i < ARM64_POOL_SIZE_CLASSES; i++) {
+-        InitializeListHead(&Descriptor->FreeListHeads[i]);
+-        KeInitializeSpinLock(&Descriptor->FreeListLocks[i]);
+-    }
+-
+-    InitializeListHead(&Descriptor->LargeAllocations);
+-    KeInitializeSpinLock(&Descriptor->LargeAllocationLock);
+-
+-    /* Initialize Paged Pool Descriptor */
+-    Descriptor = &Arm64PagedPoolDescriptor;
+-    RtlZeroMemory(Descriptor, sizeof(ARM64_POOL_DESCRIPTOR));
+-
+-    Descriptor->PoolType = PagedPool;
+-    Descriptor->PoolStart = MmPagedPoolStart;
+-    Descriptor->PoolEnd = MmPagedPoolEnd;
+-    Descriptor->PoolSize = (ULONG_PTR)MmPagedPoolEnd - (ULONG_PTR)MmPagedPoolStart;
+-
+-    /* Initialize free lists and locks */
+-    for (i = 0; i < ARM64_POOL_SIZE_CLASSES; i++) {
+-        InitializeListHead(&Descriptor->FreeListHeads[i]);
+-        KeInitializeSpinLock(&Descriptor->FreeListLocks[i]);
+-    }
+-
+-    InitializeListHead(&Descriptor->LargeAllocations);
+-    KeInitializeSpinLock(&Descriptor->LargeAllocationLock);
+-
+-    /* Enable debugging if requested */
+-    PoolDebuggingEnabled = (MmProtectFreedNonPagedPool != FALSE);
+-
+-    DPRINT("ARM64 Pool Allocator initialized successfully\n");
+-    return STATUS_SUCCESS;
+-}
+-
+-/**
+- * @brief ARM64 Pool allocation function
+- */
+-PVOID
+-NTAPI
+-ExAllocatePoolArm64(
+-    _In_ POOL_TYPE PoolType,
+-    _In_ SIZE_T NumberOfBytes,
+-    _In_ ULONG Tag
+-)
+-{
+-    PARM64_POOL_DESCRIPTOR Descriptor;
+-    ULONG SizeClass;
+-    PVOID Result = NULL;
+-    SIZE_T AlignedSize;
+-
+-    /* Validate parameters */
+-    if (NumberOfBytes == 0) {
+-        return NULL;
+-    }
+-
+-    /* Select appropriate pool descriptor */
+-    if ((PoolType & BASE_POOL_TYPE_MASK) == NonPagedPool) {
+-        Descriptor = &Arm64NonPagedPoolDescriptor;
+-    } else {
+-        Descriptor = &Arm64PagedPoolDescriptor;
+-    }
+-
+-    /* ARM64 cache line alignment for better performance */
+-    AlignedSize = ARM64_CACHE_ALIGN(NumberOfBytes);
+-
+-    /* Determine allocation strategy */
+-    SizeClass = Arm64GetSizeClassIndex(AlignedSize);
+-
+-    if (SizeClass < ARM64_POOL_SIZE_CLASSES) {
+-        /* Try fast path allocation from free list */
+-        Result = Arm64FastPoolAlloc(Descriptor, SizeClass, AlignedSize, Tag);
+-    }
+-
+-    if (!Result) {
+-        /* Fall back to pool expansion */
+-        Result = Arm64ExpandPool(Descriptor, AlignedSize, Tag);
+-
+-        if (!Result) {
+-            InterlockedIncrement((PLONG)&Descriptor->FailedAllocations);
+-        } else {
+-            InterlockedIncrement((PLONG)&Descriptor->SlowAllocHits);
+-        }
+-    }
+-
+-    /* Update pool tag statistics */
+-    if (Result) {
+-        Arm64UpdatePoolTagStats(Tag, PoolType, AlignedSize, TRUE);
+-    }
+-
+-    return Result;
+-}
+-
+-/**
+- * @brief ARM64 Pool deallocation function
+- */
+-VOID
+-NTAPI
+-ExFreePoolArm64(
+-    _In_ PVOID P,
+-    _In_ ULONG Tag
+-)
+-{
+-    PARM64_POOL_HEADER Header;
+-    PARM64_POOL_DESCRIPTOR Descriptor;
+-    SIZE_T BlockSize;
+-
+-    if (!P) {
+-        return;
+-    }
+-
+-    /* Get pool header */
+-    Header = (PARM64_POOL_HEADER)((PCHAR)P - sizeof(ARM64_POOL_HEADER));
+-
+-    /* Validate header */
+-    if (!Arm64ValidatePoolHeader(Header, 0)) {
+-        KeBugCheckEx(BAD_POOL_HEADER,
+-                    (ULONG_PTR)P,
+-                    (ULONG_PTR)Header,
+-                    Tag,
+-                    0x1);
+-        return;
+-    }
+-
+-    BlockSize = Header->BlockSize * ARM64_POOL_BLOCK_SIZE;
+-
+-    /* Select appropriate pool descriptor */
+-    if ((Header->PoolType & BASE_POOL_TYPE_MASK) == NonPagedPool) {
+-        Descriptor = &Arm64NonPagedPoolDescriptor;
+-    } else {
+-        Descriptor = &Arm64PagedPoolDescriptor;
+-    }
+-
+-    /* Update pool tag statistics */
+-    Arm64UpdatePoolTagStats(Header->PoolTag, Header->PoolType, BlockSize, FALSE);
+-
+-    /* Free the block */
+-    Arm64FastPoolFree(Descriptor, Header);
+-
+-    /* Memory barrier to ensure all writes are complete */
+-    Arm64PoolMemoryBarrier();
+-}
+-
+-/**
+- * @brief Get pool allocation information
+- */
+-NTSTATUS
+-NTAPI
+-ExGetPoolTagInfoArm64(
+-    _In_ ULONG Tag,
+-    _Out_ PSYSTEM_POOLTAG_INFORMATION TagInfo
+-)
+-{
+-    ULONG Hash;
+-    PARM64_POOL_TAG_ENTRY Entry;
+-    KIRQL OldIrql;
+-    ULONG i;
+-
+-    if (!TagInfo) {
+-        return STATUS_INVALID_PARAMETER;
+-    }
+-
+-    Hash = Arm64CalculateTagHash(Tag);
+-
+-    KeAcquireSpinLock(&PoolTagTableLock, &OldIrql);
+-
+-    /* Find tag entry */
+-    for (i = 0; i < POOL_TAG_TABLE_SIZE; i++) {
+-        Entry = &PoolTagTable[(Hash + i) % POOL_TAG_TABLE_SIZE];
+-        if (Entry->Tag == Tag) {
+-            TagInfo->Count = 1;
+-            TagInfo->TagInfo[0].TagUlong = Entry->Tag;
+-            TagInfo->TagInfo[0].NonPagedAllocs = Entry->NonPagedAllocs;
+-            TagInfo->TagInfo[0].NonPagedFrees = Entry->NonPagedFrees;
+-            TagInfo->TagInfo[0].NonPagedUsed = Entry->NonPagedBytes;
+-            TagInfo->TagInfo[0].PagedAllocs = Entry->PagedAllocs;
+-            TagInfo->TagInfo[0].PagedFrees = Entry->PagedFrees;
+-            TagInfo->TagInfo[0].PagedUsed = Entry->PagedBytes;
+-
+-            KeReleaseSpinLock(&PoolTagTableLock, OldIrql);
+-            return STATUS_SUCCESS;
+-        }
+-        if (Entry->Tag == 0) {
+-            break;
+-        }
+-    }
+-
+-    KeReleaseSpinLock(&PoolTagTableLock, OldIrql);
+-    return STATUS_NOT_FOUND;
+-}
+-
+-/**
+- * @brief Get ARM64 pool statistics
+- */
+-VOID
+-NTAPI
+-ExGetPoolStatisticsArm64(
+-    _Out_ PSYSTEM_POOL_ENTRY NonPagedPoolStats,
+-    _Out_ PSYSTEM_POOL_ENTRY PagedPoolStats
+-)
+-{
+-    KIRQL OldIrql;
+-
+-    KeAcquireSpinLock(&PoolStatisticsLock, &OldIrql);
+-
+-    /* NonPaged Pool Statistics */
+-    if (NonPagedPoolStats) {
+-        NonPagedPoolStats->Allocated = Arm64NonPagedPoolDescriptor.TotalBytes -
+-                                       Arm64NonPagedPoolDescriptor.FreeBytes;
+-        NonPagedPoolStats->Size = Arm64NonPagedPoolDescriptor.PoolSize;
+-
+-        /* SYSTEM_POOL_ENTRY doesn't have Frees/Allocs fields - removed incorrect assignment */
+-    }
+-
+-    /* Paged Pool Statistics */
+-    if (PagedPoolStats) {
+-        PagedPoolStats->Allocated = Arm64PagedPoolDescriptor.TotalBytes -
+-                                    Arm64PagedPoolDescriptor.FreeBytes;
+-        PagedPoolStats->Size = Arm64PagedPoolDescriptor.PoolSize;
+-
+-        /* SYSTEM_POOL_ENTRY doesn't have Frees/Allocs fields - removed incorrect assignment */
+-    }
+-
+-    KeReleaseSpinLock(&PoolStatisticsLock, OldIrql);
+-}
+-
+-/**
+- * @brief Integration wrapper for ExAllocatePool
+- */
+-PVOID
+-NTAPI
+-ExAllocatePool(
+-    _In_ POOL_TYPE PoolType,
+-    _In_ SIZE_T NumberOfBytes
+-)
+-{
+-    /* Call ARM64 implementation with default tag */
+-    return ExAllocatePoolArm64(PoolType, NumberOfBytes, 'loPM');  /* 'MPoL' */
+-}
+-
+-/**
+- * @brief Integration wrapper for ExAllocatePoolWithTag
+- */
+-PVOID
+-NTAPI
+-ExAllocatePoolWithTag(
+-    _In_ POOL_TYPE PoolType,
+-    _In_ SIZE_T NumberOfBytes,
+-    _In_ ULONG Tag
+-)
+-{
+-    return ExAllocatePoolArm64(PoolType, NumberOfBytes, Tag);
+-}
+-
+-/**
+- * @brief Integration wrapper for ExFreePool
+- */
+-VOID
+-NTAPI
+-ExFreePool(
+-    _In_ PVOID P
+-)
+-{
+-    /* Extract tag from header if available */
+-    ULONG Tag = 0;
+-    if (P) {
+-        PARM64_POOL_HEADER Header = (PARM64_POOL_HEADER)((PCHAR)P - sizeof(ARM64_POOL_HEADER));
+-        if (Arm64ValidatePoolHeader(Header, 0)) {
+-            Tag = Header->PoolTag;
+-        }
+-    }
+-
+-    ExFreePoolArm64(P, Tag);
+-}
+-
+-/**
+- * @brief Integration wrapper for ExFreePoolWithTag
++/*
++ * ARM64-specific pool allocation optimizations can be added here.
++ * The generic implementations from mm/ARM3/expool.c are used for standard APIs.
+  */
+-VOID
+-NTAPI
+-ExFreePoolWithTag(
+-    _In_ PVOID P,
+-    _In_ ULONG Tag
+-)
+-{
+-    ExFreePoolArm64(P, Tag);
+-}
+ 
+-/**
+- * @brief Get the size of a pool allocation
+- */
++/* ARM64-specific cache-aligned allocation helper */
+ SIZE_T
+ NTAPI
+-ExSizeOfPool(
+-    _In_ PVOID P
+-)
++MiArm64CacheAlignSize(
++    IN SIZE_T Size)
+ {
+-    PARM64_POOL_HEADER Header;
+-
+-    if (!P) {
+-        return 0;
+-    }
+-
+-    Header = (PARM64_POOL_HEADER)((PCHAR)P - sizeof(ARM64_POOL_HEADER));
+-
+-    if (!Arm64ValidatePoolHeader(Header, 0)) {
+-        return 0;
+-    }
+-
+-    return Header->BlockSize * ARM64_POOL_BLOCK_SIZE;
++    /* Align to ARM64 cache line boundary for optimal performance */
++    return ARM64_CACHE_ALIGN(Size);
+ }
+ 
+-/**
+- * @brief Get pool type of an allocation
+- */
+-POOL_TYPE
+-NTAPI
+-ExQueryPoolBlockType(
+-    _In_ PVOID P
+-)
+-{
+-    PARM64_POOL_HEADER Header;
+-
+-    if (!P) {
+-        return (POOL_TYPE)-1;
+-    }
+-
+-    Header = (PARM64_POOL_HEADER)((PCHAR)P - sizeof(ARM64_POOL_HEADER));
+-
+-    if (!Arm64ValidatePoolHeader(Header, 0)) {
+-        return (POOL_TYPE)-1;
+-    }
+-
+-    return (POOL_TYPE)Header->PoolType;
+-}
+-
+-/**
+- * @brief ARM64 Pool corruption check and repair
+- */
+-BOOLEAN
+-NTAPI
+-MiCheckPoolCorruption(
+-    _In_ PVOID StartAddress,
+-    _In_ SIZE_T Size
+-)
+-{
+-    PARM64_POOL_HEADER Header;
+-    ULONG CorruptionCount = 0;
+-    PVOID CurrentAddress = StartAddress;
+-    PVOID EndAddress = (PVOID)((PCHAR)StartAddress + Size);
+-
+-    while (CurrentAddress < EndAddress) {
+-        Header = (PARM64_POOL_HEADER)CurrentAddress;
+-
+-        /* Check for basic corruption patterns */
+-        if (!Arm64ValidatePoolHeader(Header, 0)) {
+-            CorruptionCount++;
+-            DPRINT1("ARM64 Pool corruption detected at %p\n", CurrentAddress);
+-        }
+-
+-        /* Move to next potential block */
+-        if (Header->BlockSize > 0) {
+-            CurrentAddress = (PVOID)((PCHAR)CurrentAddress +
+-                                   (Header->BlockSize * ARM64_POOL_BLOCK_SIZE));
+-        } else {
+-            /* Corrupted header, try next cache line */
+-            CurrentAddress = (PVOID)((PCHAR)CurrentAddress + ARM64_CACHE_LINE_SIZE);
+-        }
+-    }
+-
+-    if (CorruptionCount > 0) {
+-        InterlockedExchangeAdd((PLONG)&PoolCorruptionDetected, CorruptionCount);
+-        return FALSE;
+-    }
+-
+-    return TRUE;
+-}
+-
+-/**
+- * @brief ARM64 Pool memory pressure notification
+- */
+-VOID
+-NTAPI
+-MiNotifyMemoryPressure(
+-    _In_ POOL_TYPE PoolType,
+-    _In_ ULONG Flags
+-)
+-{
+-    PARM64_POOL_DESCRIPTOR Descriptor;
+-    ULONG SizeClass;
+-    KIRQL OldIrql;
+-    PLIST_ENTRY Entry, NextEntry;
+-    ULONG FreedBlocks = 0;
+-
+-    /* Select appropriate pool descriptor */
+-    if ((PoolType & BASE_POOL_TYPE_MASK) == NonPagedPool) {
+-        Descriptor = &Arm64NonPagedPoolDescriptor;
+-    } else {
+-        Descriptor = &Arm64PagedPoolDescriptor;
+-    }
+-
+-    /* Under memory pressure, try to free some cached blocks */
+-    for (SizeClass = 0; SizeClass < ARM64_POOL_SIZE_CLASSES; SizeClass++) {
+-        KeAcquireSpinLock(&Descriptor->FreeListLocks[SizeClass], &OldIrql);
+-
+-        Entry = Descriptor->FreeListHeads[SizeClass].Flink;
+-        while ((Entry != &Descriptor->FreeListHeads[SizeClass]) && (FreedBlocks < 16)) {
+-            NextEntry = Entry->Flink;
+-
+-            /* Free every other block to reduce fragmentation */
+-            if ((FreedBlocks % 2) == 0) {
+-                RemoveEntryList(Entry);
+-                FreedBlocks++;
+-            }
+-
+-            Entry = NextEntry;
+-        }
+-
+-        KeReleaseSpinLock(&Descriptor->FreeListLocks[SizeClass], OldIrql);
+-    }
+-
+-    if (FreedBlocks > 0) {
+-        DPRINT("ARM64 Pool: Freed %u blocks due to memory pressure\n", FreedBlocks);
+-    }
+-}
+-
+-/**
+- * @brief ARM64 Pool diagnostic function for debugging
+- */
++/* ARM64-specific memory barrier for pool operations */
+ VOID
+ NTAPI
+-MiDumpPoolStatistics(
+-    _In_ POOL_TYPE PoolType
+-)
++MiArm64PoolBarrier(VOID)
+ {
+-    PARM64_POOL_DESCRIPTOR Descriptor;
+-    ULONG i;
+-
+-    if ((PoolType & BASE_POOL_TYPE_MASK) == NonPagedPool) {
+-        Descriptor = &Arm64NonPagedPoolDescriptor;
+-        DPRINT1("=== NonPaged Pool Statistics ===\n");
+-    } else {
+-        Descriptor = &Arm64PagedPoolDescriptor;
+-        DPRINT1("=== Paged Pool Statistics ===\n");
+-    }
+-
+-    DPRINT1("Total Bytes: %lu\n", Descriptor->TotalBytes);
+-    DPRINT1("Free Bytes: %lu\n", Descriptor->FreeBytes);
+-    DPRINT1("Total Allocations: %lu\n", Descriptor->TotalAllocations);
+-    DPRINT1("Failed Allocations: %lu\n", Descriptor->FailedAllocations);
+-    DPRINT1("Fast Alloc Hits: %lu\n", Descriptor->FastAllocHits);
+-    DPRINT1("Slow Alloc Hits: %lu\n", Descriptor->SlowAllocHits);
+-    DPRINT1("Pool Start: %p\n", Descriptor->PoolStart);
+-    DPRINT1("Pool End: %p\n", Descriptor->PoolEnd);
+-    DPRINT1("Pool Size: %lu bytes\n", Descriptor->PoolSize);
+-
+-    /* Show free list statistics */
+-    DPRINT1("\nFree List Statistics:\n");
+-    for (i = 0; i < ARM64_POOL_SIZE_CLASSES; i++) {
+-        ULONG Count = 0;
+-        PLIST_ENTRY Entry;
+-        KIRQL OldIrql;
+-
+-        KeAcquireSpinLock(&Descriptor->FreeListLocks[i], &OldIrql);
+-        for (Entry = Descriptor->FreeListHeads[i].Flink;
+-             Entry != &Descriptor->FreeListHeads[i];
+-             Entry = Entry->Flink) {
+-            Count++;
+-        }
+-        KeReleaseSpinLock(&Descriptor->FreeListLocks[i], OldIrql);
+-
+-        if (Count > 0) {
+-            DPRINT1("Size Class %u (%u bytes): %u free blocks\n",
+-                   i, Arm64PoolSizeClasses[i], Count);
+-        }
+-    }
+-
+-    if (PoolCorruptionDetected > 0) {
+-        DPRINT1("\nWARNING: %lu pool corruption(s) detected!\n", PoolCorruptionDetected);
+-    }
+-
+-    DPRINT1("================================\n");
+-}
+-
+-/* EOF */
+\ No newline at end of file
++    /* Memory barrier for ARM64 pool operations */
++    __dmb(ish);
++}
+\ No newline at end of file
+diff --git a/ntoskrnl/mm/arm64/virtual.c b/ntoskrnl/mm/arm64/virtual.c
+index 850ef10ec05..d8a25ceeaa0 100644
+--- a/ntoskrnl/mm/arm64/virtual.c
++++ b/ntoskrnl/mm/arm64/virtual.c
+@@ -177,10 +177,12 @@ MiGetOrCreatePageTable(
+         return NULL;
+ 
+     /* Allocate new page table */
+-    PhysicalAddress = MmAllocatePhysicalPages(1);
++    /* TODO: Implement MmAllocatePhysicalPages for ARM64 */
++    /* PhysicalAddress = MmAllocatePhysicalPages(1); */
++    PhysicalAddress.QuadPart = 0;  /* Temporary stub */
+     if (!PhysicalAddress.QuadPart)
+     {
+-        DPRINT1("Failed to allocate page table\n");
++        DPRINT1("Failed to allocate page table - stub implementation\n");
+         return NULL;
+     }
+ 
+@@ -188,7 +190,8 @@ MiGetOrCreatePageTable(
+     PageTable = MmMapIoSpace(PhysicalAddress, ARM64_PAGE_SIZE, MmNonCached);
+     if (!PageTable)
+     {
+-        MmFreePhysicalPages(PhysicalAddress, 1);
++        /* TODO: Implement MmFreePhysicalPages for ARM64 */
++        /* MmFreePhysicalPages(PhysicalAddress, 1); */
+         DPRINT1("Failed to map page table\n");
+         return NULL;
+     }
+@@ -365,7 +368,8 @@ MiUnmapSinglePage(
+     /* Free the physical page if it was allocated */
+     if (PhysicalAddress.QuadPart)
+     {
+-        MmFreePhysicalPages(PhysicalAddress, 1);
++        /* TODO: Implement MmFreePhysicalPages for ARM64 */
++        /* MmFreePhysicalPages(PhysicalAddress, 1); */
+     }
+ 
+     return TRUE;
+@@ -476,7 +480,9 @@ MmAllocateVirtualMemory(
+             else
+             {
+                 /* Allocate from free pool */
+-                PhysicalAddress = MmAllocatePhysicalPages(1);
++                /* TODO: Implement MmAllocatePhysicalPages for ARM64 */
++                /* PhysicalAddress = MmAllocatePhysicalPages(1); */
++                PhysicalAddress.QuadPart = 0;  /* Temporary stub */
+                 if (!PhysicalAddress.QuadPart)
+                 {
+                     Status = STATUS_NO_MEMORY;
+@@ -489,14 +495,16 @@ MmAllocateVirtualMemory(
+             {
+                 if (!(AllocationType & MEM_PHYSICAL))
+                 {
+-                    MmFreePhysicalPages(PhysicalAddress, 1);
++                    /* TODO: Implement MmFreePhysicalPages for ARM64 */
++        /* MmFreePhysicalPages(PhysicalAddress, 1); */
+                 }
+                 Status = STATUS_NO_MEMORY;
+                 break;
+             }
+ 
+             /* Zero the page if requested */
+-            if (AllocationType & MEM_ZERO)
++            /* TODO: Define MEM_ZERO for ARM64 */
++            if (AllocationType & 0x1000000 /* MEM_ZERO */)
+             {
+                 RtlZeroMemory(PageAddress, ARM64_PAGE_SIZE);
+             }
+@@ -510,7 +518,8 @@ MmAllocateVirtualMemory(
+     if (!NT_SUCCESS(Status))
+     {
+         /* Cleanup on failure */
+-        MmFreeVirtualMemory(ProcessHandle, &Address, RegionSize, MEM_RELEASE);
++        /* TODO: Fix circular dependency with MmFreeVirtualMemory */
++        /* MmFreeVirtualMemory(ProcessHandle, &Address, RegionSize, MEM_RELEASE); */
+         return NULL;
+     }
+ 
+@@ -581,7 +590,8 @@ MmFreeVirtualMemory(
+             VmStatistics.CommittedPages--;
+         }
+     }
+-    else if (FreeType & MEM_RELEASE)
++    /* TODO: Define MEM_RELEASE for ARM64 */
++    else if (FreeType & 0x8000 /* MEM_RELEASE */)
+     {
+         /* Unmap all pages in the VAD */
+         ULONG64 CurrentAddress = Vad->StartingVirtualAddress;
+@@ -728,6 +738,7 @@ MmQueryVirtualMemory(
+  * @brief Map physical memory to virtual address
+  * @implemented
+  */
++#if 0  /* Disabled - using generic implementation in mm/iosup.c */
+ PVOID
+ NTAPI
+ MmMapIoSpace(
+@@ -758,7 +769,7 @@ MmMapIoSpace(
+         case MmNonCached:
+             Protection = PAGE_READWRITE | PAGE_NOCACHE;
+             break;
+-        case MmWriteCombining:
++        case MmWriteCombined:
+             Protection = PAGE_READWRITE | PAGE_WRITECOMBINE;
+             break;
+         case MmCached:
+@@ -792,11 +803,13 @@ MmMapIoSpace(
+     /* Return address with original offset */
+     return (PVOID)((ULONG64)VirtualAddress + Offset);
+ }
++#endif /* 0 - MmMapIoSpace */
+ 
+ /*
+  * @brief Unmap I/O space
+  * @implemented
+  */
++#if 0  /* Disabled - using generic implementation in mm/iosup.c */
+ VOID
+ NTAPI
+ MmUnmapIoSpace(
+@@ -819,6 +832,7 @@ MmUnmapIoSpace(
+         MiUnmapSinglePage(PageAddress);
+     }
+ }
++#endif /* 0 - MmUnmapIoSpace */
+ 
+ /*
+  * @brief Get virtual memory statistics
+@@ -857,7 +871,9 @@ MmHandleCopyOnWriteFault(
+ 
+     /* TODO: Get current physical page */
+     /* TODO: Allocate new physical page */
+-    NewPhysical = MmAllocatePhysicalPages(1);
++    /* TODO: Implement MmAllocatePhysicalPages for ARM64 */
++    /* NewPhysical = MmAllocatePhysicalPages(1); */
++    NewPhysical.QuadPart = 0;  /* Temporary stub */
+     if (!NewPhysical.QuadPart)
+     {
+         KeReleaseSpinLock(&VmLock, OldIrql);
+@@ -875,4 +891,35 @@ MmHandleCopyOnWriteFault(
+     return STATUS_SUCCESS;
+ }
+ 
+-/* EOF */
+\ No newline at end of file
++/* EOF */
++
++/* STUB FUNCTIONS FOR LINKING ************************************************/
++
++/* Stub implementation for MiGetPfnForVirtualAddress */
++ULONG_PTR
++NTAPI
++MiGetPfnForVirtualAddress(IN PVOID VirtualAddress)
++{
++    DPRINT("MiGetPfnForVirtualAddress: ARM64 stub implementation\n");
++    UNREFERENCED_PARAMETER(VirtualAddress);
++    /* TODO: Implement ARM64-specific PFN lookup */
++    return 0;
++}
++
++/* Stub implementation for MmMapViewOfSystemSection */
++NTSTATUS
++NTAPI
++MmMapViewOfSystemSection(
++    IN PEPROCESS Process,
++    IN OUT PVOID *BaseAddress,
++    IN OUT PSIZE_T ViewSize,
++    IN ULONG Protect)
++{
++    DPRINT("MmMapViewOfSystemSection: ARM64 stub implementation\n");
++    UNREFERENCED_PARAMETER(Process);
++    UNREFERENCED_PARAMETER(BaseAddress);
++    UNREFERENCED_PARAMETER(ViewSize);
++    UNREFERENCED_PARAMETER(Protect);
++    /* TODO: Implement ARM64-specific system section mapping */
++    return STATUS_NOT_IMPLEMENTED;
++}
+diff --git a/ntoskrnl/ntos.cmake b/ntoskrnl/ntos.cmake
+index bac37d4220e..73bf84ecd4f 100644
+--- a/ntoskrnl/ntos.cmake
++++ b/ntoskrnl/ntos.cmake
+@@ -198,7 +198,6 @@ list(APPEND SOURCE
+     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/thrdschd.c
+     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/time.c
+     ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/timerobj.c
+-    ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/wait.c
+     ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/close.c
+     ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/complete.c
+     ${REACTOS_SOURCE_DIR}/ntoskrnl/lpc/connect.c
+@@ -299,6 +298,9 @@ list(APPEND SOURCE
+ 
+ list(APPEND ASM_SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/zw.S)
+ 
++# Add wait.c for all architectures (contains essential Ki* functions)
++list(APPEND SOURCE ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/wait.c)
++
+ if(ARCH STREQUAL "i386")
+     list(APPEND ASM_SOURCE
+         ${REACTOS_SOURCE_DIR}/ntoskrnl/ex/i386/fastinterlck_asm.S
+@@ -423,10 +425,12 @@ elseif(ARCH STREQUAL "arm64")
+         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/usercall.c
+         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/semaphore.c
+         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/event.c
++        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/wait.c
+         ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/page.c
+         ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/pool.c
+         ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/procsup.c
+         ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/tlb.c
++        ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/arm64/virtual.c
+         ${REACTOS_SOURCE_DIR}/ntoskrnl/mm/ARM3/arm64/init.c
+         ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/arm64/psctx.c
+         ${REACTOS_SOURCE_DIR}/ntoskrnl/ps/arm64/psarm64.c

@@ -2,7 +2,7 @@
  * PROJECT:     ReactOS Kernel
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 Wait/Synchronization Primitives
- * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:   Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  */
 
 /* INCLUDES *******************************************************************/
@@ -114,7 +114,7 @@ FASTCALL
 KiInsertWaitList(
     IN PKTHREAD Thread)
 {
-    PLIST_ENTRY WaitEntry;
+    /* PLIST_ENTRY WaitEntry; */ /* Unused variable */
     PKWAIT_BLOCK WaitBlock;
     DISPATCHER_HEADER *Object;
 
@@ -163,7 +163,7 @@ KiWakeThread(
     IN NTSTATUS WaitStatus,
     IN KPRIORITY Increment)
 {
-    KIRQL OldIrql;
+    /* KIRQL OldIrql; */ /* Unused variable */
 
     DPRINT("Waking thread %p with status 0x%08lx\n", Thread, WaitStatus);
 
@@ -222,6 +222,7 @@ KiInitializeWaitSystem(VOID)
  * @brief Wait for single object
  * @implemented
  */
+#if 0  /* Disabled - using generic implementation in ke/wait.c */
 NTSTATUS
 NTAPI
 KeWaitForSingleObject(
@@ -301,8 +302,10 @@ KeWaitForSingleObject(
     KeReleaseSpinLockFromDpcLevel(&DispatcherLock);
     KeLowerIrql(OldIrql);
 
-    /* Switch to another thread */
-    KiSwapContext();
+    /* Switch to another thread - ARM64 needs current and next thread */
+    /* TODO: Implement proper scheduler yield for ARM64 */
+    /* KiSwapContext(Thread, NextThread); */
+    DPRINT("ARM64: Context switch from thread %p (wait)\n", Thread);
 
     /* Thread resumes here after being woken */
     Status = Thread->WaitStatus;
@@ -311,11 +314,13 @@ KeWaitForSingleObject(
 
     return Status;
 }
+#endif /* 0 - KeWaitForSingleObject */
 
 /*
  * @brief Wait for multiple objects
  * @implemented
  */
+#if 0  /* Disabled - using generic implementation in ke/wait.c */
 NTSTATUS
 NTAPI
 KeWaitForMultipleObjects(
@@ -439,7 +444,9 @@ KeWaitForMultipleObjects(
     KeReleaseSpinLockFromDpcLevel(&DispatcherLock);
     KeLowerIrql(OldIrql);
 
-    KiSwapContext();
+    /* TODO: Implement proper scheduler yield for ARM64 */
+    /* KiSwapContext(Thread, NextThread); */
+    DPRINT("ARM64: Context switch from thread %p (multi-wait)\n", Thread);
 
     /* Thread resumes here */
     Status = Thread->WaitStatus;
@@ -448,11 +455,13 @@ KeWaitForMultipleObjects(
 
     return Status;
 }
+#endif /* 0 - KeWaitForMultipleObjects */
 
 /*
  * @brief Signal object and check waiters
  * @implemented
  */
+#if 0  /* Disabled - using generic implementation in ke/eventobj.c */
 LONG
 NTAPI
 KeSetEvent(
@@ -522,7 +531,9 @@ KeSetEvent(
 
     return OldState;
 }
+#endif /* 0 - KeSetEvent */
 
+#if 0  /* Disabled - using generic implementation in ke/eventobj.c */
 /*
  * @brief Reset event to non-signaled
  * @implemented
@@ -551,7 +562,9 @@ KeResetEvent(
 
     return OldState;
 }
+#endif /* 0 - KeResetEvent */
 
+#if 0  /* Disabled - using generic implementation in ke/eventobj.c */
 /*
  * @brief Clear event (reset without returning old state)
  * @implemented
@@ -563,7 +576,9 @@ KeClearEvent(
 {
     Event->Header.SignalState = 0;
 }
+#endif /* 0 - KeClearEvent */
 
+#if 0  /* Disabled - using generic implementation in ke/eventobj.c */
 /*
  * @brief Initialize event object
  * @implemented
@@ -583,11 +598,13 @@ KeInitializeEvent(
     Event->Header.SignalState = State ? 1 : 0;
     InitializeListHead(&Event->Header.WaitListHead);
 }
+#endif /* 0 - KeInitializeEvent */
 
 /*
  * @brief Delay thread execution
  * @implemented
  */
+#if 0  /* Disabled - using generic implementation in ke/wait.c */
 NTSTATUS
 NTAPI
 KeDelayExecutionThread(
@@ -622,11 +639,13 @@ KeDelayExecutionThread(
 
     return Status;
 }
+#endif /* 0 - KeDelayExecutionThread */
 
 /*
  * @brief Ready thread for execution
  * @implemented
  */
+#if 0  /* Disabled - using generic implementation in ke/thrdschd.c */
 VOID
 FASTCALL
 KiReadyThread(
@@ -662,27 +681,60 @@ KiReadyThread(
     KeReleaseSpinLockFromDpcLevel(&DispatcherLock);
     KeLowerIrql(OldIrql);
 }
+#endif /* 0 - KiReadyThread */
 
-/*
- * @brief Swap thread context (placeholder)
- * @implemented
+/* ARM64-specific KiSwapContext implementation and wrapper */
+
+/**
+ * @brief ARM64 Generic KiSwapContext wrapper
+ *
+ * Provides compatibility with the generic KiSwapContext interface
+ * while using the ARM64-specific context switch implementation.
+ *
+ * @param WaitIrql - IRQL to restore after context switch
+ * @param CurrentThread - Current thread being switched away from
+ * @return BOOLEAN - Always FALSE for ARM64 (no APC bypass needed)
  */
-VOID
+BOOLEAN
 FASTCALL
-KiSwapContext(VOID)
+KiSwapContext(
+    IN KIRQL WaitIrql,
+    IN PKTHREAD CurrentThread)
 {
-    /* TODO: Implement actual context switching
-     * This involves:
-     * 1. Save current thread context
-     * 2. Select next thread to run
-     * 3. Load new thread context
-     * 4. Switch page tables if needed
-     * 5. Return to new thread
-     */
+    PKTHREAD NewThread;
+    PKPRCB Prcb;
 
-    DPRINT("Context switch requested\n");
+    /* Get the next thread to run from scheduler */
+    Prcb = KeGetCurrentPrcb();
+    NewThread = Prcb->NextThread;
 
-    /* For now, just return to simulate completed wait */
+    /* If no next thread specified, use idle thread */
+    if (!NewThread)
+    {
+        NewThread = Prcb->IdleThread;
+    }
+
+    ASSERT(NewThread != NULL);
+    ASSERT(CurrentThread != NULL);
+
+    /* Update PRCB current thread before context switch */
+    Prcb->CurrentThread = NewThread;
+    Prcb->NextThread = NULL;
+
+    /* ARM64: Ensure memory ordering before context switch */
+    ARM64_DMB_SY();
+
+    /* Call the ARM64-specific context switch implementation */
+    KiSwapContextARM64(CurrentThread, NewThread);
+
+    /* ARM64: Ensure instruction coherency after context switch */
+    ARM64_ISB();
+
+    /* Restore the original IRQL */
+    KfLowerIrql(WaitIrql);
+
+    /* ARM64 doesn't use APC bypass mechanism like x86/x64 */
+    return FALSE;
 }
 
 /* EOF */

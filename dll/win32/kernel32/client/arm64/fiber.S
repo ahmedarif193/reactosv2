@@ -3,7 +3,7 @@
  * LICENSE:     GPL - See COPYING in the top level directory
  * FILE:        dll/win32/kernel32/client/arm64/fiber.S
  * PURPOSE:     ARM64 Fiber Implementation
- * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:   Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  * PROGRAMMERS: ReactOS Team
  */
 

@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT:       Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:       Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  * PROJECT:         ReactOS CRT library
  * PURPOSE:         Implementation of log10 for ARM64
  * FILE:            lib/crt/math/arm64/log10.s

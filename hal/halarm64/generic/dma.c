@@ -2,7 +2,7 @@
  * PROJECT:     ReactOS Hardware Abstraction Layer
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 DMA Support
- * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:   Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  */
 
 /* INCLUDES *******************************************************************/
@@ -10,6 +10,14 @@
 #include <hal.h>
 #define NDEBUG
 #include <debug.h>
+
+/* Forward declarations */
+struct _DEVICE_OBJECT;
+struct _IRP;
+struct _WAIT_CONTEXT_BLOCK;
+struct _ADAPTER_OBJECT;
+
+/* Use PADAPTER_OBJECT from system headers - avoid direct structure access */
 
 /* DEFINES ********************************************************************/
 
@@ -259,6 +267,38 @@ HalpDmaCacheMaintenance(
 /* PUBLIC FUNCTIONS ***********************************************************/
 
 /*
+ * @brief Flush DMA common buffer
+ */
+BOOLEAN
+NTAPI
+HalFlushCommonBuffer(
+    IN PADAPTER_OBJECT AdapterObject,
+    IN ULONG Length,
+    IN PHYSICAL_ADDRESS LogicalAddress,
+    IN PVOID VirtualAddress)
+{
+    /* Ensure DMA subsystem is initialized */
+    HalpInitializeDmaSubsystem();
+
+    DPRINT("HalFlushCommonBuffer: AdapterObject=%p, Length=%lu, VirtualAddress=%p\n",
+           AdapterObject, Length, VirtualAddress);
+
+    if (!VirtualAddress || !Length)
+    {
+        DPRINT1("Invalid parameters for buffer flush\n");
+        return FALSE;
+    }
+
+    /* Check if memory is coherent */
+    BOOLEAN CacheCoherent = HalpIsDmaCoherent(VirtualAddress);
+
+    /* Perform cache maintenance */
+    HalpDmaCacheMaintenance(VirtualAddress, Length, TRUE, CacheCoherent);
+
+    return TRUE;
+}
+
+/*
  * @brief Allocate common buffer for DMA
  */
 PVOID
@@ -290,21 +330,27 @@ HalAllocateCommonBuffer(
            Length, CacheEnabled);
 
     /* Allocate physically contiguous memory */
-    PhysicalAddress = MmAllocateContiguousMemory(Length, BoundaryAddressMultiple);
-    if (PhysicalAddress.QuadPart == 0)
+    VirtualAddress = MmAllocateContiguousMemory(Length, BoundaryAddressMultiple);
+    if (!VirtualAddress)
     {
         DPRINT1("Failed to allocate contiguous memory for DMA buffer\n");
         return NULL;
     }
 
-    /* Get virtual address for the physical memory */
-    VirtualAddress = MmMapIoSpace(PhysicalAddress, Length,
-                                  CacheEnabled ? MmCached : MmNonCached);
-    if (!VirtualAddress)
+    /* Get the physical address of the allocated memory */
+    PhysicalAddress = MmGetPhysicalAddress(VirtualAddress);
+    /* For DMA buffers, we may want to remap with specific caching attributes */
+    if (!CacheEnabled)
     {
-        DPRINT1("Failed to map DMA buffer to virtual address\n");
-        MmFreeContiguousMemory(PhysicalAddress);
-        return NULL;
+        /* Unmap the cached version and remap as non-cached */
+        MmUnmapIoSpace(VirtualAddress, Length);
+        VirtualAddress = MmMapIoSpace(PhysicalAddress, Length, MmNonCached);
+        if (!VirtualAddress)
+        {
+            DPRINT1("Failed to map DMA buffer as non-cached\n");
+            MmFreeContiguousMemory(VirtualAddress);
+            return NULL;
+        }
     }
 
     /* Return logical address (for ARM64, this is typically the physical address)
@@ -360,7 +406,7 @@ HalFreeCommonBuffer(
         MmUnmapIoSpace(VirtualAddress, Length);
 
         /* Free physical memory */
-        MmFreeContiguousMemorySpecifyCache(LogicalAddress, Length, MmCached);
+        MmFreeContiguousMemory(VirtualAddress);
     }
 }
 
@@ -395,104 +441,11 @@ HalFlushAdapterBuffers(
     return TRUE;
 }
 
-/*
- * @brief ARM64-specific cache cleaning
- */
-VOID
-NTAPI
-HalCleanDcacheRange(
-    IN PVOID VirtualAddress,
-    IN ULONG Length)
-{
-    ULONG_PTR StartAddress, EndAddress, CurrentAddress;
-    ULONG CacheLineSize;
+/* HalCleanDcacheRange removed - implemented in generic/cache.c */
 
-    /* Use detected cache line size */
-    CacheLineSize = HalCacheLineSize;
+/* HalInvalidateDcacheRange removed - implemented in generic/cache.c */
 
-    StartAddress = (ULONG_PTR)VirtualAddress & ~(CacheLineSize - 1);
-    EndAddress = ((ULONG_PTR)VirtualAddress + Length + CacheLineSize - 1) & ~(CacheLineSize - 1);
-
-    /* Clean data cache by virtual address */
-    for (CurrentAddress = StartAddress; CurrentAddress < EndAddress; CurrentAddress += CacheLineSize)
-    {
-        __asm__ __volatile__ (
-            "dc cvac, %0\n"  /* Data Cache Clean by VA to PoC */
-            :
-            : "r"(CurrentAddress)
-            : "memory"
-        );
-    }
-
-    /* Ensure cache operations complete */
-    __asm__ __volatile__ ("dsb sy" ::: "memory");
-}
-
-/*
- * @brief ARM64-specific cache invalidation
- */
-VOID
-NTAPI
-HalInvalidateDcacheRange(
-    IN PVOID VirtualAddress,
-    IN ULONG Length)
-{
-    ULONG_PTR StartAddress, EndAddress, CurrentAddress;
-    ULONG CacheLineSize;
-
-    /* TODO: Get actual cache line size from ARM64 system registers */
-    CacheLineSize = 64;
-
-    StartAddress = (ULONG_PTR)VirtualAddress & ~(CacheLineSize - 1);
-    EndAddress = ((ULONG_PTR)VirtualAddress + Length + CacheLineSize - 1) & ~(CacheLineSize - 1);
-
-    /* Invalidate data cache by virtual address */
-    for (CurrentAddress = StartAddress; CurrentAddress < EndAddress; CurrentAddress += CacheLineSize)
-    {
-        __asm__ __volatile__ (
-            "dc ivac, %0\n"  /* Data Cache Invalidate by VA to PoC */
-            :
-            : "r"(CurrentAddress)
-            : "memory"
-        );
-    }
-
-    /* Ensure cache operations complete */
-    __asm__ __volatile__ ("dsb sy" ::: "memory");
-}
-
-/*
- * @brief ARM64-specific cache flushing (clean + invalidate)
- */
-VOID
-NTAPI
-HalFlushDcacheRange(
-    IN PVOID VirtualAddress,
-    IN ULONG Length)
-{
-    ULONG_PTR StartAddress, EndAddress, CurrentAddress;
-    ULONG CacheLineSize;
-
-    /* TODO: Get actual cache line size from ARM64 system registers */
-    CacheLineSize = 64;
-
-    StartAddress = (ULONG_PTR)VirtualAddress & ~(CacheLineSize - 1);
-    EndAddress = ((ULONG_PTR)VirtualAddress + Length + CacheLineSize - 1) & ~(CacheLineSize - 1);
-
-    /* Clean and invalidate data cache by virtual address */
-    for (CurrentAddress = StartAddress; CurrentAddress < EndAddress; CurrentAddress += CacheLineSize)
-    {
-        __asm__ __volatile__ (
-            "dc civac, %0\n"  /* Data Cache Clean and Invalidate by VA to PoC */
-            :
-            : "r"(CurrentAddress)
-            : "memory"
-        );
-    }
-
-    /* Ensure cache operations complete */
-    __asm__ __volatile__ ("dsb sy" ::: "memory");
-}
+/* HalFlushDcacheRange removed - implemented in generic/cache.c */
 
 /*
  * @brief Get DMA adapter object
@@ -526,9 +479,11 @@ HalGetAdapter(
         MapRegisters = HalDmaAdapter.MapRegistersPerChannel;
     }
 
-    /* Allocate adapter object */
+    /* For ARM64, return a simple stub adapter object.
+     * The actual DMA operations will use ARM64-specific channel management.
+     */
     AdapterObject = ExAllocatePoolWithTag(NonPagedPool,
-                                         sizeof(ADAPTER_OBJECT),
+                                         sizeof(PVOID),
                                          'AMDA');
     if (!AdapterObject)
     {
@@ -536,15 +491,8 @@ HalGetAdapter(
         return NULL;
     }
 
-    /* Initialize adapter object */
-    RtlZeroMemory(AdapterObject, sizeof(ADAPTER_OBJECT));
-    AdapterObject->DmaHeader.Version = 1;
-    AdapterObject->DmaHeader.Size = sizeof(ADAPTER_OBJECT);
-    AdapterObject->MasterDevice = DeviceDescription->Master;
-    AdapterObject->ScatterGather = DeviceDescription->ScatterGather;
-    AdapterObject->Dma32BitAddresses = (DeviceDescription->Dma32BitAddresses != FALSE);
-    AdapterObject->Dma64BitAddresses = (DeviceDescription->Dma64BitAddresses != FALSE);
-    AdapterObject->MaximumLength = DeviceDescription->MaximumLength;
+    /* Initialize as opaque handle - avoid accessing undefined structure fields */
+    RtlZeroMemory(AdapterObject, sizeof(PVOID));
 
     /* Return number of available map registers */
     if (NumberOfMapRegisters)
@@ -617,11 +565,21 @@ HalAllocateAdapterChannel(
     /* Set channel as active */
     Channel->State = ARM64_DMA_CHANNEL_ACTIVE;
 
-    /* Call the execution routine immediately - ARM64 typically has sufficient resources */
-    Status = ExecutionRoutine(DeviceObject,
-                             Irp,
-                             (PVOID)Channel,  /* Use channel as map register base */
-                             Context);
+    /* Call the execution routine with proper parameters from WaitContextBlock */
+    if (WaitContextBlock)
+    {
+        Status = ExecutionRoutine(WaitContextBlock->DeviceObject,
+                                 WaitContextBlock->DeviceContext,
+                                 (PVOID)Channel,  /* Use channel as map register base */
+                                 WaitContextBlock->DeviceContext);
+    }
+    else
+    {
+        /* Fallback - this shouldn't happen in normal operation */
+        DPRINT1("HalAllocateAdapterChannel called with NULL WaitContextBlock\n");
+        HalpFreeDmaChannel(Channel);
+        return STATUS_INVALID_PARAMETER;
+    }
 
     UNREFERENCED_PARAMETER(WaitContextBlock);
 

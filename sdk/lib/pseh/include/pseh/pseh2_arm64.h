@@ -2,7 +2,7 @@
  * PROJECT:     ReactOS PSEH (ARM64)
  * LICENSE:     GNU GPL - See COPYING in the top level directory
  * PURPOSE:     SEH2-style macros for AArch64/Windows (table-based SEH)
- * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:   Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  * NOTES:       Uses the GCC seh plugin to emit handler data and
  *              a small trampoline to enter filter/finally funclets.
  */

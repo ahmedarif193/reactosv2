@@ -1,0 +1,496 @@
+diff --git a/hal/halarm64/generic/dma.c b/hal/halarm64/generic/dma.c
+index d21a2366e91..b4e8abd20e5 100644
+--- a/hal/halarm64/generic/dma.c
++++ b/hal/halarm64/generic/dma.c
+@@ -15,9 +15,9 @@
+ struct _DEVICE_OBJECT;
+ struct _IRP;
+ struct _WAIT_CONTEXT_BLOCK;
++struct _ADAPTER_OBJECT;
+ 
+-/* Include HAL DMA structure definition */
+-#include "../include/haldma.h"
++/* Use PADAPTER_OBJECT from system headers - avoid direct structure access */
+ 
+ /* DEFINES ********************************************************************/
+ 
+@@ -266,6 +266,38 @@ HalpDmaCacheMaintenance(
+ 
+ /* PUBLIC FUNCTIONS ***********************************************************/
+ 
++/*
++ * @brief Flush DMA common buffer
++ */
++BOOLEAN
++NTAPI
++HalFlushCommonBuffer(
++    IN PADAPTER_OBJECT AdapterObject,
++    IN ULONG Length,
++    IN PHYSICAL_ADDRESS LogicalAddress,
++    IN PVOID VirtualAddress)
++{
++    /* Ensure DMA subsystem is initialized */
++    HalpInitializeDmaSubsystem();
++
++    DPRINT("HalFlushCommonBuffer: AdapterObject=%p, Length=%lu, VirtualAddress=%p\n",
++           AdapterObject, Length, VirtualAddress);
++
++    if (!VirtualAddress || !Length)
++    {
++        DPRINT1("Invalid parameters for buffer flush\n");
++        return FALSE;
++    }
++
++    /* Check if memory is coherent */
++    BOOLEAN CacheCoherent = HalpIsDmaCoherent(VirtualAddress);
++
++    /* Perform cache maintenance */
++    HalpDmaCacheMaintenance(VirtualAddress, Length, TRUE, CacheCoherent);
++
++    return TRUE;
++}
++
+ /*
+  * @brief Allocate common buffer for DMA
+  */
+@@ -409,104 +441,11 @@ HalFlushAdapterBuffers(
+     return TRUE;
+ }
+ 
+-/*
+- * @brief ARM64-specific cache cleaning
+- */
+-VOID
+-NTAPI
+-HalCleanDcacheRange(
+-    IN PVOID VirtualAddress,
+-    IN ULONG Length)
+-{
+-    ULONG_PTR StartAddress, EndAddress, CurrentAddress;
+-    ULONG CacheLineSize;
++/* HalCleanDcacheRange removed - implemented in generic/cache.c */
+ 
+-    /* Use detected cache line size */
+-    CacheLineSize = HalCacheLineSize;
++/* HalInvalidateDcacheRange removed - implemented in generic/cache.c */
+ 
+-    StartAddress = (ULONG_PTR)VirtualAddress & ~(CacheLineSize - 1);
+-    EndAddress = ((ULONG_PTR)VirtualAddress + Length + CacheLineSize - 1) & ~(CacheLineSize - 1);
+-
+-    /* Clean data cache by virtual address */
+-    for (CurrentAddress = StartAddress; CurrentAddress < EndAddress; CurrentAddress += CacheLineSize)
+-    {
+-        __asm__ __volatile__ (
+-            "dc cvac, %0\n"  /* Data Cache Clean by VA to PoC */
+-            :
+-            : "r"(CurrentAddress)
+-            : "memory"
+-        );
+-    }
+-
+-    /* Ensure cache operations complete */
+-    __asm__ __volatile__ ("dsb sy" ::: "memory");
+-}
+-
+-/*
+- * @brief ARM64-specific cache invalidation
+- */
+-VOID
+-NTAPI
+-HalInvalidateDcacheRange(
+-    IN PVOID VirtualAddress,
+-    IN ULONG Length)
+-{
+-    ULONG_PTR StartAddress, EndAddress, CurrentAddress;
+-    ULONG CacheLineSize;
+-
+-    /* TODO: Get actual cache line size from ARM64 system registers */
+-    CacheLineSize = 64;
+-
+-    StartAddress = (ULONG_PTR)VirtualAddress & ~(CacheLineSize - 1);
+-    EndAddress = ((ULONG_PTR)VirtualAddress + Length + CacheLineSize - 1) & ~(CacheLineSize - 1);
+-
+-    /* Invalidate data cache by virtual address */
+-    for (CurrentAddress = StartAddress; CurrentAddress < EndAddress; CurrentAddress += CacheLineSize)
+-    {
+-        __asm__ __volatile__ (
+-            "dc ivac, %0\n"  /* Data Cache Invalidate by VA to PoC */
+-            :
+-            : "r"(CurrentAddress)
+-            : "memory"
+-        );
+-    }
+-
+-    /* Ensure cache operations complete */
+-    __asm__ __volatile__ ("dsb sy" ::: "memory");
+-}
+-
+-/*
+- * @brief ARM64-specific cache flushing (clean + invalidate)
+- */
+-VOID
+-NTAPI
+-HalFlushDcacheRange(
+-    IN PVOID VirtualAddress,
+-    IN ULONG Length)
+-{
+-    ULONG_PTR StartAddress, EndAddress, CurrentAddress;
+-    ULONG CacheLineSize;
+-
+-    /* TODO: Get actual cache line size from ARM64 system registers */
+-    CacheLineSize = 64;
+-
+-    StartAddress = (ULONG_PTR)VirtualAddress & ~(CacheLineSize - 1);
+-    EndAddress = ((ULONG_PTR)VirtualAddress + Length + CacheLineSize - 1) & ~(CacheLineSize - 1);
+-
+-    /* Clean and invalidate data cache by virtual address */
+-    for (CurrentAddress = StartAddress; CurrentAddress < EndAddress; CurrentAddress += CacheLineSize)
+-    {
+-        __asm__ __volatile__ (
+-            "dc civac, %0\n"  /* Data Cache Clean and Invalidate by VA to PoC */
+-            :
+-            : "r"(CurrentAddress)
+-            : "memory"
+-        );
+-    }
+-
+-    /* Ensure cache operations complete */
+-    __asm__ __volatile__ ("dsb sy" ::: "memory");
+-}
++/* HalFlushDcacheRange removed - implemented in generic/cache.c */
+ 
+ /*
+  * @brief Get DMA adapter object
+@@ -540,9 +479,11 @@ HalGetAdapter(
+         MapRegisters = HalDmaAdapter.MapRegistersPerChannel;
+     }
+ 
+-    /* Allocate adapter object */
++    /* For ARM64, return a simple stub adapter object.
++     * The actual DMA operations will use ARM64-specific channel management.
++     */
+     AdapterObject = ExAllocatePoolWithTag(NonPagedPool,
+-                                         sizeof(ADAPTER_OBJECT),
++                                         sizeof(PVOID),
+                                          'AMDA');
+     if (!AdapterObject)
+     {
+@@ -550,15 +491,8 @@ HalGetAdapter(
+         return NULL;
+     }
+ 
+-    /* Initialize adapter object */
+-    RtlZeroMemory(AdapterObject, sizeof(ADAPTER_OBJECT));
+-    AdapterObject->DmaHeader.Version = 1;
+-    AdapterObject->DmaHeader.Size = sizeof(ADAPTER_OBJECT);
+-    AdapterObject->MasterDevice = DeviceDescription->Master;
+-    AdapterObject->ScatterGather = DeviceDescription->ScatterGather;
+-    AdapterObject->Dma32BitAddresses = (DeviceDescription->Dma32BitAddresses != FALSE);
+-    AdapterObject->Dma64BitAddresses = (DeviceDescription->Dma64BitAddresses != FALSE);
+-    AdapterObject->MaximumLength = DeviceDescription->MaximumLength;
++    /* Initialize as opaque handle - avoid accessing undefined structure fields */
++    RtlZeroMemory(AdapterObject, sizeof(PVOID));
+ 
+     /* Return number of available map registers */
+     if (NumberOfMapRegisters)
+diff --git a/hal/halarm64/halarm64.c b/hal/halarm64/halarm64.c
+index 546c14aec37..829dc32ba34 100644
+--- a/hal/halarm64/halarm64.c
++++ b/hal/halarm64/halarm64.c
+@@ -39,17 +39,7 @@ KIRQL HalpCurrentIrql[32] = { PASSIVE_LEVEL };
+ 
+ /* FUNCTIONS *****************************************************************/
+ 
+-/**
+- * @brief Get current IRQL (HAL implementation for ARM64)
+- */
+-KIRQL
+-NTAPI
+-KeGetCurrentIrql(VOID)
+-{
+-    /* TODO: Get actual processor number */
+-    /* For now, assume processor 0 */
+-    return HalpCurrentIrql[0];
+-}
++/* KeGetCurrentIrql removed - provided by kernel, not HAL */
+ 
+ /**
+  * @brief Raise IRQL (Fast version)
+@@ -112,76 +102,7 @@ KeLowerIrql(IN KIRQL NewIrql)
+     KfLowerIrql(NewIrql);
+ }
+ 
+-/*
+- * @brief Initialize the Hardware Abstraction Layer for ARM64
+- *
+- * HAL provides abstraction for:
+- * - Interrupt controllers (GIC)
+- * - Timers (Generic Timer, platform timers)
+- * - Power management
+- * - Bus interfaces (PCIe, platform buses)
+- * - ACPI or Device Tree
+- *
+- * @param LoaderBlock - Boot loader parameter block
+- * @return NTSTATUS - Success or failure status
+- */
+-NTSTATUS
+-NTAPI
+-HalInitSystem(
+-    IN ULONG Phase,
+-    IN PLOADER_PARAMETER_BLOCK LoaderBlock)
+-{
+-    DPRINT1("HalInitSystem: Phase %u - ARM64 HAL init stub\n", Phase);
+-
+-    if (Phase == 0)
+-    {
+-        /* Phase 0: Early HAL initialization */
+-
+-        /* TODO: Detect platform type */
+-        /* ARM64 platforms can be:
+-         * - ACPI-based (Server Base Boot Requirements)
+-         * - Device Tree based (embedded/mobile)
+-         * - Hybrid (both ACPI and DT)
+-         */
+-
+-        /* TODO: Initialize HAL private dispatch table */
+-        HalpInitializePrivateTable();
+-
+-        /* TODO: Parse ACPI tables or Device Tree */
+-        /* ACPI tables:
+-         * - MADT: Multiple APIC Description Table (GIC info)
+-         * - GTDT: Generic Timer Description Table
+-         * - SPCR: Serial Port Console Redirection
+-         * - IORT: IO Remapping Table
+-         * - MCFG: PCIe configuration
+-         */
+-
+-        /* TODO: Initialize console for early debugging */
+-        /* UART types:
+-         * - PL011 (ARM standard UART)
+-         * - 16550 compatible
+-         * - Platform-specific UARTs
+-         */
+-    }
+-    else if (Phase == 1)
+-    {
+-        /* Phase 1: Late HAL initialization */
+-
+-        /* TODO: Initialize interrupt controller */
+-        HalpInitializeGic();
+-
+-        /* TODO: Initialize system timers */
+-        HalpInitializeTimers();
+-
+-        /* TODO: Initialize power management */
+-        HalpInitializePowerManagement();
+-
+-        /* TODO: Enumerate and initialize platform devices */
+-        HalpInitializePlatformDevices();
+-    }
+-
+-    return STATUS_SUCCESS;
+-}
++/* HalInitSystem removed - implemented in generic/halinit.c */
+ 
+ /*
+  * @brief Initialize HAL private dispatch table
+diff --git a/hal/halarm64/include/hal.h b/hal/halarm64/include/hal.h
+index b27db77f1da..e8020e15100 100644
+--- a/hal/halarm64/include/hal.h
++++ b/hal/halarm64/include/hal.h
+@@ -52,6 +52,31 @@
+ /* ARM64-specific HAL Headers */
+ #include "halarm64.h"
+ 
++/* Undef imports to use HAL-local implementations */
++#undef KeAcquireSpinLock
++#undef KeReleaseSpinLock
++#undef KeRaiseIrqlToDpcLevel
++#undef KeRaiseIrqlToSynchLevel
++
++/* HAL-local Ke* function declarations */
++VOID
++NTAPI
++KeAcquireSpinLock(IN PKSPIN_LOCK SpinLock,
++                  OUT PKIRQL OldIrql);
++
++VOID
++NTAPI
++KeReleaseSpinLock(IN PKSPIN_LOCK SpinLock,
++                  IN KIRQL NewIrql);
++
++KIRQL
++NTAPI
++KeRaiseIrqlToDpcLevel(VOID);
++
++KIRQL
++NTAPI
++KeRaiseIrqlToSynchLevel(VOID);
++
+ /* DEFINITIONS ****************************************************************/
+ 
+ /* Function qualifiers */
+diff --git a/hal/halarm64/include/haldma.h b/hal/halarm64/include/haldma.h
+index 3dbc413d62a..86c4851f08e 100644
+--- a/hal/halarm64/include/haldma.h
++++ b/hal/halarm64/include/haldma.h
+@@ -17,6 +17,20 @@
+ 
+ /* STRUCTURES *****************************************************************/
+ 
++/* DMA Mode Register Structure (for compatibility with x86 DMA) */
++typedef union _DMA_MODE
++{
++    struct
++    {
++        UCHAR Channel: 2;
++        UCHAR TransferType: 2;
++        UCHAR AutoInitialize: 1;
++        UCHAR AddressDecrement: 1;
++        UCHAR RequestMode: 2;
++    };
++    UCHAR Byte;
++} DMA_MODE, *PDMA_MODE;
++
+ /* DMA Map Register Entry */
+ typedef struct _ROS_MAP_REGISTER_ENTRY
+ {
+@@ -65,6 +79,7 @@ typedef struct _ADAPTER_OBJECT {
+     BOOLEAN IgnoreCount;
+     BOOLEAN Dma32BitAddresses;
+     BOOLEAN Dma64BitAddresses;
++    ULONG MaximumLength;
+     LIST_ENTRY AdapterList;
+ } ADAPTER_OBJECT, *PADAPTER_OBJECT;
+ 
+diff --git a/hal/halarm64/stubs.c b/hal/halarm64/stubs.c
+index d35bc346691..8712a27303e 100644
+--- a/hal/halarm64/stubs.c
++++ b/hal/halarm64/stubs.c
+@@ -73,40 +73,9 @@ HalAllProcessorsStarted(VOID)
+     return TRUE;
+ }
+ 
+-NTSTATUS
+-NTAPI
+-HalAllocateAdapterChannel(IN PADAPTER_OBJECT AdapterObject,
+-                          IN PWAIT_CONTEXT_BLOCK WaitContextBlock,
+-                          IN ULONG NumberOfMapRegisters,
+-                          IN PDRIVER_CONTROL ExecutionRoutine)
+-{
+-    UNREFERENCED_PARAMETER(AdapterObject);
+-    UNREFERENCED_PARAMETER(WaitContextBlock);
+-    UNREFERENCED_PARAMETER(NumberOfMapRegisters);
+-    UNREFERENCED_PARAMETER(ExecutionRoutine);
+-    DPRINT1("HalAllocateAdapterChannel stub invoked\n");
+-    return STATUS_NOT_IMPLEMENTED;
+-}
+-
+-PVOID
+-NTAPI
+-HalAllocateCommonBuffer(IN PADAPTER_OBJECT AdapterObject,
+-                        IN ULONG Length,
+-                        IN PPHYSICAL_ADDRESS LogicalAddress,
+-                        IN BOOLEAN CacheEnabled)
+-{
+-    UNREFERENCED_PARAMETER(AdapterObject);
+-    UNREFERENCED_PARAMETER(Length);
+-    UNREFERENCED_PARAMETER(CacheEnabled);
++/* HalAllocateAdapterChannel removed - implemented in generic/dma.c */
+ 
+-    if (LogicalAddress)
+-    {
+-        LogicalAddress->QuadPart = 0;
+-    }
+-
+-    DPRINT1("HalAllocateCommonBuffer stub invoked\n");
+-    return NULL;
+-}
++/* HalAllocateCommonBuffer removed - implemented in generic/dma.c */
+ 
+ PVOID
+ NTAPI
+@@ -196,49 +165,11 @@ HalEnableSystemInterrupt(IN ULONG Vector,
+     return TRUE;
+ }
+ 
+-BOOLEAN
+-NTAPI
+-HalFlushCommonBuffer(IN PADAPTER_OBJECT AdapterObject,
+-                     IN ULONG Length,
+-                     IN PHYSICAL_ADDRESS LogicalAddress,
+-                     IN PVOID VirtualAddress)
+-{
+-    UNREFERENCED_PARAMETER(AdapterObject);
+-    UNREFERENCED_PARAMETER(Length);
+-    UNREFERENCED_PARAMETER(LogicalAddress);
+-    UNREFERENCED_PARAMETER(VirtualAddress);
+-    return TRUE;
+-}
+-
+-VOID
+-NTAPI
+-HalFreeCommonBuffer(IN PADAPTER_OBJECT AdapterObject,
+-                    IN ULONG Length,
+-                    IN PHYSICAL_ADDRESS LogicalAddress,
+-                    IN PVOID VirtualAddress,
+-                    IN BOOLEAN CacheEnabled)
+-{
+-    UNREFERENCED_PARAMETER(AdapterObject);
+-    UNREFERENCED_PARAMETER(Length);
+-    UNREFERENCED_PARAMETER(LogicalAddress);
+-    UNREFERENCED_PARAMETER(VirtualAddress);
+-    UNREFERENCED_PARAMETER(CacheEnabled);
+-}
++/* HalFlushCommonBuffer removed - implemented in generic/dma.c */
+ 
+-PADAPTER_OBJECT
+-NTAPI
+-HalGetAdapter(IN PDEVICE_DESCRIPTION DeviceDescription,
+-              OUT PULONG NumberOfMapRegisters)
+-{
+-    UNREFERENCED_PARAMETER(DeviceDescription);
+-    if (NumberOfMapRegisters)
+-    {
+-        *NumberOfMapRegisters = 0;
+-    }
++/* HalFreeCommonBuffer removed - implemented in generic/dma.c */
+ 
+-    DPRINT1("HalGetAdapter stub invoked\n");
+-    return NULL;
+-}
++/* HalGetAdapter removed - implemented in generic/dma.c */
+ 
+ ULONG
+ NTAPI
+@@ -337,14 +268,7 @@ HalMakeBeep(IN ULONG Frequency)
+     return FALSE;
+ }
+ 
+-VOID
+-NTAPI
+-HalProcessorIdle(VOID)
+-{
+-#if defined(_M_ARM64)
+-    __asm__ volatile("wfe" ::: "memory");
+-#endif
+-}
++/* HalProcessorIdle removed - implemented in generic/halinit.c */
+ 
+ VOID
+ NTAPI
+@@ -386,13 +310,7 @@ HalQueryRealTimeClock(IN PTIME_FIELDS RtcTime)
+     return TRUE;
+ }
+ 
+-ULONG
+-NTAPI
+-HalReadDmaCounter(IN PADAPTER_OBJECT AdapterObject)
+-{
+-    UNREFERENCED_PARAMETER(AdapterObject);
+-    return 0;
+-}
++/* HalReadDmaCounter removed - implemented in generic/dma.c */
+ 
+ VOID
+ NTAPI

@@ -2,7 +2,7 @@
  * PROJECT:     ReactOS Kernel
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 Kernel Stub Functions
- * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:   Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  */
 
 /* INCLUDES ******************************************************************/
@@ -18,17 +18,6 @@ PMMPTE MmSystemPagePtes = NULL;
 PMMPDE MmSystemPageDirectory = NULL;
 
 /* FUNCTIONS *****************************************************************/
-
-/**
- * @brief Check for reschedule
- */
-VOID
-NTAPI
-KiCheckForReschedule(VOID)
-{
-    /* TODO: Implement proper scheduler check */
-    DPRINT("KiCheckForReschedule: ARM64 stub\n");
-}
 
 /**
  * @brief Dispatch interrupt handler

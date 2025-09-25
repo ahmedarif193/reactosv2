@@ -82,6 +82,10 @@ VOID Arm64InstructionBarrier(VOID);
 VOID Arm64Breakpoint(VOID);
 VOID Arm64HaltProcessor(VOID);
 VOID Arm64DebugDumpMapping(ULONGLONG VirtualAddress);
+
+/* Kernel handoff function */
+VOID Arm64JumpToKernel(ULONGLONG KernelEntry, ULONGLONG LoaderBlockVA, ULONGLONG KernelStack);
+
 #endif /* __ASM__ */
 
 /* Enhanced cache operations from U-Boot */

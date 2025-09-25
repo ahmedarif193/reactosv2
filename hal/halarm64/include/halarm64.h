@@ -2,7 +2,7 @@
  * PROJECT:     ReactOS Hardware Abstraction Layer
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 HAL Definitions and Declarations
- * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:   Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  */
 
 #ifndef _HALARM64_H_
@@ -292,6 +292,10 @@ NTSTATUS
 NTAPI
 HalInitializeProcessorPowerManagement(VOID);
 
+VOID
+NTAPI
+HalInitializePerformanceMonitoring(VOID);
+
 /* GIC Functions */
 BOOLEAN
 NTAPI
@@ -304,6 +308,10 @@ HalInitializeGicDistributor(VOID);
 BOOLEAN
 NTAPI
 HalInitializeGicCpuInterface(VOID);
+
+BOOLEAN
+NTAPI
+HalInitializeGicv3CpuInterface(VOID);
 
 VOID
 NTAPI

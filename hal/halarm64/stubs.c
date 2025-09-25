@@ -73,40 +73,9 @@ HalAllProcessorsStarted(VOID)
     return TRUE;
 }
 
-NTSTATUS
-NTAPI
-HalAllocateAdapterChannel(IN PADAPTER_OBJECT AdapterObject,
-                          IN PWAIT_CONTEXT_BLOCK WaitContextBlock,
-                          IN ULONG NumberOfMapRegisters,
-                          IN PDRIVER_CONTROL ExecutionRoutine)
-{
-    UNREFERENCED_PARAMETER(AdapterObject);
-    UNREFERENCED_PARAMETER(WaitContextBlock);
-    UNREFERENCED_PARAMETER(NumberOfMapRegisters);
-    UNREFERENCED_PARAMETER(ExecutionRoutine);
-    DPRINT1("HalAllocateAdapterChannel stub invoked\n");
-    return STATUS_NOT_IMPLEMENTED;
-}
+/* HalAllocateAdapterChannel removed - implemented in generic/dma.c */
 
-PVOID
-NTAPI
-HalAllocateCommonBuffer(IN PADAPTER_OBJECT AdapterObject,
-                        IN ULONG Length,
-                        IN PPHYSICAL_ADDRESS LogicalAddress,
-                        IN BOOLEAN CacheEnabled)
-{
-    UNREFERENCED_PARAMETER(AdapterObject);
-    UNREFERENCED_PARAMETER(Length);
-    UNREFERENCED_PARAMETER(CacheEnabled);
-
-    if (LogicalAddress)
-    {
-        LogicalAddress->QuadPart = 0;
-    }
-
-    DPRINT1("HalAllocateCommonBuffer stub invoked\n");
-    return NULL;
-}
+/* HalAllocateCommonBuffer removed - implemented in generic/dma.c */
 
 PVOID
 NTAPI
@@ -196,49 +165,11 @@ HalEnableSystemInterrupt(IN ULONG Vector,
     return TRUE;
 }
 
-BOOLEAN
-NTAPI
-HalFlushCommonBuffer(IN PADAPTER_OBJECT AdapterObject,
-                     IN ULONG Length,
-                     IN PHYSICAL_ADDRESS LogicalAddress,
-                     IN PVOID VirtualAddress)
-{
-    UNREFERENCED_PARAMETER(AdapterObject);
-    UNREFERENCED_PARAMETER(Length);
-    UNREFERENCED_PARAMETER(LogicalAddress);
-    UNREFERENCED_PARAMETER(VirtualAddress);
-    return TRUE;
-}
+/* HalFlushCommonBuffer removed - implemented in generic/dma.c */
 
-VOID
-NTAPI
-HalFreeCommonBuffer(IN PADAPTER_OBJECT AdapterObject,
-                    IN ULONG Length,
-                    IN PHYSICAL_ADDRESS LogicalAddress,
-                    IN PVOID VirtualAddress,
-                    IN BOOLEAN CacheEnabled)
-{
-    UNREFERENCED_PARAMETER(AdapterObject);
-    UNREFERENCED_PARAMETER(Length);
-    UNREFERENCED_PARAMETER(LogicalAddress);
-    UNREFERENCED_PARAMETER(VirtualAddress);
-    UNREFERENCED_PARAMETER(CacheEnabled);
-}
+/* HalFreeCommonBuffer removed - implemented in generic/dma.c */
 
-PADAPTER_OBJECT
-NTAPI
-HalGetAdapter(IN PDEVICE_DESCRIPTION DeviceDescription,
-              OUT PULONG NumberOfMapRegisters)
-{
-    UNREFERENCED_PARAMETER(DeviceDescription);
-    if (NumberOfMapRegisters)
-    {
-        *NumberOfMapRegisters = 0;
-    }
-
-    DPRINT1("HalGetAdapter stub invoked\n");
-    return NULL;
-}
+/* HalGetAdapter removed - implemented in generic/dma.c */
 
 ULONG
 NTAPI
@@ -337,14 +268,7 @@ HalMakeBeep(IN ULONG Frequency)
     return FALSE;
 }
 
-VOID
-NTAPI
-HalProcessorIdle(VOID)
-{
-#if defined(_M_ARM64)
-    __asm__ volatile("wfe" ::: "memory");
-#endif
-}
+/* HalProcessorIdle removed - implemented in generic/halinit.c */
 
 VOID
 NTAPI
@@ -386,13 +310,7 @@ HalQueryRealTimeClock(IN PTIME_FIELDS RtcTime)
     return TRUE;
 }
 
-ULONG
-NTAPI
-HalReadDmaCounter(IN PADAPTER_OBJECT AdapterObject)
-{
-    UNREFERENCED_PARAMETER(AdapterObject);
-    return 0;
-}
+/* HalReadDmaCounter removed - implemented in generic/dma.c */
 
 VOID
 NTAPI

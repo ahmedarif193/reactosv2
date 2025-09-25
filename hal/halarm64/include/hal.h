@@ -2,7 +2,7 @@
  * PROJECT:     ReactOS Hardware Abstraction Layer
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 HAL Header
- * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:   Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  */
 
 #ifndef _HAL_H_
@@ -52,7 +52,37 @@
 /* ARM64-specific HAL Headers */
 #include "halarm64.h"
 
+/* Undef imports to use HAL-local implementations */
+#undef KeAcquireSpinLock
+#undef KeReleaseSpinLock
+#undef KeRaiseIrqlToDpcLevel
+#undef KeRaiseIrqlToSynchLevel
+
+/* HAL-local Ke* function declarations */
+VOID
+NTAPI
+KeAcquireSpinLock(IN PKSPIN_LOCK SpinLock,
+                  OUT PKIRQL OldIrql);
+
+VOID
+NTAPI
+KeReleaseSpinLock(IN PKSPIN_LOCK SpinLock,
+                  IN KIRQL NewIrql);
+
+KIRQL
+NTAPI
+KeRaiseIrqlToDpcLevel(VOID);
+
+KIRQL
+NTAPI
+KeRaiseIrqlToSynchLevel(VOID);
+
 /* DEFINITIONS ****************************************************************/
+
+/* Function qualifiers */
+#ifndef STATIC
+#define STATIC static
+#endif
 
 #undef DbgPrint
 
@@ -86,6 +116,10 @@ ULONG DbgPrint(PCH Format, ...);
 #define MACHINE_TYPE_EISA       0x0001
 #define MACHINE_TYPE_MCA        0x0002
 #define MACHINE_TYPE_ACPI       0x0003
+#define MACHINE_TYPE_UNKNOWN    0xFFFF
+
+/* ARM64 GIC Interrupt Constants */
+#define GIC_SPURIOUS_INTERRUPT  1023
 
 /* Processor Architecture for ARM64 */
 #ifndef PROCESSOR_ARCHITECTURE_ARM64

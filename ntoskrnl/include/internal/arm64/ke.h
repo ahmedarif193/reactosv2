@@ -5,6 +5,10 @@
 
 #include "intrin_i.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* ARM64 Kernel Executive Definitions */
 
 /* Make KPCR visible using existing KIPCR definition */
@@ -95,6 +99,11 @@ typedef KIPCR KPCR, *PKPCR;
     KiInitializeThread(Process, Thread, SystemRoutine, StartRoutine, \
                       StartContext, ContextFrame, Teb, KernelStack)
 
+/* ARM64 Quantum constants */
+#define THREAD_QUANTUM             6        /* Default quantum */
+#define THREAD_QUANTUM_MIN         2        /* Minimum quantum */
+#define THREAD_QUANTUM_MAX         12       /* Maximum quantum */
+
 /* ARM64 specific CPU features */
 #define ARM64_FEATURE_AES           0x00000001
 #define ARM64_FEATURE_SHA           0x00000002
@@ -179,7 +188,19 @@ VOID KiSystemCallHandler64(VOID);
 VOID KiSystemCallHandler32(VOID);
 VOID KiUnexpectedInterrupt(VOID);
 
-/* ARM64 Context switching functions - declared in generic headers */
+/* ARM64 Context switching functions - ARM64 specific signatures */
+VOID
+FASTCALL
+KiSwapContextARM64(
+    IN PKTHREAD OldThread,
+    IN PKTHREAD NewThread);
+
+/* Generic KiSwapContext wrapper for ARM64 compatibility */
+BOOLEAN
+FASTCALL
+KiSwapContext(
+    IN KIRQL WaitIrql,
+    IN PKTHREAD CurrentThread);
 
 /* ARM64 specific PCR access */
 #define KeGetPcr() PCR
@@ -448,5 +469,9 @@ KeRestoreInterrupts(
         __asm__ volatile("msr daifset, #2");  /* Disable IRQ */
     }
 }
+
+#ifdef __cplusplus
+} // extern "C"
+#endif
 
 #endif /* _NTOSKRNL_INCLUDE_INTERNAL_ARM64_KE_H */

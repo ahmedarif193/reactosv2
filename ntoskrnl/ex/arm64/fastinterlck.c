@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  * PROJECT:         ReactOS Kernel
  * PURPOSE:         ARM64 Fast Interlocked Operations
  * FILE:            ntoskrnl/ex/arm64/fastinterlck.c

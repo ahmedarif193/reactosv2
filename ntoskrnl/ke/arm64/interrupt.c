@@ -1,5 +1,5 @@
 /*
- * Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  * PROJECT:         ReactOS Kernel
  * PURPOSE:         ARM64 Interrupt Management
  * FILE:            ntoskrnl/ke/arm64/interrupt.c

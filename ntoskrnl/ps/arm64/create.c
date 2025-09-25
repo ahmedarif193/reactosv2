@@ -2,7 +2,7 @@
  * PROJECT:     ReactOS Kernel
  * LICENSE:     GPL-2.0-or-later (https://spdx.org/licenses/GPL-2.0-or-later)
  * PURPOSE:     ARM64 Process Creation Support
- * COPYRIGHT:   Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:   Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  */
 
 /* INCLUDES ******************************************************************/
@@ -11,7 +11,20 @@
 #define NDEBUG
 #include <debug.h>
 
+/* ARM64-specific includes */
+#include <internal/arm64/ke.h>
+
 /* DEFINITIONS ***************************************************************/
+
+/* RTL Bitmap constants */
+#ifndef RTL_BITMAP_RUN_NOT_FOUND
+#define RTL_BITMAP_RUN_NOT_FOUND    0xFFFFFFFF
+#endif
+
+/* Memory Management constants */
+#ifndef MM_KERNEL_STACK_SIZE
+#define MM_KERNEL_STACK_SIZE        0x10000     /* 64KB kernel stack for ARM64 */
+#endif
 
 /* ARM64 ASID allocation constants */
 #define ARM64_ASID_MAX          256     /* Maximum ASID value */
@@ -25,6 +38,15 @@
 #define ARM64_PSTATE_EL0t       0x00000000  /* User mode with SP_EL0 */
 #define ARM64_PSTATE_EL1h       0x00000005  /* Kernel mode with SP_ELx */
 #define ARM64_PSTATE_DAIF_MASK  0x000003C0  /* Debug, SError, IRQ, FIQ mask */
+
+/* ARM64 Thread/FPU state constants */
+#ifndef NPX_STATE_NOT_LOADED
+#define NPX_STATE_NOT_LOADED    0xA
+#endif
+
+#ifndef THREAD_PRIORITY_NORMAL
+#define THREAD_PRIORITY_NORMAL  0
+#endif
 
 /* GLOBALS *******************************************************************/
 
@@ -196,7 +218,7 @@ PspInitializeArm64ThreadContext(
     /* Set up stack pointers */
     StackTop = (ULONG_PTR)KernelStack + MM_KERNEL_STACK_SIZE;
     Thread->Tcb.InitialStack = (PVOID)StackTop;
-    Thread->Tcb.StackLimit = KernelStack;
+    Thread->Tcb.StackLimit = (ULONG_PTR)KernelStack;
     Thread->Tcb.StackBase = (PVOID)StackTop;
     Thread->Tcb.KernelStack = (PVOID)(StackTop - sizeof(KTRAP_FRAME));
 
@@ -338,11 +360,14 @@ PspCreateArm64Peb(
 
     /* ARM64 specific fields */
     ProcessPeb->NumberOfProcessors = KeNumberProcessors;
-    ProcessPeb->ProcessorFeatures[PF_ARM_64BIT_LOADSTORE_ATOMIC] = TRUE;
-    ProcessPeb->ProcessorFeatures[PF_ARM_DIVIDE_INSTRUCTION_AVAILABLE] = TRUE;
-    ProcessPeb->ProcessorFeatures[PF_ARM_EXTERNAL_CACHE_AVAILABLE] = TRUE;
-    ProcessPeb->ProcessorFeatures[PF_ARM_FMAC_INSTRUCTIONS_AVAILABLE] = TRUE;
-    ProcessPeb->ProcessorFeatures[PF_ARM_VFP_32_REGISTERS_AVAILABLE] = TRUE;
+
+    /* ARM64 processor features are set in SharedUserData, not PEB */
+    /* These will be populated by the HAL during system initialization */
+    SharedUserData->ProcessorFeatures[PF_ARM_64BIT_LOADSTORE_ATOMIC] = TRUE;
+    SharedUserData->ProcessorFeatures[PF_ARM_DIVIDE_INSTRUCTION_AVAILABLE] = TRUE;
+    SharedUserData->ProcessorFeatures[PF_ARM_EXTERNAL_CACHE_AVAILABLE] = TRUE;
+    SharedUserData->ProcessorFeatures[PF_ARM_FMAC_INSTRUCTIONS_AVAILABLE] = TRUE;
+    SharedUserData->ProcessorFeatures[PF_ARM_VFP_32_REGISTERS_AVAILABLE] = TRUE;
 
     /* Set PEB in process */
     Process->Peb = ProcessPeb;
@@ -369,31 +394,47 @@ PspInitializeArm64ProcessSecurity(
 
     DPRINT("Initializing ARM64 process security for process %p\n", Process);
 
-    /* Initialize security fields */
-    Process->Token = NULL;
+    /* Initialize security fields using proper EX_FAST_REF initialization */
+    ObInitializeFastReference(&Process->Token, NULL);
     Process->ObjectTable = NULL;
 
     /* Create basic security context */
     if (ParentProcess)
     {
         /* Inherit from parent process */
-        if (ParentProcess->Token)
+        PTOKEN ParentToken = ObFastReferenceObject(&ParentProcess->Token);
+        if (ParentToken)
         {
-            Status = PsDuplicateImpersonationToken(ParentProcess->Token,
-                                                   SecurityDelegation,
-                                                   TokenPrimary,
-                                                   &Process->Token);
-            if (!NT_SUCCESS(Status))
+            PTOKEN NewToken = NULL;
+            /* Use SepDuplicateToken for kernel-mode token duplication */
+            Status = SepDuplicateToken(ParentToken,
+                                      NULL,
+                                      FALSE,  /* EffectiveOnly */
+                                      TokenPrimary,
+                                      SecurityDelegation,
+                                      KernelMode,
+                                      &NewToken);
+            if (NT_SUCCESS(Status))
+            {
+                ObInitializeFastReference(&Process->Token, NewToken);
+            }
+            else
             {
                 DPRINT1("Failed to duplicate parent token: 0x%08x\n", Status);
                 /* Continue with NULL token - will get default */
+                ObInitializeFastReference(&Process->Token, NULL);
             }
+            ObFastDereferenceObject(&ParentProcess->Token, ParentToken);
+        }
+        else
+        {
+            ObInitializeFastReference(&Process->Token, NULL);
         }
     }
     else
     {
         /* System process or initial process - use default security */
-        Process->Token = NULL;  /* Will get system token */
+        ObInitializeFastReference(&Process->Token, NULL);  /* Will get system token */
     }
 
     /* Create handle table for the process */

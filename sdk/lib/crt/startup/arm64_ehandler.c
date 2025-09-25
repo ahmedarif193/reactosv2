@@ -1,5 +1,5 @@
 /*
- * COPYRIGHT:       Copyright 2024 Ahmed Arif (arif.ing@outlook.com)
+ * COPYRIGHT:       Copyright 2025 Ahmed Arif (arif.ing@outlook.com)
  * PROJECT:         ReactOS CRT library
  * PURPOSE:         ARM64 exception handling stubs
  * PROGRAMMER:      Claude AI (for ARM64 port compatibility)
@@ -19,12 +19,7 @@ typedef struct _Unwind_Exception _Unwind_Exception;
 typedef int _Unwind_Action;
 typedef int _Unwind_Reason_Code;
 
-int __mingw_init_ehandler (void)
-{
-    /* For ARM64, exception handling initialization is not yet implemented */
-    /* Return success for now */
-    return 0;
-}
+/* __mingw_init_ehandler is already implemented in crt_handler.c for ARM64 */
 
 /* Basic stub implementations to prevent linker errors */
 
