@@ -264,7 +264,6 @@ KiInitializeKernel(IN PKPROCESS InitProcess,
     InitializeListHead(&KiStackInSwapListHead);
 
     /* Initialize the mutex for generic DPC calls */
-    ExInitializeFastMutex(&KiGenericCallDpcMutex);
 
     /* Initialize the syscall table */
     KeServiceDescriptorTable[0].Base = MainSSDT;
@@ -310,4 +309,3 @@ KiInitializeKernel(IN PKPROCESS InitProcess,
     if (!DpcStack) KeBugCheckEx(NO_PAGES_AVAILABLE, 1, 0, 0, 0);
     Prcb->DpcStack = DpcStack;
 }
-

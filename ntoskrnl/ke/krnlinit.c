@@ -98,7 +98,6 @@ KiInitSystem(VOID)
     InitializeListHead(&KiStackInSwapListHead);
 
     /* Initialize the mutex for generic DPC calls */
-    ExInitializeFastMutex(&KiGenericCallDpcMutex);
 
     /* Initialize the syscall table */
     KeServiceDescriptorTable[0].Base = MainSSDT;

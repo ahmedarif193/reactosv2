@@ -25,7 +25,6 @@
 #define MSR_IA32_MTRR_DEF_TYPE          0x000002FF
 #endif
 
-static ULONG_PTR NTAPI KiAmd64EnableLargePageWorker(ULONG_PTR Context);
 static ULONG_PTR NTAPI KiAmd64EnableGlobalPageWorker(ULONG_PTR Context);
 static ULONG_PTR NTAPI KiAmd64WritePatMsrWorker(ULONG_PTR Context);
 static ULONG_PTR NTAPI KiAmd64EnableMtrrWorker(ULONG_PTR Context);
@@ -42,27 +41,6 @@ KSPIN_LOCK KiFreezeExecutionLock;
 
 
 KIPCR KiInitialPcr;
-
-static ULONG_PTR
-NTAPI
-KiAmd64EnableLargePageWorker(
-    _In_ ULONG_PTR Context)
-{
-    ULONG64 Cr4;
-
-    UNREFERENCED_PARAMETER(Context);
-
-    Cr4 = __readcr4();
-    if (!(Cr4 & CR4_PSE))
-    {
-        __writecr4(Cr4 | CR4_PSE);
-
-        /* Reload CR3 to ensure the new setting is globally visible. */
-        __writecr3(__readcr3());
-    }
-
-    return 0;
-}
 
 static ULONG_PTR
 NTAPI
@@ -151,12 +129,6 @@ KiInitMachineDependent(VOID)
     BOOLEAN FrameBufferCaching = FALSE;
     ULONG ReturnLength = 0;
     NTSTATUS Status;
-
-    if (KeFeatureBits & KF_LARGE_PAGE)
-    {
-        KiAmd64BroadcastToAllProcessors(KiAmd64EnableLargePageWorker, 0);
-        DPRINT("Large page support enabled on all processors\n");
-    }
 
     if (KeFeatureBits & KF_GLOBAL_PAGE)
     {

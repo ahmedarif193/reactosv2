@@ -135,7 +135,6 @@ extern LIST_ENTRY KeBugcheckCallbackListHead, KeBugcheckReasonCallbackListHead;
 extern KSPIN_LOCK BugCheckCallbackLock;
 extern KDPC KiTimerExpireDpc;
 extern KTIMER_TABLE_ENTRY KiTimerTableListHead[TIMER_TABLE_SIZE];
-extern FAST_MUTEX KiGenericCallDpcMutex;
 extern LIST_ENTRY KiProfileListHead, KiProfileSourceListHead;
 extern KSPIN_LOCK KiProfileLock;
 extern LIST_ENTRY KiProcessListHead;
