@@ -1030,10 +1030,16 @@ NtPowerInformation(IN POWER_INFORMATION_LEVEL PowerInformationLevel,
             break;
         }
 
+        case 0x42:
+        {
+            Status = STATUS_NOT_IMPLEMENTED;
+            break;
+        }
+
         default:
             Status = STATUS_NOT_IMPLEMENTED;
-            DPRINT1("PowerInformationLevel 0x%x is UNIMPLEMENTED! Have a nice day.\n",
-                    PowerInformationLevel);
+            DPRINT("PowerInformationLevel 0x%x is currently unimplemented\n",
+                   PowerInformationLevel);
             break;
     }
 

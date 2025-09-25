@@ -21,6 +21,131 @@ static void DebugPrint(const char* msg)
 static ULONG NextProcessId = 4;  /* Start at 4 (0 is System) */
 static ULONG NextThreadId = 8;   /* Start at 8 */
 
+#define PSP_DEFAULT_STACK_RESERVE   (1 * 1024 * 1024)  /* 1MB */
+#define PSP_DEFAULT_STACK_COMMIT    (256 * 1024)       /* 256KB */
+
+#define PSP_ALIGN_DOWN(Value, Alignment) ((ULONG_PTR)(Value) & ~((ULONG_PTR)(Alignment) - 1))
+
+NTSTATUS
+PspSetupInitialStack(
+    HANDLE ProcessId,
+    SIZE_T StackReserve,
+    SIZE_T StackCommit,
+    PINITIAL_TEB InitialTeb,
+    PCONTEXT Context)
+{
+    NTSTATUS Status;
+    PEPROCESS Process;
+    KAPC_STATE ApcState;
+    SIZE_T ReserveSize;
+    SIZE_T CommitSize;
+    PVOID ReservedBase = NULL;
+    BOOLEAN Attached = FALSE;
+    BOOLEAN RegionAllocated = FALSE;
+
+    if (!InitialTeb || !Context)
+        return STATUS_INVALID_PARAMETER;
+
+    Status = PsLookupProcessByProcessId(ProcessId, &Process);
+    if (!NT_SUCCESS(Status))
+        return Status;
+
+    ReserveSize = StackReserve ? ROUND_TO_PAGES(StackReserve) : ROUND_TO_PAGES(PSP_DEFAULT_STACK_RESERVE);
+    CommitSize = StackCommit ? ROUND_TO_PAGES(StackCommit) : ROUND_TO_PAGES(PSP_DEFAULT_STACK_COMMIT);
+
+    if (CommitSize < (2 * PAGE_SIZE))
+        CommitSize = 2 * PAGE_SIZE;
+
+    if (ReserveSize < CommitSize + PAGE_SIZE)
+        ReserveSize = CommitSize + PAGE_SIZE;
+
+    KeStackAttachProcess(&Process->Pcb, &ApcState);
+    Attached = TRUE;
+
+    SIZE_T RegionSize = ReserveSize;
+    Status = ZwAllocateVirtualMemory(NtCurrentProcess(),
+                                     &ReservedBase,
+                                     0,
+                                     &RegionSize,
+                                     MEM_RESERVE,
+                                     PAGE_READWRITE);
+    if (!NT_SUCCESS(Status))
+        goto Cleanup;
+
+    RegionAllocated = TRUE;
+
+    PVOID CommitBase = (PCHAR)ReservedBase + (ReserveSize - CommitSize);
+    SIZE_T CommitRegion = CommitSize;
+    Status = ZwAllocateVirtualMemory(NtCurrentProcess(),
+                                     &CommitBase,
+                                     0,
+                                     &CommitRegion,
+                                     MEM_COMMIT,
+                                     PAGE_READWRITE);
+    if (!NT_SUCCESS(Status))
+        goto Cleanup;
+
+    PVOID GuardBase = CommitBase;
+    SIZE_T GuardSize = PAGE_SIZE;
+    ULONG OldProtect = 0;
+    Status = ZwProtectVirtualMemory(NtCurrentProcess(),
+                                    &GuardBase,
+                                    &GuardSize,
+                                    PAGE_READWRITE | PAGE_GUARD,
+                                    &OldProtect);
+    if (!NT_SUCCESS(Status))
+        goto Cleanup;
+
+    KeUnstackDetachProcess(&ApcState);
+    Attached = FALSE;
+
+    ObDereferenceObject(Process);
+
+    InitialTeb->StackBase = (PCHAR)ReservedBase + ReserveSize;
+    InitialTeb->StackLimit = GuardBase;
+    InitialTeb->AllocatedStackBase = ReservedBase;
+
+    if (!(Context->ContextFlags & CONTEXT_CONTROL))
+        Context->ContextFlags |= CONTEXT_CONTROL;
+    if (!(Context->ContextFlags & CONTEXT_INTEGER))
+        Context->ContextFlags |= CONTEXT_INTEGER;
+    if (!(Context->ContextFlags & CONTEXT_SEGMENTS))
+        Context->ContextFlags |= CONTEXT_SEGMENTS;
+
+    ULONG_PTR StackTop = PSP_ALIGN_DOWN((ULONG_PTR)InitialTeb->StackBase, 16);
+    if (StackTop <= (ULONG_PTR)InitialTeb->StackLimit + PAGE_SIZE)
+    {
+        StackTop = PSP_ALIGN_DOWN((ULONG_PTR)InitialTeb->StackLimit + PAGE_SIZE + 0x100, 16);
+    }
+    StackTop -= 0x20;
+    Context->Rsp = StackTop;
+    Context->Rbp = StackTop;
+
+    if (Context->SegCs == 0) Context->SegCs = 0x33;
+    if (Context->SegDs == 0) Context->SegDs = 0x2B;
+    if (Context->SegEs == 0) Context->SegEs = 0x2B;
+    if (Context->SegFs == 0) Context->SegFs = 0x53;
+    if (Context->SegGs == 0) Context->SegGs = 0x2B;
+    if (Context->SegSs == 0) Context->SegSs = 0x2B;
+    if (Context->EFlags == 0) Context->EFlags = 0x200;
+
+    return STATUS_SUCCESS;
+
+Cleanup:
+    if (RegionAllocated)
+    {
+        SIZE_T FreeSize = 0;
+        ZwFreeVirtualMemory(NtCurrentProcess(), &ReservedBase, &FreeSize, MEM_RELEASE);
+        RegionAllocated = FALSE;
+    }
+
+    if (Attached)
+        KeUnstackDetachProcess(&ApcState);
+
+    ObDereferenceObject(Process);
+    return Status;
+}
+
 /* Global process list - use existing from process.c */
 extern LIST_ENTRY PsActiveProcessHead;
 static BOOLEAN PsProcessListInitialized = FALSE;
@@ -246,6 +371,7 @@ NTSTATUS PspCreatePeb(
 NTSTATUS PspCreateTeb(
     IN PEPROCESS Process,
     IN PETHREAD Thread,
+    IN PINITIAL_TEB InitialTeb,
     OUT PTEB *TebBase)
 {
     DebugPrint("*** MM: Creating TEB ***\n");
@@ -277,9 +403,20 @@ NTSTATUS PspCreateTeb(
     Teb->CurrentLocale = 0x0409;  /* en-US */
     
     /* Set stack information */
-    Teb->NtTib.StackBase = (PVOID)0x00130000;
-    Teb->NtTib.StackLimit = (PVOID)0x00120000;
-    Teb->DeallocationStack = (PVOID)0x00120000;
+    if (InitialTeb && InitialTeb->StackBase && InitialTeb->StackLimit)
+    {
+        Teb->NtTib.StackBase = InitialTeb->StackBase;
+        Teb->NtTib.StackLimit = InitialTeb->StackLimit;
+        Teb->DeallocationStack = InitialTeb->AllocatedStackBase ?
+                                 InitialTeb->AllocatedStackBase :
+                                 InitialTeb->StackLimit;
+    }
+    else
+    {
+        Teb->NtTib.StackBase = (PVOID)0x00130000;
+        Teb->NtTib.StackLimit = (PVOID)0x00120000;
+        Teb->DeallocationStack = (PVOID)0x00120000;
+    }
     
     /* In real implementation, would map TEB into process address space */
     Thread->Tcb.Teb = Teb;
@@ -291,57 +428,65 @@ NTSTATUS PspCreateTeb(
 }
 
 /* Initialize thread context for AMD64 */
-VOID PspSetupThreadContext(
-    IN PETHREAD Thread,
+static VOID
+PspSetupThreadContext(
+    IN OUT PCONTEXT Context,
+    IN PINITIAL_TEB InitialTeb,
     IN PVOID StartAddress,
     IN PVOID StartParameter)
 {
-    DebugPrint("*** PS: Setting up thread context ***\n");
-    
-    /* Use static allocation for context */
-    static CONTEXT StaticContexts[20];
-    static ULONG ContextIndex = 0;
-    
-    if (ContextIndex >= 20)
-    {
-        DebugPrint("*** PS: Out of static context slots ***\n");
+    if (!Context)
         return;
-    }
-    
-    PCONTEXT Context = &StaticContexts[ContextIndex++];
-    
-    DebugPrint("*** PS: Using static context allocation ***\n");
-    
-    RtlZeroMemory(Context, sizeof(CONTEXT));
-    
-    /* Set up AMD64 context */
-    Context->ContextFlags = CONTEXT_FULL;
-    
-    /* Instruction pointer to entry point */
-    Context->Rip = (ULONG64)StartAddress;
-    
-    /* Stack pointer */
-    Context->Rsp = 0x00130000 - 8;  /* Stack grows down, leave space for return address */
-    Context->Rbp = Context->Rsp;
-    
-    /* Parameter in RCX (Windows x64 ABI) */
+
+    if (!(Context->ContextFlags & CONTEXT_CONTROL))
+        Context->ContextFlags |= CONTEXT_CONTROL;
+
+    if (StartAddress)
+        Context->Rip = (ULONG64)StartAddress;
+
+    if (!(Context->ContextFlags & CONTEXT_INTEGER))
+        Context->ContextFlags |= CONTEXT_INTEGER;
+
     Context->Rcx = (ULONG64)StartParameter;
-    
-    /* Segment registers for user mode */
-    Context->SegCs = 0x33;  /* User mode code segment */
-    Context->SegDs = 0x2B;  /* User mode data segment */
-    Context->SegEs = 0x2B;
-    Context->SegFs = 0x53;  /* TEB segment */
-    Context->SegGs = 0x2B;
-    Context->SegSs = 0x2B;
-    
-    /* Enable interrupts */
-    Context->EFlags = 0x200;
-    
-    /* Store context in thread */
-    /* In real implementation, would set up kernel stack frame */
-    
-    DebugPrint("*** PS: Thread context configured ***\n");
+
+    if (InitialTeb)
+    {
+        ULONG_PTR StackUpper = (ULONG_PTR)InitialTeb->StackBase;
+
+        if (Context->Rsp == 0)
+        {
+            StackUpper = PSP_ALIGN_DOWN(StackUpper - 0x20, 16);
+            if (StackUpper <= (ULONG_PTR)InitialTeb->StackLimit + PAGE_SIZE)
+            {
+                StackUpper = PSP_ALIGN_DOWN((ULONG_PTR)InitialTeb->StackLimit + PAGE_SIZE + 0x100, 16);
+            }
+            Context->Rsp = StackUpper;
+        }
+        else
+        {
+            Context->Rsp = PSP_ALIGN_DOWN(Context->Rsp, 16);
+            if (Context->Rsp <= (ULONG_PTR)InitialTeb->StackLimit + PAGE_SIZE)
+            {
+                Context->Rsp = PSP_ALIGN_DOWN((ULONG_PTR)InitialTeb->StackBase - 0x20, 16);
+            }
+        }
+
+        if (Context->Rbp == 0)
+            Context->Rbp = Context->Rsp;
+    }
+
+    if (!(Context->ContextFlags & CONTEXT_SEGMENTS))
+        Context->ContextFlags |= CONTEXT_SEGMENTS;
+
+    if (Context->SegCs == 0) Context->SegCs = 0x33;
+    if (Context->SegDs == 0) Context->SegDs = 0x2B;
+    if (Context->SegEs == 0) Context->SegEs = 0x2B;
+    if (Context->SegFs == 0) Context->SegFs = 0x53;
+    if (Context->SegGs == 0) Context->SegGs = 0x2B;
+    if (Context->SegSs == 0) Context->SegSs = 0x2B;
+
+    if (Context->EFlags == 0)
+        Context->EFlags = 0x200;
 }
 
 /* Main process creation function - renamed to avoid conflict */
@@ -445,7 +590,7 @@ NTSTATUS PspCreateThreadReal(
     }
     
     /* Create TEB */
-    Status = PspCreateTeb(Process, Thread, &Teb);
+    Status = PspCreateTeb(Process, Thread, InitialTeb, &Teb);
     if (!NT_SUCCESS(Status))
     {
         ExFreePoolWithTag(Thread, 'drhT');
@@ -455,9 +600,13 @@ NTSTATUS PspCreateThreadReal(
     /* Set up context if provided */
     if (ThreadContext)
     {
-        PspSetupThreadContext(Thread, 
-                            (PVOID)ThreadContext->Rip,
-                            (PVOID)ThreadContext->Rcx);
+        Thread->StartAddress = (PVOID)ThreadContext->Rip;
+        Thread->Win32StartAddress = (PVOID)ThreadContext->Rip; /* treat entry point as Win32 start */
+
+        PspSetupThreadContext(ThreadContext,
+                              InitialTeb,
+                              (PVOID)ThreadContext->Rip,
+                              (PVOID)ThreadContext->Rcx);
     }
     
     /* Return client ID */
@@ -538,18 +687,39 @@ NTSTATUS PspStartInitialSystemProcess(void)
     RtlZeroMemory(&Context, sizeof(Context));
     Context.ContextFlags = CONTEXT_FULL;
     Context.Rip = (ULONG64)EntryPoint;  /* Use actual entry point from PE */
-    Context.Rsp = 0x00130000;
-    Context.Rbp = 0x00130000;
-    Context.SegCs = 0x33;  /* User mode CS for AMD64 */
-    Context.SegDs = 0x2B;  /* User mode DS */
-    Context.SegSs = 0x2B;
-    Context.EFlags = 0x200;  /* Interrupts enabled */
-    
-    /* Set up initial TEB */
+
     RtlZeroMemory(&InitialTeb, sizeof(InitialTeb));
-    InitialTeb.StackBase = (PVOID)0x00130000;
-    InitialTeb.StackLimit = (PVOID)0x00120000;
-    
+
+    PIMAGE_DOS_HEADER DosHeader = (PIMAGE_DOS_HEADER)ImageBase;
+    PIMAGE_NT_HEADERS64 NtHeaders = (PIMAGE_NT_HEADERS64)((PUCHAR)ImageBase + DosHeader->e_lfanew);
+    SIZE_T StackReserve = NtHeaders->OptionalHeader.SizeOfStackReserve;
+    SIZE_T StackCommit = NtHeaders->OptionalHeader.SizeOfStackCommit;
+
+    Status = PspSetupInitialStack(ProcessHandle,
+                                  StackReserve,
+                                  StackCommit,
+                                  &InitialTeb,
+                                  &Context);
+    if (!NT_SUCCESS(Status))
+    {
+        DebugPrint("*** PS: Falling back to static stack setup ***\n");
+        RtlZeroMemory(&InitialTeb, sizeof(InitialTeb));
+        InitialTeb.StackBase = (PVOID)0x00130000;
+        InitialTeb.StackLimit = (PVOID)0x00120000;
+        InitialTeb.AllocatedStackBase = (PVOID)0x00120000;
+
+        Context.Rsp = PSP_ALIGN_DOWN((ULONG_PTR)InitialTeb.StackBase - 0x20, 16);
+        Context.Rbp = Context.Rsp;
+        Context.SegCs = 0x33;  /* User mode CS for AMD64 */
+        Context.SegDs = 0x2B;  /* User mode DS */
+        Context.SegEs = 0x2B;
+        Context.SegFs = 0x53;
+        Context.SegGs = 0x2B;
+        Context.SegSs = 0x2B;
+        Context.EFlags |= 0x200;  /* Interrupts enabled */
+        Status = STATUS_SUCCESS;
+    }
+
     /* Create initial thread */
     Status = PspCreateThreadReal(
         &ThreadHandle,

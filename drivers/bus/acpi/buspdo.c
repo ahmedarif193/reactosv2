@@ -19,6 +19,10 @@
 #pragma alloc_text (PAGE, Bus_GetDeviceCapabilities)
 #endif
 
+static
+VOID
+BuspTranslateInterruptResources(_Inout_ PCM_RESOURCE_LIST ResourceList);
+
 NTSTATUS
 Bus_PDO_PnP (
      PDEVICE_OBJECT       DeviceObject,
@@ -843,7 +847,7 @@ Bus_PDO_QueryResources(
 #endif
             {
                 BusNumber = 0;
-                DPRINT1("Failed to find a bus number\n");
+                DPRINT1("Failed to find a bus number, defaulting to 0\n");
             }
         }
         else
@@ -1302,6 +1306,8 @@ Bus_PDO_QueryResources(
         }
         resource = ACPI_NEXT_RESOURCE(resource);
     }
+
+    BuspTranslateInterruptResources(ResourceList);
 
     ExFreePoolWithTag(Buffer.Pointer, 'BpcA');
     Irp->IoStatus.Information = (ULONG_PTR)ResourceList;
@@ -2075,3 +2081,58 @@ GetDeviceCapabilitiesExit:
 
 }
 #endif /* UNIT_TEST */
+static
+VOID
+BuspTranslateInterruptResources(
+    _Inout_ PCM_RESOURCE_LIST ResourceList)
+{
+    PCM_PARTIAL_RESOURCE_DESCRIPTOR Descriptor;
+    INTERFACE_TYPE InterfaceType;
+    ULONG Count;
+    ULONG BusNumber;
+    ULONG Index;
+
+    if (ResourceList == NULL || ResourceList->Count == 0)
+        return;
+
+    InterfaceType = ResourceList->List[0].InterfaceType;
+    BusNumber = ResourceList->List[0].BusNumber;
+    Count = ResourceList->List[0].PartialResourceList.Count;
+    Descriptor = ResourceList->List[0].PartialResourceList.PartialDescriptors;
+
+    for (Index = 0; Index < Count; Index++, Descriptor++)
+    {
+        KAFFINITY Affinity;
+        KIRQL Dirql;
+        ULONG Vector;
+
+        if (Descriptor->Type != CmResourceTypeInterrupt)
+            continue;
+
+        Affinity = 0;
+        Dirql = 0;
+        Vector = HalGetInterruptVector(InterfaceType,
+                                       BusNumber,
+                                       Descriptor->u.Interrupt.Level,
+                                       Descriptor->u.Interrupt.Vector,
+                                       &Dirql,
+                                       &Affinity);
+
+        if (Vector == 0)
+            continue;
+
+        Descriptor->u.Interrupt.Vector = Vector;
+        Descriptor->u.Interrupt.Level = Dirql;
+
+        if (Affinity != 0 && Affinity != (KAFFINITY)(-1))
+        {
+            Descriptor->u.Interrupt.Affinity = Affinity;
+        }
+
+        if ((Descriptor->Flags & CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE) &&
+            Descriptor->ShareDisposition != CmResourceShareShared)
+        {
+            Descriptor->ShareDisposition = CmResourceShareShared;
+        }
+    }
+}
