@@ -1114,7 +1114,7 @@ DllMain(
     {
         hDllInstance = hinstDLL;
 
-        RtlAllocateAndInitializeSid(&SystemAuthority,
+        NTSTATUS status = RtlAllocateAndInitializeSid(&SystemAuthority,
                                     2,
                                     SECURITY_BUILTIN_DOMAIN_RID,
                                     DOMAIN_ALIAS_RID_ADMINS,
@@ -1125,6 +1125,7 @@ DllMain(
                                     SECURITY_NULL_RID,
                                     SECURITY_NULL_RID,
                                     &AdminSid);
+        UNREFERENCED_PARAMETER(status);
 
     }
     else if (dwReason == DLL_PROCESS_DETACH)

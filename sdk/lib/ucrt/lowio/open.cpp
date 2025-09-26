@@ -307,7 +307,7 @@ static DWORD decode_sharing_flags(int const shflag, int const access) throw()
         return FILE_SHARE_READ | FILE_SHARE_WRITE;
 
     case _SH_SECURE:
-        if (access == GENERIC_READ)
+        if (static_cast<DWORD>(access) == GENERIC_READ)
             return FILE_SHARE_READ;
         else
             return 0;
@@ -628,6 +628,13 @@ static errno_t configure_text_mode(
         {
             bom        = UTF8_BOM;
             bom_length = UTF8_BOMLEN;
+            break;
+        }
+        case __crt_lowio_text_mode::ansi:
+        {
+            // ANSI mode doesn't require a BOM
+            bom        = 0;
+            bom_length = 0;
             break;
         }
         }

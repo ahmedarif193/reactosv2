@@ -389,11 +389,14 @@ UpdateServiceStatus(ENUM_SERVICE_STATUS_PROCESS* pService)
         {
             DWORD size;
 
-            QueryServiceStatusEx(hService,
-                                 SC_STATUS_PROCESS_INFO,
-                                 (LPBYTE)&pService->ServiceStatusProcess,
-                                 sizeof(SERVICE_STATUS_PROCESS),
-                                 &size);
+            if (!QueryServiceStatusEx(hService,
+                                      SC_STATUS_PROCESS_INFO,
+                                      (LPBYTE)&pService->ServiceStatusProcess,
+                                      sizeof(SERVICE_STATUS_PROCESS),
+                                      &size))
+            {
+                /* QueryServiceStatusEx failed, but we still return TRUE to indicate we tried */
+            }
 
             CloseServiceHandle(hService);
             bRet = TRUE;

@@ -5116,7 +5116,7 @@ MmFlushSegment(
     _In_ ULONG Length,
     _Out_opt_ PIO_STATUS_BLOCK Iosb)
 {
-    LARGE_INTEGER FlushStart, FlushEnd;
+    LARGE_INTEGER FlushStart, FlushEnd = {{0}};
     NTSTATUS Status;
 
     if (Offset)

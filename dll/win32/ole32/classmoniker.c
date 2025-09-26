@@ -535,7 +535,8 @@ static HRESULT WINAPI ClassMoniker_GetDisplayName(IMoniker* iface,
 
     *ppszDisplayName = CoTaskMemAlloc(sizeof(wszClsidPrefix) + (CHARS_IN_GUID-2) * sizeof(WCHAR));
 
-    StringFromGUID2(&This->clsid, *ppszDisplayName+ARRAY_SIZE(wszClsidPrefix)-2, CHARS_IN_GUID);
+    int result = StringFromGUID2(&This->clsid, *ppszDisplayName+ARRAY_SIZE(wszClsidPrefix)-2, CHARS_IN_GUID);
+    UNREFERENCED_PARAMETER(result);
 
     /* note: this overwrites the opening curly bracket of the CLSID string generated above */
     memcpy(*ppszDisplayName, wszClsidPrefix, sizeof(wszClsidPrefix)-sizeof(WCHAR));

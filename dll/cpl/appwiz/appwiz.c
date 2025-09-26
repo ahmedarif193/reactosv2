@@ -82,7 +82,8 @@ DllMain(HINSTANCE hinstDLL, DWORD dwReason, LPVOID lpvReserved)
     {
         case DLL_PROCESS_ATTACH:
         case DLL_THREAD_ATTACH:
-            CoInitialize(NULL);
+            HRESULT hr = CoInitialize(NULL);
+            UNREFERENCED_PARAMETER(hr);
             hApplet = hinstDLL;
             break;
     }

@@ -2006,9 +2006,10 @@ Return Value:
     //
     // Purge non power managed queues now
     //
-    m_Device->m_PkgIo->StopProcessingForPower(
+    NTSTATUS status = m_Device->m_PkgIo->StopProcessingForPower(
         FxIoStopProcessingForPowerPurgeNonManaged
         );
+    UNREFERENCED_PARAMETER(status);
 
     if (m_SelfManagedIoMachine != NULL) {
         m_SelfManagedIoMachine->Cleanup();
@@ -2246,9 +2247,10 @@ Return Value:
 
 
     // Flush/purge top-edge queues
-    m_Device->m_PkgIo->StopProcessingForPower(
+    NTSTATUS stopStatus = m_Device->m_PkgIo->StopProcessingForPower(
         FxIoStopProcessingForPowerPurgeManaged
         );
+    UNREFERENCED_PARAMETER(stopStatus);
 
     //
     // Invoke EvtDeviceSelfManagedIoFlush
@@ -2866,7 +2868,8 @@ Return Value:
     //
     // Invoke EvtDeviceReleaseHardware
     //
-    (void) This->PnpReleaseHardware();
+    NTSTATUS releaseStatus = This->PnpReleaseHardware();
+    UNREFERENCED_PARAMETER(releaseStatus);
 
     return WdfDevStatePnpFailed;
 }

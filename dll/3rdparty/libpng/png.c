@@ -752,7 +752,7 @@ png_convert_to_rfc1123_buffer(char out[29], png_const_timep ptime)
 
    {
       size_t pos = 0;
-      char number_buf[5]; /* enough for a four-digit year */
+      char number_buf[5] = {0}; /* enough for a four-digit year */
 
 #     define APPEND_STRING(string) pos = png_safecat(out, 29, pos, (string))
 #     define APPEND_NUMBER(format, value)\
@@ -2939,7 +2939,8 @@ png_ascii_from_fp(png_const_structrp png_ptr, png_charp ascii, size_t size,
           * C multiply would break the following for negative
           * exponents.
           */
-         (void)frexp(fp, &exp_b10); /* exponent to base 2 */
+         double mantissa = frexp(fp, &exp_b10); /* exponent to base 2 */
+         (void)mantissa;
 
          exp_b10 = (exp_b10 * 77) >> 8; /* <= exponent to base 10 */
 

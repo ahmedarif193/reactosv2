@@ -3187,7 +3187,7 @@ RxCommonRead(
     PFCB Fcb;
     PIRP Irp;
     PFOBX Fobx;
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;
     PNET_ROOT NetRoot;
     PVOID SystemBuffer;
     PFILE_OBJECT FileObject;
@@ -3933,7 +3933,7 @@ RxCommonWrite(
     PIRP Irp;
     PFCB Fcb;
     PFOBX Fobx;
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;
     PNET_ROOT NetRoot;
     PSRV_OPEN SrvOpen;
     PFILE_OBJECT FileObject;
@@ -3943,7 +3943,7 @@ RxCommonWrite(
     PLOWIO_CONTEXT LowIoContext;
     PRDBSS_DEVICE_OBJECT RxDeviceObject;
     ULONG WriteLength, CapturedRxContextSerialNumber = RxContext->SerialNumber;
-    LONGLONG FileSize, ValidDataLength, InitialFileSize, InitialValidDataLength;
+    LONGLONG FileSize, ValidDataLength, InitialFileSize, InitialValidDataLength = 0;
     BOOLEAN CanWait, PagingIo, NoCache, Sync, NormalFile, WriteToEof, IsPipe, NoPreposting, InFsp, RecursiveWriteThrough, CalledByLazyWriter, SwitchBackToAsync, ExtendingFile, ExtendingValidData, UnwindOutstandingAsync, ResourceOwnerSet, PostIrp, ContextReferenced;
 
     PAGED_CODE();

@@ -65,7 +65,7 @@ static DWORD
 _StartDocPrinterSpooled(PSPOOLER_HANDLE pHandle, PDOC_INFO_1W pDocInfo1, PADDJOB_INFO_1W pAddJobInfo1)
 {
     DWORD cbNeeded;
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     PJOB_INFO_1W pJobInfo1 = NULL;
 
     // Create the spool file.
@@ -131,7 +131,7 @@ Cleanup:
 static DWORD
 _StartDocPrinterWithRPC(PSPOOLER_HANDLE pHandle, PDOC_INFO_1W pDocInfo1)
 {
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     WINSPOOL_DOC_INFO_CONTAINER DocInfoContainer;
 
     DocInfoContainer.Level = 1;
@@ -154,7 +154,7 @@ _StartDocPrinterWithRPC(PSPOOLER_HANDLE pHandle, PDOC_INFO_1W pDocInfo1)
 BOOL WINAPI
 AbortPrinter(HANDLE hPrinter)
 {
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     PSPOOLER_HANDLE pHandle = (PSPOOLER_HANDLE)hPrinter;
 
     TRACE("AbortPrinter(%p)\n", hPrinter);
@@ -312,7 +312,7 @@ Cleanup:
 HANDLE WINAPI
 AddPrinterW(PWSTR pName, DWORD Level, PBYTE pPrinter)
 {
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     WINSPOOL_PRINTER_CONTAINER PrinterContainer;
     WINSPOOL_DEVMODE_CONTAINER DevModeContainer;
     WINSPOOL_SECURITY_CONTAINER SecurityContainer;
@@ -410,7 +410,7 @@ Cleanup:
 BOOL WINAPI
 ClosePrinter(HANDLE hPrinter)
 {
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     PSPOOLER_HANDLE pHandle = (PSPOOLER_HANDLE)hPrinter;
 
     TRACE("ClosePrinter(%p)\n", hPrinter);
@@ -451,7 +451,7 @@ Cleanup:
 BOOL WINAPI
 DeletePrinter(HANDLE hPrinter)
 {
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     PSPOOLER_HANDLE pHandle = (PSPOOLER_HANDLE)hPrinter;
 
     TRACE("DeletePrinter(%p)\n", hPrinter);
@@ -1319,7 +1319,7 @@ PrinterProperties( HWND hWnd, HANDLE hPrinter )
 BOOL WINAPI
 EndDocPrinter(HANDLE hPrinter)
 {
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     PSPOOLER_HANDLE pHandle = (PSPOOLER_HANDLE)hPrinter;
 
     TRACE("EndDocPrinter(%p)\n", hPrinter);
@@ -1374,7 +1374,7 @@ Cleanup:
 BOOL WINAPI
 EndPagePrinter(HANDLE hPrinter)
 {
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     PSPOOLER_HANDLE pHandle = (PSPOOLER_HANDLE)hPrinter;
 
     TRACE("EndPagePrinter(%p)\n", hPrinter);
@@ -1414,7 +1414,7 @@ Cleanup:
 BOOL WINAPI
 EnumPrintersA(DWORD Flags, PSTR Name, DWORD Level, PBYTE pPrinterEnum, DWORD cbBuf, PDWORD pcbNeeded, PDWORD pcReturned)
 {
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     DWORD cch;
     PWSTR pwszName = NULL;
     PSTR pszPrinterName = NULL;
@@ -1875,7 +1875,7 @@ Cleanup:
 BOOL WINAPI
 EnumPrintersW(DWORD Flags, PWSTR Name, DWORD Level, PBYTE pPrinterEnum, DWORD cbBuf, PDWORD pcbNeeded, PDWORD pcReturned)
 {
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
 
     TRACE("EnumPrintersW(%lu, %S, %lu, %p, %lu, %p, %p)\n", Flags, Name, Level, pPrinterEnum, cbBuf, pcbNeeded, pcReturned);
 
@@ -1924,7 +1924,7 @@ FlushPrinter(HANDLE hPrinter, PVOID pBuf, DWORD cbBuf, PDWORD pcWritten, DWORD c
 BOOL WINAPI
 GetDefaultPrinterA(LPSTR pszBuffer, LPDWORD pcchBuffer)
 {
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     PWSTR pwszBuffer = NULL;
 
     TRACE("GetDefaultPrinterA(%p, %p)\n", pszBuffer, pcchBuffer);
@@ -1972,7 +1972,7 @@ GetDefaultPrinterW(LPWSTR pszBuffer, LPDWORD pcchBuffer)
 {
     DWORD cbNeeded;
     DWORD cchInputBuffer;
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     HKEY hWindowsKey = NULL;
     PWSTR pwszDevice = NULL;
     PWSTR pwszComma;
@@ -2061,7 +2061,7 @@ Cleanup:
 BOOL WINAPI
 GetPrinterA(HANDLE hPrinter, DWORD Level, LPBYTE pPrinter, DWORD cbBuf, LPDWORD pcbNeeded)
 {
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     PPRINTER_INFO_1A ppi1a = (PPRINTER_INFO_1A)pPrinter;
     PPRINTER_INFO_1W ppi1w = (PPRINTER_INFO_1W)pPrinter;
     PPRINTER_INFO_2A ppi2a = (PPRINTER_INFO_2A)pPrinter;
@@ -2532,7 +2532,7 @@ Cleanup:
 BOOL WINAPI
 GetPrinterW(HANDLE hPrinter, DWORD Level, LPBYTE pPrinter, DWORD cbBuf, LPDWORD pcbNeeded)
 {
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     PSPOOLER_HANDLE pHandle = (PSPOOLER_HANDLE)hPrinter;
 
     TRACE("GetPrinterW(%p, %lu, %p, %lu, %p)\n", hPrinter, Level, pPrinter, cbBuf, pcbNeeded);
@@ -2652,7 +2652,7 @@ Cleanup:
 BOOL WINAPI
 OpenPrinterW(LPWSTR pPrinterName, LPHANDLE phPrinter, LPPRINTER_DEFAULTSW pDefault)
 {
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     HANDLE hPrinter;
     PSPOOLER_HANDLE pHandle;
     PWSTR pDatatype = NULL;
@@ -2892,7 +2892,7 @@ QueryRemoteFonts( HANDLE hPrinter, PUNIVERSAL_FONT_ID pufi, ULONG NumberOfUFIs )
 BOOL WINAPI
 ReadPrinter(HANDLE hPrinter, PVOID pBuf, DWORD cbBuf, PDWORD pNoBytesRead)
 {
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     PSPOOLER_HANDLE pHandle = (PSPOOLER_HANDLE)hPrinter;
 
     TRACE("ReadPrinter(%p, %p, %lu, %p)\n", hPrinter, pBuf, cbBuf, pNoBytesRead);
@@ -2972,7 +2972,7 @@ ResetPrinterW(HANDLE hPrinter, PPRINTER_DEFAULTSW pDefault)
 BOOL WINAPI
 SeekPrinter( HANDLE hPrinter, LARGE_INTEGER liDistanceToMove, PLARGE_INTEGER pliNewPointer, DWORD dwMoveMethod, BOOL bWrite )
 {
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     PSPOOLER_HANDLE pHandle = (PSPOOLER_HANDLE)hPrinter;
 
     FIXME("SeekPrinter(%p, %I64u, %p, %lu, %d)\n", hPrinter, liDistanceToMove.QuadPart, pliNewPointer, dwMoveMethod, bWrite);
@@ -3043,7 +3043,7 @@ SetDefaultPrinterW(LPCWSTR pszPrinter)
     DWORD cbDeviceValueData;
     DWORD cbPrinterValueData = 0;
     DWORD cchPrinter;
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     HKEY hDevicesKey = NULL;
     HKEY hWindowsKey = NULL;
     PWSTR pwszDeviceValueData = NULL;
@@ -3324,7 +3324,7 @@ Cleanup:
 BOOL WINAPI
 SetPrinterW(HANDLE hPrinter, DWORD Level, PBYTE pPrinter, DWORD Command)
 {
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     WINSPOOL_PRINTER_CONTAINER PrinterContainer;
     WINSPOOL_DEVMODE_CONTAINER DevModeContainer;
     WINSPOOL_SECURITY_CONTAINER SecurityContainer;
@@ -3724,7 +3724,7 @@ StartDocPrinterA(HANDLE hPrinter, DWORD Level, PBYTE pDocInfo)
 {
     DOC_INFO_1W wDocInfo1 = { 0 };
     DWORD cch;
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     DWORD dwReturnValue = 0;
     PDOC_INFO_1A pDocInfo1 = (PDOC_INFO_1A)pDocInfo;
 
@@ -3815,7 +3815,7 @@ StartDocPrinterW(HANDLE hPrinter, DWORD Level, PBYTE pDocInfo)
 {
     DWORD cbAddJobInfo1;
     DWORD cbNeeded;
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     DWORD dwReturnValue = 0;
     PADDJOB_INFO_1W pAddJobInfo1 = NULL;
     PDOC_INFO_1W pDocInfo1 = (PDOC_INFO_1W)pDocInfo;
@@ -3909,7 +3909,7 @@ Cleanup:
 BOOL WINAPI
 StartPagePrinter(HANDLE hPrinter)
 {
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     PSPOOLER_HANDLE pHandle = (PSPOOLER_HANDLE)hPrinter;
 
     TRACE("StartPagePrinter(%p)\n", hPrinter);
@@ -3941,7 +3941,7 @@ Cleanup:
 BOOL WINAPI
 WritePrinter(HANDLE hPrinter, PVOID pBuf, DWORD cbBuf, PDWORD pcWritten)
 {
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     PSPOOLER_HANDLE pHandle = (PSPOOLER_HANDLE)hPrinter;
 
     TRACE("WritePrinter(%p, %p, %lu, %p)\n", hPrinter, pBuf, cbBuf, pcWritten);
@@ -3997,7 +3997,7 @@ Cleanup:
 BOOL WINAPI
 XcvDataW(HANDLE hXcv, PCWSTR pszDataName, PBYTE pInputData, DWORD cbInputData, PBYTE pOutputData, DWORD cbOutputData, PDWORD pcbOutputNeeded, PDWORD pdwStatus)
 {
-    DWORD dwErrorCode, Bogus = 0;
+    DWORD dwErrorCode = ERROR_SUCCESS, Bogus = 0;
     PSPOOLER_HANDLE pHandle = (PSPOOLER_HANDLE)hXcv;
 
     TRACE("XcvDataW(%p, %S, %p, %lu, %p, %lu, %p, %p)\n", hXcv, pszDataName, pInputData, cbInputData, pOutputData, cbOutputData, pcbOutputNeeded, pdwStatus);

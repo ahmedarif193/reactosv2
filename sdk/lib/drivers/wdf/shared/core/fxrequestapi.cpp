@@ -1951,11 +1951,12 @@ Return Value:
             WDFREQUEST_FXREQUEST(Request)->SetImpersonationFlags(Options->Flags);
 
             *PGLOBALS_ACTION(&DriverGlobals) = SubmitSyncCallCompletion;
-            (void) WDFIOTARGET_FXIOTARGET(Target)->SubmitSync(
+            NTSTATUS status = WDFIOTARGET_FXIOTARGET(Target)->SubmitSync(
                 WDFREQUEST_FXREQUEST(Request),
                 Options,
                 PGLOBALS_ACTION(&DriverGlobals)
                 );
+            UNREFERENCED_PARAMETER(status);
         }
         else if (Options->Flags & WDF_REQUEST_SEND_OPTION_SEND_AND_FORGET) {
             if (WDFREQUEST_FXREQUEST(Request)->IsAllocatedFromIo() == FALSE) {
@@ -2475,7 +2476,8 @@ WDFEXPORT(WdfRequestGetParameters)(
 
 
 
-    (VOID) pRequest->GetParameters(Parameters);
+    NTSTATUS status = pRequest->GetParameters(Parameters);
+    UNREFERENCED_PARAMETER(status);
 
     return;
 }

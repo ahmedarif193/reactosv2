@@ -89,13 +89,16 @@ void convert_text2number_2(calc_number_t *a)
 
     switch (calc.base) {
     case IDC_RADIO_HEX:
-        _stscanf(calc.buffer, _T("%I64X"), &(a->i));
+        int resultHex = _stscanf(calc.buffer, _T("%I64X"), &(a->i));
+        UNREFERENCED_PARAMETER(resultHex);
         break;
     case IDC_RADIO_DEC:
-        _stscanf(calc.buffer, _T("%lf"), &(a->f));
+        int resultDec = _stscanf(calc.buffer, _T("%lf"), &(a->f));
+        UNREFERENCED_PARAMETER(resultDec);
         break;
     case IDC_RADIO_OCT:
-        _stscanf(calc.buffer, _T("%I64o"), &(a->i));
+        int resultOct = _stscanf(calc.buffer, _T("%I64o"), &(a->i));
+        UNREFERENCED_PARAMETER(resultOct);
         break;
     case IDC_RADIO_BIN:
         ptr = calc.buffer;

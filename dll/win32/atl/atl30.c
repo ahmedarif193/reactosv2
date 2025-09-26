@@ -563,7 +563,8 @@ static HRESULT do_register_server(BOOL do_register)
     WCHAR clsid_str[40];
     const struct _ATL_REGMAP_ENTRY reg_map[] = {{CLSID_RegistrarW, clsid_str}, {NULL,NULL}};
 
-    StringFromGUID2(&CLSID_Registrar, clsid_str, sizeof(clsid_str)/sizeof(WCHAR));
+    INT result = StringFromGUID2(&CLSID_Registrar, clsid_str, sizeof(clsid_str)/sizeof(WCHAR));
+    UNREFERENCED_PARAMETER(result);
     return do_register_dll_server(NULL, atl_dllW, MAKEINTRESOURCEW(101), do_register, reg_map);
 }
 #endif

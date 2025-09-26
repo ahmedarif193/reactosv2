@@ -2275,7 +2275,8 @@ Return Value:
 
 
 
-    This->m_Device->m_PkgIo->ResumeProcessingForPower();
+    NTSTATUS status = This->m_Device->m_PkgIo->ResumeProcessingForPower();
+    UNREFERENCED_PARAMETER(status);
 
     if (This->m_SelfManagedIoMachine != NULL) {
         NTSTATUS status;
@@ -2399,7 +2400,8 @@ Return Value:
 
 
     // Top-edge queue hold.
-    This->m_Device->m_PkgIo->StopProcessingForPower(FxIoStopProcessingForPowerHold);
+    status = This->m_Device->m_PkgIo->StopProcessingForPower(FxIoStopProcessingForPowerHold);
+    UNREFERENCED_PARAMETER(status);
 
     if (This->PowerDmaPowerDown() == FALSE) {
         failed = TRUE;
@@ -2733,7 +2735,8 @@ Return Value:
 
 
     // Top-edge queue hold
-    m_Device->m_PkgIo->StopProcessingForPower(FxIoStopProcessingForPowerHold);
+    NTSTATUS status = m_Device->m_PkgIo->StopProcessingForPower(FxIoStopProcessingForPowerHold);
+    UNREFERENCED_PARAMETER(status);
 
     PowerPolicyProcessEvent(PwrPolPowerDownIoStopped);
 }
@@ -3221,7 +3224,8 @@ Return Value:
 
 
     // Top-edge queue release
-    This->m_Device->m_PkgIo->ResumeProcessingForPower();
+    NTSTATUS status = This->m_Device->m_PkgIo->ResumeProcessingForPower();
+    UNREFERENCED_PARAMETER(status);
 
     if (This->m_SelfManagedIoMachine != NULL) {
         NTSTATUS    status;
@@ -3281,7 +3285,8 @@ Return Value:
 
 
     // Top-edge queue release
-    This->m_Device->m_PkgIo->ResumeProcessingForPower();
+    NTSTATUS status = This->m_Device->m_PkgIo->ResumeProcessingForPower();
+    UNREFERENCED_PARAMETER(status);
 
     if (This->m_SelfManagedIoMachine != NULL) {
         NTSTATUS    status;
@@ -3336,7 +3341,8 @@ Return Value:
 
 
 
-    This->m_Device->m_PkgIo->StopProcessingForPower(FxIoStopProcessingForPowerHold);
+    NTSTATUS stopStatus = This->m_Device->m_PkgIo->StopProcessingForPower(FxIoStopProcessingForPowerHold);
+    UNREFERENCED_PARAMETER(stopStatus);
 
     return WdfDevStatePowerWakingDmaEnableFailed;
 }
@@ -3363,7 +3369,8 @@ Return Value:
 
 
 
-    This->m_Device->m_PkgIo->StopProcessingForPower(FxIoStopProcessingForPowerHold);
+    NTSTATUS status = This->m_Device->m_PkgIo->StopProcessingForPower(FxIoStopProcessingForPowerHold);
+    UNREFERENCED_PARAMETER(status);
 
     return WdfDevStatePowerWakingDmaEnableFailedNP;
 }
@@ -4040,7 +4047,8 @@ Return Value:
 
 
 
-    This->m_Device->m_PkgIo->StopProcessingForPower(FxIoStopProcessingForPowerHold);
+    NTSTATUS status = This->m_Device->m_PkgIo->StopProcessingForPower(FxIoStopProcessingForPowerHold);
+    UNREFERENCED_PARAMETER(status);
 
     return WdfDevStatePowerInitialDmaEnableFailed;
 }

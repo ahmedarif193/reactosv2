@@ -4046,7 +4046,8 @@ void CLangBarItemList::SaveItem(CicRegKey *pRegKey, const LANGBARITEMSTATE *pSta
     }
 
     WCHAR szSubKey[MAX_PATH];
-    ::StringFromGUID2(pState->m_clsid, szSubKey, _countof(szSubKey));
+    INT cchGuid = ::StringFromGUID2(pState->m_clsid, szSubKey, _countof(szSubKey));
+    UNREFERENCED_PARAMETER(cchGuid);
 
     if (pState->m_dwDemoteLevel || pState->m_bDisableDemoting)
     {

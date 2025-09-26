@@ -1231,7 +1231,8 @@ HRESULT create_monodata(REFIID riid, LPVOID *ppObj )
     DWORD dwBufLen = 350;
 
     lstrcpyW(path, wszCLSIDSlash);
-    StringFromGUID2(riid, path + lstrlenW(wszCLSIDSlash), CHARS_IN_GUID);
+    int result = StringFromGUID2(riid, path + lstrlenW(wszCLSIDSlash), CHARS_IN_GUID);
+    UNREFERENCED_PARAMETER(result);
     lstrcatW(path, wszInprocServer32);
 
     TRACE("Registry key: %s\n", debugstr_w(path));

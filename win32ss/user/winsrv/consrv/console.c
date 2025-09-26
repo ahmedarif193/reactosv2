@@ -535,7 +535,7 @@ ConSrvInitConsole(OUT PHANDLE NewConsoleHandle,
                   IN PCSR_PROCESS ConsoleLeaderProcess)
 {
     NTSTATUS Status;
-    HANDLE ConsoleHandle;
+    HANDLE ConsoleHandle = NULL;
     PCONSRV_CONSOLE Console;
 
     BYTE ConsoleInfoBuffer[sizeof(CONSOLE_STATE_INFO) + MAX_PATH * sizeof(WCHAR)]; // CONSRV console information

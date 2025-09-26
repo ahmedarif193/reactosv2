@@ -598,7 +598,8 @@ static void EDIT_BuildLineDefs_ML(EDITSTATE *es, INT istart, INT iend, INT delta
 				{
 					count = ScriptString_pcOutChars(current_line->ssa);
 					piDx = heap_alloc(sizeof(INT) * (*count));
-					ScriptStringGetLogicalWidths(current_line->ssa,piDx);
+					HRESULT logicalResult = ScriptStringGetLogicalWidths(current_line->ssa,piDx);
+					UNREFERENCED_PARAMETER(logicalResult);
 
 					prev = current_line->net_length-1;
 					do {
@@ -1187,7 +1188,8 @@ static void EDIT_GetLineRect(EDITSTATE *es, INT line, INT scol, INT ecol, LPRECT
 	pt2 = (ecol == -1) ? es->format_rect.right : (short)LOWORD(EDIT_EM_PosFromChar(es, line_index + ecol, TRUE));
 	if (ssa)
 	{
-		ScriptStringCPtoX(ssa, scol, FALSE, &pt3);
+		HRESULT scriptResult = ScriptStringCPtoX(ssa, scol, FALSE, &pt3);
+		UNREFERENCED_PARAMETER(scriptResult);
 		pt3+=es->format_rect.left;
 	}
 	else pt3 = pt1;

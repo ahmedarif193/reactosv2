@@ -85,7 +85,8 @@ LPITEMIDLIST PidlBrowse(HWND hwnd, int nCSIDL)
 
     if (nCSIDL)
     {
-        SHGetSpecialFolderLocation(hwnd, nCSIDL, &pidlRoot);
+        HRESULT hr = SHGetSpecialFolderLocation(hwnd, nCSIDL, &pidlRoot);
+        UNREFERENCED_PARAMETER(hr);
     }
 
     BROWSEINFO bi = { hwnd, pidlRoot, path, L"Choose a folder", 0, NULL, 0, 0 };

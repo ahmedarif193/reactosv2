@@ -661,7 +661,8 @@ static HRESULT render_embed_source_hack(IDataObject *data, LPFORMATETC fmt)
             ReleaseStgMedium(&std2);
 
             ReadClassStg(std.u.pstg, &clsID);
-            ProgIDFromCLSID(&clsID, &strProgID);
+            HRESULT hr = ProgIDFromCLSID(&clsID, &strProgID);
+            UNREFERENCED_PARAMETER(hr);
 
             WideCharToMultiByte( CP_ACP, 0, strProgID, -1, strOleTypeName, sizeof(strOleTypeName), NULL, NULL );
             STORAGE_CreateOleStream(std.u.pstg, 0);
@@ -1943,7 +1944,8 @@ static inline void release_marshal_data(IStream *stm)
     pos.QuadPart = size.QuadPart = 0;
 
     IStream_Seek(stm, pos, STREAM_SEEK_SET, NULL);
-    CoReleaseMarshalData(stm);
+    HRESULT hr = CoReleaseMarshalData(stm);
+    UNREFERENCED_PARAMETER(hr);
     IStream_Seek(stm, pos, STREAM_SEEK_SET, NULL);
     IStream_SetSize(stm, size);
 }

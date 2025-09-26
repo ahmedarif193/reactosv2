@@ -482,16 +482,16 @@ public:
         return *static_cast<float*>(_value);
     }
 
-    int32_t mantissa_bits          () const throw() { return _is_double ? traits<double>::mantissa_bits           : traits<float>::mantissa_bits;           }
-    int32_t exponent_bits          () const throw() { return _is_double ? traits<double>::exponent_bits           : traits<float>::exponent_bits;           }
-    int32_t maximum_binary_exponent() const throw() { return _is_double ? traits<double>::maximum_binary_exponent : traits<float>::maximum_binary_exponent; }
-    int32_t minimum_binary_exponent() const throw() { return _is_double ? traits<double>::minimum_binary_exponent : traits<float>::minimum_binary_exponent; }
-    int32_t exponent_bias          () const throw() { return _is_double ? traits<double>::exponent_bias           : traits<float>::exponent_bias;           }
+    int32_t mantissa_bits          () const throw() { return _is_double ? static_cast<int32_t>(traits<double>::mantissa_bits)           : static_cast<int32_t>(traits<float>::mantissa_bits);           }
+    int32_t exponent_bits          () const throw() { return _is_double ? static_cast<int32_t>(traits<double>::exponent_bits)           : static_cast<int32_t>(traits<float>::exponent_bits);           }
+    int32_t maximum_binary_exponent() const throw() { return _is_double ? static_cast<int32_t>(traits<double>::maximum_binary_exponent) : static_cast<int32_t>(traits<float>::maximum_binary_exponent); }
+    int32_t minimum_binary_exponent() const throw() { return _is_double ? static_cast<int32_t>(traits<double>::minimum_binary_exponent) : static_cast<int32_t>(traits<float>::minimum_binary_exponent); }
+    int32_t exponent_bias          () const throw() { return _is_double ? static_cast<int32_t>(traits<double>::exponent_bias)           : static_cast<int32_t>(traits<float>::exponent_bias);           }
 
-    uint64_t exponent_mask            () const throw() { return _is_double ? traits<double>::exponent_mask             : traits<float>::exponent_mask;             }
-    uint64_t normal_mantissa_mask     () const throw() { return _is_double ? traits<double>::normal_mantissa_mask      : traits<float>::normal_mantissa_mask;      }
-    uint64_t denormal_mantissa_mask   () const throw() { return _is_double ? traits<double>::denormal_mantissa_mask    : traits<float>::denormal_mantissa_mask;    }
-    uint64_t special_nan_mantissa_mask() const throw() { return _is_double ? traits<double>::special_nan_mantissa_mask : traits<float>::special_nan_mantissa_mask; }
+    uint64_t exponent_mask            () const throw() { return _is_double ? static_cast<uint64_t>(traits<double>::exponent_mask)             : static_cast<uint64_t>(traits<float>::exponent_mask);             }
+    uint64_t normal_mantissa_mask     () const throw() { return _is_double ? static_cast<uint64_t>(traits<double>::normal_mantissa_mask)      : static_cast<uint64_t>(traits<float>::normal_mantissa_mask);      }
+    uint64_t denormal_mantissa_mask   () const throw() { return _is_double ? static_cast<uint64_t>(traits<double>::denormal_mantissa_mask)    : static_cast<uint64_t>(traits<float>::denormal_mantissa_mask);    }
+    uint64_t special_nan_mantissa_mask() const throw() { return _is_double ? static_cast<uint64_t>(traits<double>::special_nan_mantissa_mask) : static_cast<uint64_t>(traits<float>::special_nan_mantissa_mask); }
 
 private:
 

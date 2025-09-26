@@ -75,10 +75,11 @@ public:
             // VerifierLock CreateAndInitialize failure is not fatal,
             // we just won't track anything
             //
-            (void) FxVerifierLock::CreateAndInitialize(&m_Verifier,
+            NTSTATUS status = FxVerifierLock::CreateAndInitialize(&m_Verifier,
                                                        fxDriverGlobals,
                                                        ParentObject,
                                                        FALSE);
+            UNREFERENCED_PARAMETER(status);
 
         }
     }

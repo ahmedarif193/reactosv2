@@ -383,6 +383,7 @@ _Pragma("GCC diagnostic pop") \
 \
         /* Allocate a registration frame */ \
         volatile SEH3$_REGISTRATION_FRAME _SEH3$_AUTO_CLEANUP _SEH3$_TrylevelFrame; \
+        _SEH3$_TrylevelFrame.ExceptionCode = 0; /* Initialize to prevent compiler warning */ \
 \
         goto _SEH3$_l_BeforeTry; \
         { \

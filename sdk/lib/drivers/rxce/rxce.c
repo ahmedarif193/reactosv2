@@ -543,10 +543,10 @@ RxAllocateObject(
     PMINIRDR_DISPATCH MRxDispatch,
     ULONG NameLength)
 {
-    ULONG Tag, ObjectSize;
-    PVOID Object, *Extension;
-    PRX_PREFIX_ENTRY PrefixEntry;
-    USHORT StructSize, ExtensionSize;
+    ULONG Tag = 0, ObjectSize;
+    PVOID Object, *Extension = NULL;
+    PRX_PREFIX_ENTRY PrefixEntry = NULL;
+    USHORT StructSize = 0, ExtensionSize;
 
     PAGED_CODE();
 
@@ -3484,7 +3484,7 @@ RxFindOrConstructVirtualNetRoot(
     while (TRUE)
     {
         PNET_ROOT NetRoot;
-        PV_NET_ROOT SavedVNetRoot;
+        PV_NET_ROOT SavedVNetRoot = NULL;
 
         /* Look in prefix table */
         Container = RxPrefixTableLookupName(RxDeviceObject->pRxNetNameTable, CanonicalName, RemainingName, &ConnectionID);

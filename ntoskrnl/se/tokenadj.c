@@ -254,7 +254,7 @@ SepAdjustGroups(
     _Out_ PULONG ChangedGroups)
 {
     ULONG GroupsInToken, GroupsInList;
-    ULONG ChangeCount, GroupsCount, NewAttributes;
+    ULONG ChangeCount, GroupsCount, NewAttributes = 0;
 
     PAGED_CODE();
 

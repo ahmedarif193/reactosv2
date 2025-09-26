@@ -674,7 +674,7 @@ MMixerSetGetVolumeControlDetails(
     LPMIXERCONTROLDETAILS_UNSIGNED Input;
     LONG Value;
     ULONG Index, Channel;
-    MIXER_STATUS Status;
+    MIXER_STATUS Status = MM_STATUS_SUCCESS;
     LPMIXERVOLUME_DATA VolumeData;
 
     if (MixerControlDetails->cbDetails != sizeof(MIXERCONTROLDETAILS_UNSIGNED))
@@ -821,9 +821,15 @@ MMixerGetDeviceNameWithComponentId(
         Status = MixerContext->OpenKey(NULL, L"\\Registry\\Machine\\SYSTEM\\CurrentControlSet\\Control\\MediaCategories", KEY_READ, &hMediaKey);
         if (Status == MM_STATUS_SUCCESS)
         {
-            RtlStringFromGUID(&ComponentId.Name, &GuidString);
-            Status = MixerContext->OpenKey(hMediaKey, GuidString.Buffer, KEY_READ, &hGuidKey);
-            RtlFreeUnicodeString(&GuidString);
+            if (NT_SUCCESS(RtlStringFromGUID(&ComponentId.Name, &GuidString)))
+            {
+                Status = MixerContext->OpenKey(hMediaKey, GuidString.Buffer, KEY_READ, &hGuidKey);
+                RtlFreeUnicodeString(&GuidString);
+            }
+            else
+            {
+                Status = MM_STATUS_UNSUCCESSFUL;
+            }
             if (Status == MM_STATUS_SUCCESS)
             {
                 Status = MixerContext->QueryKeyValue(hGuidKey, L"Name", (PVOID*)&DeviceName, &ResultLength, &KeyType);

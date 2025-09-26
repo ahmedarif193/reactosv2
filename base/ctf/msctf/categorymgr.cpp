@@ -139,9 +139,12 @@ STDMETHODIMP CCategoryMgr::RegisterCategory(
     TRACE("%p -> (%s, %s, %s)\n", this, debugstr_guid(&rclsid), debugstr_guid(&rcatid),
           debugstr_guid(&rguid));
 
-    StringFromGUID2(rclsid, szClsid, _countof(szClsid));
-    StringFromGUID2(rcatid, szCatid, _countof(szCatid));
-    StringFromGUID2(rguid, szGuid, _countof(szGuid));
+    if (StringFromGUID2(rclsid, szClsid, _countof(szClsid)) == 0 ||
+        StringFromGUID2(rcatid, szCatid, _countof(szCatid)) == 0 ||
+        StringFromGUID2(rguid, szGuid, _countof(szGuid)) == 0)
+    {
+        return E_FAIL;
+    }
 
     StringCchPrintfW(szFullKey, _countof(szFullKey), L"%s\\%s", szwSystemTIPKey, szClsid);
     error = RegOpenKeyExW(HKEY_LOCAL_MACHINE, szFullKey, 0, KEY_READ | KEY_WRITE, &hTipKey);
@@ -181,9 +184,12 @@ STDMETHODIMP CCategoryMgr::UnregisterCategory(
     TRACE("%p -> (%s %s %s)\n", this, debugstr_guid(&rclsid), debugstr_guid(&rcatid),
           debugstr_guid(&rguid));
 
-    StringFromGUID2(rclsid, szClsid, _countof(szClsid));
-    StringFromGUID2(rcatid, szCatid, _countof(szCatid));
-    StringFromGUID2(rguid, szGuid, _countof(szGuid));
+    INT cchClsid = StringFromGUID2(rclsid, szClsid, _countof(szClsid));
+    INT cchCatid = StringFromGUID2(rcatid, szCatid, _countof(szCatid));
+    INT cchGuid = StringFromGUID2(rguid, szGuid, _countof(szGuid));
+    UNREFERENCED_PARAMETER(cchClsid);
+    UNREFERENCED_PARAMETER(cchCatid);
+    UNREFERENCED_PARAMETER(cchGuid);
 
     StringCchPrintfW(szFullKey, _countof(szFullKey), L"%s\\%s", szwSystemTIPKey, szClsid);
     error = RegOpenKeyExW(HKEY_LOCAL_MACHINE, szFullKey, 0, KEY_READ | KEY_WRITE, &hTipKey);
@@ -233,7 +239,8 @@ STDMETHODIMP CCategoryMgr::FindClosestCategory(
     if (!pcatid || (ulCount && !ppcatidList))
         return E_INVALIDARG;
 
-    StringFromGUID2(rguid, szGuid, _countof(szGuid));
+    INT cchGuid = StringFromGUID2(rguid, szGuid, _countof(szGuid));
+    UNREFERENCED_PARAMETER(cchGuid);
     StringCchPrintfW(szFullKey, _countof(szFullKey), L"%s\\%s\\Category\\Item\\%s", szwSystemTIPKey, szGuid, szGuid);
     *pcatid = GUID_NULL;
 

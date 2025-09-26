@@ -239,7 +239,8 @@ static HRESULT WINAPI IHlink_fnSetMonikerReference( IHlink* iface,
             IBindCtx *pbc;
             LPOLESTR display_name;
             IMoniker_AddRef(This->Moniker);
-            CreateBindCtx( 0, &pbc);
+            HRESULT hr = CreateBindCtx( 0, &pbc);
+            UNREFERENCED_PARAMETER(hr);
             IMoniker_GetDisplayName(This->Moniker, pbc, NULL, &display_name);
             IBindCtx_Release(pbc);
             This->absolute = display_name && wcschr(display_name, ':');
@@ -374,7 +375,8 @@ static HRESULT WINAPI IHlink_fnGetStringReference (IHlink* iface,
         {
             IBindCtx *pbc;
 
-            CreateBindCtx( 0, &pbc);
+            HRESULT hr = CreateBindCtx( 0, &pbc);
+            UNREFERENCED_PARAMETER(hr);
             IMoniker_GetDisplayName(mon, pbc, NULL, ppwzTarget);
             IBindCtx_Release(pbc);
             IMoniker_Release(mon);
@@ -428,7 +430,8 @@ static HRESULT WINAPI IHlink_fnGetFriendlyName (IHlink* iface,
         if (moniker)
         {
             IBindCtx *bcxt;
-            CreateBindCtx(0, &bcxt);
+            HRESULT hr = CreateBindCtx(0, &bcxt);
+            UNREFERENCED_PARAMETER(hr);
 
             IMoniker_GetDisplayName(moniker, bcxt, NULL, ppwzFriendlyName);
             IBindCtx_Release(bcxt);
@@ -505,7 +508,8 @@ static HRESULT WINAPI IHlink_fnNavigate(IHlink *iface, DWORD flags, IBindCtx *us
             r = IHlinkBrowseContext_GetObject(browse_ctx, mon, TRUE, &unk);
             if (r != S_OK)
             {
-                CreateBindCtx(0, &bind_ctx);
+                HRESULT hr = CreateBindCtx(0, &bind_ctx);
+                UNREFERENCED_PARAMETER(hr);
                 RegisterBindStatusCallback(bind_ctx, &This->IBindStatusCallback_iface, NULL, 0);
                 This->bind_callback = bind_callback;
                 r = IMoniker_BindToObject(mon, bind_ctx, NULL, &IID_IUnknown, (void**)&unk);

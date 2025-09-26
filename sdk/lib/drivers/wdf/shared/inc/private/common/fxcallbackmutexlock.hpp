@@ -50,7 +50,8 @@ public:
         ) :
         FxCallbackLock(FxDriverGlobals)
     {
-        m_Lock.Initialize();
+        NTSTATUS status = m_Lock.Initialize();
+        UNREFERENCED_PARAMETER(status);
     }
 
     virtual
@@ -78,10 +79,11 @@ public:
             // VerifierLock CreateAndInitialize failure is not fatal,
             // we just won't track anything
             //
-            (void) FxVerifierLock::CreateAndInitialize(&m_Verifier,
+            NTSTATUS status = FxVerifierLock::CreateAndInitialize(&m_Verifier,
                                                        fxDriverGlobals,
                                                        ParentObject,
                                                        TRUE);
+            UNREFERENCED_PARAMETER(status);
         }
     }
 

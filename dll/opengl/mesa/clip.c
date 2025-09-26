@@ -905,7 +905,7 @@ GLuint gl_userclip_polygon( GLcontext* ctx, GLuint n, GLuint vlist[] )
 
    GLuint vlist2[VB_SIZE];
    GLuint *inlist, *outlist;
-   GLuint incount, outcount;
+   GLuint incount, outcount = n;
    GLuint curri, currj;
    GLuint previ, prevj;
    GLuint p;

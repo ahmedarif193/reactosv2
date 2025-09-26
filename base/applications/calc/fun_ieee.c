@@ -202,7 +202,8 @@ void rpn_int(calc_number_t *c)
 {
     double int_part;
 
-    modf(calc.code.f, &int_part);
+    double fracPart = modf(calc.code.f, &int_part);
+    UNREFERENCED_PARAMETER(fracPart);
     c->f = int_part;
 }
 
@@ -263,7 +264,8 @@ __int64 logic_dbl2int(calc_number_t *a)
     double   int_part;
     int      width;
 
-    modf(a->f, &int_part);
+    double fracPart = modf(a->f, &int_part);
+    UNREFERENCED_PARAMETER(fracPart);
     width = (int_part==0) ? 1 : (int)log10(fabs(int_part))+1;
     if (width > 63) {
         calc.is_nan = TRUE;
@@ -408,7 +410,8 @@ void rpn_exp10(calc_number_t *c)
 {
     double int_part;
 
-    modf(c->f, &int_part);
+    double fracPart = modf(c->f, &int_part);
+    UNREFERENCED_PARAMETER(fracPart);
     if (fmod(int_part, 2.) == 0.)
         calc.is_nan = TRUE;
     else {
@@ -566,7 +569,8 @@ void rpn_dms2dec(calc_number_t *c)
 
     m = modf(c->f, &d) * 100;
     s = (modf(m, &m) * 100)+.5;
-    modf(s, &s);
+    double fracPart = modf(s, &s);
+    UNREFERENCED_PARAMETER(fracPart);
 
     m = m/60;
     s = s/3600;

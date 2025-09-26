@@ -14,15 +14,15 @@ namespace {
 // Map of LCID to locale name.
 struct LcidToLocaleName
 {
-    LCID      lcid;
-    wchar_t*  localeName;
+    LCID            lcid;
+    const wchar_t*  localeName;
 };
 
 // Map of locale name to an index.
 struct LocaleNameIndex
 {
-    wchar_t*  name;
-    int       index;
+    const wchar_t*  name;
+    int             index;
 };
 
 // Map of LCID to locale name for Windows XP.
@@ -557,7 +557,7 @@ extern "C" LCID __cdecl __acrt_DownlevelLocaleNameToLCID(LPCWSTR localeName)
 
     index = GetTableIndexFromLocaleName(localeName);
 
-    if (index < 0 || (index >= _countof(LcidToLocaleNameTable)))
+    if (index < 0 || (index >= static_cast<int>(_countof(LcidToLocaleNameTable))))
         return 0;
 
     return LcidToLocaleNameTable[index].lcid;
@@ -589,7 +589,7 @@ extern "C" int __cdecl __acrt_DownlevelLCIDToLocaleName(
     if (index < 0)
         return 0;
 
-    buffer = LcidToLocaleNameTable[index].localeName;
+    buffer = const_cast<wchar_t*>(LcidToLocaleNameTable[index].localeName);
     count = wcsnlen(buffer, LOCALE_NAME_MAX_LENGTH);
 
     if (cchLocaleName > 0)

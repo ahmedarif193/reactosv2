@@ -736,7 +736,7 @@ static BOOL TestDefaultCountry (LCID lcid)
     LANGID  langid = LANGIDFROMLCID(lcid);
     int     i;
 
-    for (i = 0; i < _countof(__rglangidNotDefault); i++)
+    for (i = 0; i < static_cast<int>(_countof(__rglangidNotDefault)); i++)
     {
         if (langid == __rglangidNotDefault[i])
             return FALSE;

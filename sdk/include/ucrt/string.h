@@ -398,10 +398,22 @@ __DEFINE_CPP_OVERLOAD_STANDARD_NFUNC_0_2_EX(
     )
 
 _Check_return_
-_ACRTIMP char _CONST_RETURN* __cdecl strpbrk(
+_ACRTIMP char* __cdecl strpbrk(
     _In_z_ char const* _Str,
     _In_z_ char const* _Control
     );
+
+#ifdef __cplusplus
+extern "C++" {
+    _Check_return_
+    inline char* __cdecl strpbrk(
+        _In_z_ char* const _Str,
+        _In_z_ char const* const _Control) throw()
+    {
+        return const_cast<char*>(strpbrk(static_cast<char const*>(_Str), _Control));
+    }
+}
+#endif
 
 _ACRTIMP char* __cdecl _strrev(
     _Inout_z_ char* _Str
@@ -502,23 +514,6 @@ extern "C++"
         return const_cast<char*>(strchr(static_cast<char const*>(_String), _Ch));
     }
 
-    _Check_return_
-    inline char* __CRTDECL strpbrk(_In_z_ char* const _String, _In_z_ char const* const _Control)
-    {
-        return const_cast<char*>(strpbrk(static_cast<char const*>(_String), _Control));
-    }
-
-    _Check_return_
-    inline char* __CRTDECL strrchr(_In_z_ char* const _String, _In_ int const _Ch)
-    {
-        return const_cast<char*>(strrchr(static_cast<char const*>(_String), _Ch));
-    }
-
-    _Check_return_ _Ret_maybenull_
-    inline char* __CRTDECL strstr(_In_z_ char* const _String, _In_z_ char const* const _SubString)
-    {
-        return const_cast<char*>(strstr(static_cast<char const*>(_String), _SubString));
-    }
 }
 #endif // __cplusplus
 

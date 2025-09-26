@@ -31,7 +31,7 @@ static TimeType __cdecl common_loctotime_t(
     // Adjust the absolute year to be an offset from the year 1900:
     yr -= 1900;
 
-    _VALIDATE_RETURN_NOEXC(yr >= _BASE_YEAR && yr <= time_traits::max_year, EINVAL, invalid_time)
+    _VALIDATE_RETURN_NOEXC(yr >= _BASE_YEAR && yr <= static_cast<int>(time_traits::max_year), EINVAL, invalid_time)
     _VALIDATE_RETURN_NOEXC(mo >= 1 && mo <= 12,                             EINVAL, invalid_time)
     _VALIDATE_RETURN_NOEXC(__crt_time_is_day_valid(yr, mo - 1, dy),         EINVAL, invalid_time)
     _VALIDATE_RETURN_NOEXC(hr >= 0 && hr <= 23,                             EINVAL, invalid_time)

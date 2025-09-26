@@ -286,13 +286,14 @@ FxObject::AllocateTagTracker(
         // don't track references.
         //
 
-        (void) FxTagTracker::CreateAndInitialize(
+        NTSTATUS status = FxTagTracker::CreateAndInitialize(
             &GetDebugExtension()->TagTracker,
             m_Globals,
             FxTagTrackerTypeHandle,
             FALSE,
             this
             );
+        UNREFERENCED_PARAMETER(status);
 
         //
         // For now we overload the requirement of a tag tracker as also tracing

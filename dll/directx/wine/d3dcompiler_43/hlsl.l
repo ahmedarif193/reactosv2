@@ -195,11 +195,13 @@ row_major               {return KW_ROW_MAJOR;           }
                             return C_FLOAT;
                         }
 0x[0-9a-fA-F]+          {
-                            sscanf(yytext, "0x%x", &hlsl_lval.intval);
+                            int scanRes = sscanf(yytext, "0x%x", &hlsl_lval.intval);
+                            (void)scanRes;
                             return C_INTEGER;
                         }
 0[0-7]+                 {
-                            sscanf(yytext, "0%o", &hlsl_lval.intval);
+                            int scanRes2 = sscanf(yytext, "0%o", &hlsl_lval.intval);
+                            (void)scanRes2;
                             return C_INTEGER;
                         }
 [0-9]+                  {

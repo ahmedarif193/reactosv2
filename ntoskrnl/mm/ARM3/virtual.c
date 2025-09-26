@@ -45,7 +45,7 @@ MiCalculatePageCommitment(IN ULONG_PTR StartingAddress,
                           IN PEPROCESS Process)
 {
     PMMPTE PointerPte, LastPte;
-    PMMPDE PointerPde;
+    PMMPDE PointerPde = NULL;
     BOOLEAN OnPdeBoundary = TRUE;
 #if _MI_PAGING_LEVELS >= 3
     PMMPPE PointerPpe;

@@ -33,7 +33,7 @@
 *        0 = strings are equal
 *        1 = first string greater than second string
 *       Returns _NLSCMPERROR is something went wrong
-*       This range of return values may differ from other *cmp/*coll functions.
+*       This range of return values may differ from other *cmp/ *coll functions.
 *
 *Exceptions:
 *       Input parameters are validated. Refer to the validation section of the function.

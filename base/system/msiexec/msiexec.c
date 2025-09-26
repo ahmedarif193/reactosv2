@@ -433,7 +433,8 @@ static int custom_action_server(const WCHAR *arg)
     }
 
     /* We need this to unmarshal streams, and some apps expect it to be present. */
-    CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    UNREFERENCED_PARAMETER(hr);
 
     while (ReadFile(pipe, &guid, sizeof(guid), &size, NULL) && size == sizeof(guid))
     {

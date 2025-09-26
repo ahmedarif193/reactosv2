@@ -248,7 +248,7 @@ ReturnFar:
     popfq
 
     /* Return far */
-    retf
+    lretq
 
 .ENDP
 

@@ -208,13 +208,15 @@ static struct class_categories *COMCAT_PrepareClassCategories(
 
     strings = (WCHAR *)(categories + 1);
     while (impl_count--) {
-	StringFromGUID2(impl_catids++, strings, CHARS_IN_GUID);
+	int result = StringFromGUID2(impl_catids++, strings, CHARS_IN_GUID);
+	UNREFERENCED_PARAMETER(result);
 	strings += CHARS_IN_GUID;
     }
     *strings++ = 0;
 
     while (req_count--) {
-	StringFromGUID2(req_catids++, strings, CHARS_IN_GUID);
+	int result = StringFromGUID2(req_catids++, strings, CHARS_IN_GUID);
+	UNREFERENCED_PARAMETER(result);
 	strings += CHARS_IN_GUID;
     }
     *strings++ = 0;
@@ -1274,7 +1276,8 @@ static HRESULT CATIDEnumGUID_Construct(REFCLSID rclsid, LPCWSTR postfix, IEnumGU
     This = HeapAlloc(GetProcessHeap(), HEAP_ZERO_MEMORY, sizeof(CATID_IEnumGUIDImpl));
     if (!This) return E_OUTOFMEMORY;
 
-    StringFromGUID2(rclsid, clsidW, CHARS_IN_GUID);
+    int result = StringFromGUID2(rclsid, clsidW, CHARS_IN_GUID);
+    UNREFERENCED_PARAMETER(result);
 
     This->IEnumGUID_iface.lpVtbl = &CATIDEnumGUIDVtbl;
     This->ref = 1;

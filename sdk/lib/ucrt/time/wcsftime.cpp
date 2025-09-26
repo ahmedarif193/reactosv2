@@ -94,8 +94,8 @@ extern "C" void* __cdecl _W_Gettnames()
         }                                                                              \
         if (phase == 1)                                                                \
         {                                                                              \
-            dest->STR = ((CHAR *) dest) + bytes / sizeof(CHAR);                        \
-            _ERRCHECK(CPY(dest->STR, (total_bytes - bytes) / sizeof(CHAR), src->STR)); \
+            const_cast<CHAR*&>(dest->STR) = ((CHAR *) dest) + bytes / sizeof(CHAR);   \
+            _ERRCHECK(CPY(const_cast<CHAR*>(dest->STR), (total_bytes - bytes) / sizeof(CHAR), src->STR)); \
         }                                                                              \
         bytes += (LEN(src->STR) + 1) * sizeof(CHAR);
 
@@ -481,9 +481,12 @@ static bool __cdecl store_winword(
         // Count the number of repetitions of this character
         int repeat = 0;
         wchar_t const* p = format;
-        for (; *p++ == *format; ++repeat);
-            // Leave p pointing to the beginning of the next token
-            p--;
+        for (; *p++ == *format; ++repeat)
+        {
+            // Continue counting repetitions
+        }
+        // Leave p pointing to the beginning of the next token
+        p--;
 
         // Switch on ASCII format character and determine specifier:
         switch (*format)
@@ -580,7 +583,7 @@ static bool __cdecl store_winword(
 
         case L't': // t or tt time marker suffix
         {
-            wchar_t* ampmstr = tmptr->tm_hour <= 11
+            const wchar_t* ampmstr = tmptr->tm_hour <= 11
                 ? lc_time->_W_ampm[0]
                 : lc_time->_W_ampm[1];
 

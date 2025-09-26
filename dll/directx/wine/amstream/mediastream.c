@@ -625,7 +625,8 @@ HRESULT ddrawmediastream_create(IMultiMediaStream *parent, const MSPID *purpose_
     pin_info.pFilter = NULL;
     pin_info.dir = PINDIR_INPUT;
     pin_info.achName[0] = 'I';
-    StringFromGUID2(purpose_id, pin_info.achName + 1, MAX_PIN_NAME - 1);
+    INT cchGuid = StringFromGUID2(purpose_id, pin_info.achName + 1, MAX_PIN_NAME - 1);
+    UNREFERENCED_PARAMETER(cchGuid);
     hr = BaseInputPin_Construct(&DirectDrawMediaStreamInputPin_IPin_Vtbl,
         sizeof(DirectDrawMediaStreamInputPin), &pin_info, &DirectDrawMediaStreamInputPin_FuncTable,
         &object->critical_section, NULL, (IPin **)&object->input_pin);
@@ -1165,7 +1166,8 @@ HRESULT audiomediastream_create(IMultiMediaStream *parent, const MSPID *purpose_
     pin_info.pFilter = NULL;
     pin_info.dir = PINDIR_INPUT;
     pin_info.achName[0] = 'I';
-    StringFromGUID2(purpose_id, pin_info.achName + 1, MAX_PIN_NAME - 1);
+    INT cchGuid = StringFromGUID2(purpose_id, pin_info.achName + 1, MAX_PIN_NAME - 1);
+    UNREFERENCED_PARAMETER(cchGuid);
     hr = BaseInputPin_Construct(&AudioMediaStreamInputPin_IPin_Vtbl,
         sizeof(AudioMediaStreamInputPin), &pin_info, &AudioMediaStreamInputPin_FuncTable,
         &object->critical_section, NULL, (IPin **)&object->input_pin);

@@ -299,7 +299,8 @@ DWORD call_script(MSIHANDLE hPackage, INT type, LPCWSTR script, LPCWSTR function
     VARIANT var;
     DWORD ret = ERROR_INSTALL_FAILURE;
 
-    CoInitialize(NULL);
+    hr = CoInitialize(NULL);
+    UNREFERENCED_PARAMETER(hr);
 
     /* Create MsiActiveScriptSite object */
     hr = create_activescriptsite(&scriptsite);

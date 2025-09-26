@@ -382,7 +382,7 @@ public:
         int* ErrorCode
     )
     {
-        int err;
+        int err = UNZ_OK;
         BYTE Buffer[2048];
         DWORD dwFlags = SHPPFW_DIRCREATE | (is_dir ? SHPPFW_NONE : SHPPFW_IGNOREFILENAME);
         HRESULT hr = SHPathPrepareForWriteW(hDlg, NULL, FullPath, dwFlags);
@@ -681,7 +681,10 @@ public:
         if (ErrorType == eFileError || ErrorType == eOpenError)
             strText.LoadString(IDS_CANTEXTRACTFILE);
         else
-            strText.LoadString(GetModuleHandleA("shell32.dll"), 128); // IDS_CREATEFOLDER_DENIED
+        {
+            BOOL bResult = strText.LoadString(GetModuleHandleA("shell32.dll"), 128); // IDS_CREATEFOLDER_DENIED
+            UNREFERENCED_PARAMETER(bResult);
+        }
 
         strText.FormatMessage(strText.GetString(), path);
 

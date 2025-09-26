@@ -24,7 +24,7 @@ static int __cdecl try_walk(PROCESS_HEAP_ENTRY* const win32_entry) throw()
 
         return _HEAPBADNODE;
     }
-    __except(GetExceptionCode() == EXCEPTION_ACCESS_VIOLATION)
+    __except(static_cast<DWORD>(GetExceptionCode()) == EXCEPTION_ACCESS_VIOLATION)
     {
         return _HEAPBADNODE;
     }

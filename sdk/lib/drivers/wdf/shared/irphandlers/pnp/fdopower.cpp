@@ -489,7 +489,8 @@ FxPkgFdo::PowerReleasePendingDeviceIrp(
             //
             // This will also release the remove lock
             //
-            (void) _PowerPassDown(this, &irp);
+            NTSTATUS status = _PowerPassDown(this, &irp);
+            UNREFERENCED_PARAMETER(status);
         }
     }
 }

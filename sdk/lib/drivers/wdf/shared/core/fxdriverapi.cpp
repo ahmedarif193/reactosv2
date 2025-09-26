@@ -240,7 +240,8 @@ WDFEXPORT(WdfDriverCreate)(
     //
     // FxDriver stores the driver wide configuration
     //
-    FxInitialize(pFxDriverGlobals, DriverObject, RegistryPath, DriverConfig);
+    NTSTATUS initStatus = FxInitialize(pFxDriverGlobals, DriverObject, RegistryPath, DriverConfig);
+    UNREFERENCED_PARAMETER(initStatus);
 
     //
     // FxDriver stores the driver wide configuration

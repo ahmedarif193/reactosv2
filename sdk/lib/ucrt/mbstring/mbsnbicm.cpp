@@ -85,9 +85,11 @@ int __cdecl _mbsnbicmp_l(
                 }
             }
             else
+            {
                 c1 = _mbbtolower_l(c1, _loc_update.GetLocaleT());
+            }
 
-                c2 = *s2++;
+            c2 = *s2++;
                 if ( _ismbblead_l(c2, _loc_update.GetLocaleT()) )
                 {
                     if (n==0)

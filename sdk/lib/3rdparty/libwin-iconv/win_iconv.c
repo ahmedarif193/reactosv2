@@ -1568,7 +1568,7 @@ static int
 utf32_mbtowc(csconv_t *cv, const uchar *buf, int bufsize, ushort *wbuf, int *wbufsize)
 {
     int codepage = cv->codepage;
-    uint wc;
+    uint wc = 0;
 
     /* swap endian: 12000 <-> 12001 */
     if (cv->mode & UNICODE_MODE_SWAPPED)
@@ -1580,6 +1580,8 @@ utf32_mbtowc(csconv_t *cv, const uchar *buf, int bufsize, ushort *wbuf, int *wbu
         wc = (buf[3] << 24) | (buf[2] << 16) | (buf[1] << 8) | buf[0];
     else if (codepage == 12001) /* big endian */
         wc = (buf[0] << 24) | (buf[1] << 16) | (buf[2] << 8) | buf[3];
+    else
+        return seterror(EINVAL); /* Invalid codepage */
 
     if ((cv->flags & FLAG_USE_BOM) && !(cv->mode & UNICODE_MODE_BOM_DONE))
     {

@@ -227,14 +227,16 @@ bool stopService(SC_HANDLE service)
     if (service)
     {
         SERVICE_STATUS serviceStatus;
-        QueryServiceStatus(service, &serviceStatus);
+        BOOL bResult = QueryServiceStatus(service, &serviceStatus);
+        UNREFERENCED_PARAMETER(bResult);
         if (serviceStatus.dwCurrentState != SERVICE_STOPPED)
         {
             ControlService(service, SERVICE_CONTROL_STOP, &serviceStatus);
             printf("Stopping Service.");
             for (int i = 0; i < 100; i++)
             {
-                QueryServiceStatus(service, &serviceStatus);
+                BOOL bResult = QueryServiceStatus(service, &serviceStatus);
+        UNREFERENCED_PARAMETER(bResult);
                 if (serviceStatus.dwCurrentState == SERVICE_STOPPED)
                 {
                     printf("Stopped\n");
@@ -339,7 +341,8 @@ void printWindowsError()
             0, NULL );
 
         printf("Error: %s\nPress Enter..\n", (LPTSTR)lpMsgBuf);
-        getchar();
+        int ch = getchar();
+        UNREFERENCED_PARAMETER(ch);
     }
 }
 
@@ -1867,7 +1870,8 @@ void init(void *lpParam)
     }
 
     MYWORD wVersionRequested = MAKEWORD(1, 1);
-    WSAStartup(wVersionRequested, &cfig.wsaData);
+    int iResult = WSAStartup(wVersionRequested, &cfig.wsaData);
+    UNREFERENCED_PARAMETER(iResult);
 
     if (cfig.wsaData.wVersion != wVersionRequested)
     {

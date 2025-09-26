@@ -46,7 +46,6 @@ void __lc_lctowcs(_Inout_updates_z_(_Param_(2)) wchar_t *, size_t, const __crt_l
 int __lc_wcstolc(__crt_locale_strings *, const wchar_t *);
 static wchar_t * __cdecl _wsetlocale_set_cat(__crt_locale_data*, int, const wchar_t *);
 static wchar_t * __cdecl _wsetlocale_get_all(__crt_locale_data*);
-static __crt_locale_data* __cdecl _updatetlocinfo_nolock(void);
 static wchar_t * __cdecl _wsetlocale_nolock(__crt_locale_data*, int, const wchar_t *);
 int __cdecl _setmbcp_nolock(int, __crt_multibyte_data*);
 __crt_locale_data* __cdecl _updatetlocinfoEx_nolock(__crt_locale_data**, __crt_locale_data*);
@@ -545,7 +544,7 @@ static wchar_t * __cdecl _wsetlocale_nolock(
     if (_category != LC_ALL)
     {
         retval = (_wlocale) ? _wsetlocale_set_cat(ploci, _category,_wlocale) :
-            ploci->lc_category[_category].wlocale;
+            const_cast<wchar_t*>(ploci->lc_category[_category].wlocale);
 
     } else { /* LC_ALL */
         wchar_t lctemp[MAX_LC_LEN];
@@ -672,7 +671,7 @@ static wchar_t * __cdecl _wsetlocale_set_cat (
     // if this category's locale hadn't changed
     if (wcscmp(lctemp, ploci->lc_category[category].wlocale) == 0)
     {
-        return ploci->lc_category[category].wlocale;
+        return const_cast<wchar_t*>(ploci->lc_category[category].wlocale);
     }
 
     cch = wcslen(lctemp) + 1;
@@ -682,7 +681,7 @@ static wchar_t * __cdecl _wsetlocale_set_cat (
     pch_cat_locale = pch + (sizeof(int) / sizeof(wchar_t));
 
      /* save for possible restore */
-    oldlocale = ploci->lc_category[category].wlocale;
+    oldlocale = const_cast<wchar_t*>(ploci->lc_category[category].wlocale);
     oldlocalename = ploci->locale_name[category];
     oldcodepage = ploci->_public._locale_lc_codepage;
 
@@ -740,7 +739,7 @@ static wchar_t * __cdecl _wsetlocale_set_cat (
                                        TRUE ))
             {
                 int j;
-                for ( j = 0; j < sizeof(_first_127char); j++)
+                for ( j = 0; j < static_cast<int>(sizeof(_first_127char)); j++)
                     out[j] = out[j]&
                             (_UPPER|_LOWER|_DIGIT|_SPACE|_PUNCT|_CONTROL|_BLANK|_HEX|_ALPHA);
                 if ( !memcmp(out, _ctype_loc_style, (sizeof(_first_127char)/sizeof(char))*sizeof(short)))
@@ -794,7 +793,7 @@ static wchar_t * __cdecl _wsetlocale_set_cat (
     }
     ploci->lc_category[category].wrefcount = reinterpret_cast<long*>(pch);
 
-    return ploci->lc_category[category].wlocale;
+    return const_cast<wchar_t*>(ploci->lc_category[category].wlocale);
 } /* _wsetlocale_set_cat */
 
 
@@ -842,7 +841,8 @@ static wchar_t * __cdecl _wsetlocale_get_all ( __crt_locale_data* ploci)
                 ploci->lc_category[LC_ALL].refcount = nullptr;
                 ploci->lc_category[LC_ALL].locale = nullptr;
                 ploci->lc_category[LC_ALL].wrefcount = refcount;
-                return ploci->lc_category[LC_ALL].wlocale = pch;
+                ploci->lc_category[LC_ALL].wlocale = const_cast<wchar_t*>(pch);
+                return const_cast<wchar_t*>(ploci->lc_category[LC_ALL].wlocale);
             } else {
                 _free_crt(refcount);
                 if (ploci->lc_category[LC_ALL].wrefcount != nullptr &&
@@ -859,7 +859,7 @@ static wchar_t * __cdecl _wsetlocale_get_all ( __crt_locale_data* ploci)
                 ploci->lc_category[LC_ALL].locale = nullptr;
                 ploci->lc_category[LC_ALL].wrefcount = nullptr;
                 ploci->lc_category[LC_ALL].wlocale = nullptr;
-                return ploci->lc_category[LC_CTYPE].wlocale;
+                return const_cast<wchar_t*>(ploci->lc_category[LC_CTYPE].wlocale);
             }
         }
     }
@@ -1052,7 +1052,7 @@ static bool parse_bcp47(__crt_locale_strings * const names, const wchar_t * cons
             // en-US.utf-8
             // zh-Hans-HK
             return parse_bcp47_language(names, sections[0])
-                   && (    parse_bcp47_script(names, sections[1]) && (parse_bcp47_region(names, sections[2]) || parse_bcp47_code_page(names, sections[2]))
+                   && ((parse_bcp47_script(names, sections[1]) && (parse_bcp47_region(names, sections[2]) || parse_bcp47_code_page(names, sections[2])))
                        || (parse_bcp47_region(names, sections[1]) &&  parse_bcp47_code_page(names, sections[2]))
                       );
         case 4:
@@ -1267,8 +1267,8 @@ wchar_t * _expandlocale(
                 if (   __ascii_towlower(cp[0]) == L'u'
                     && __ascii_towlower(cp[1]) == L't'
                     && __ascii_towlower(cp[2]) == L'f'
-                    &&     (cp[3] == L'8' && cp[4] == L'\0')
-                        || (cp[3] == L'-' && cp[4] == L'8' && cp[5] == L'\0'))
+                    && (   (cp[3] == L'8' && cp[4] == L'\0')
+                        || (cp[3] == L'-' && cp[4] == L'8' && cp[5] == L'\0')))
                 {
                     iCodePage = CP_UTF8;
                 }

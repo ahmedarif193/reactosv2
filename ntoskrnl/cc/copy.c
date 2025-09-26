@@ -303,7 +303,7 @@ CcCanIWrite (
     IN BOOLEAN Wait,
     IN BOOLEAN Retrying)
 {
-    KIRQL OldIrql;
+    KIRQL OldIrql = 0;
     KEVENT WaitEvent;
     ULONG Length, Pages;
     BOOLEAN PerFileDefer;

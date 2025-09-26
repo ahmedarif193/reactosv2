@@ -29,7 +29,7 @@
 *       Returns 0 if lhs = rhs
 *       Returns >0 if lhs > rhs
 *       Returns _NLSCMPERROR if something went wrong
-*       This range of return values may differ from other *cmp/*coll functions.
+*       This range of return values may differ from other *cmp/ *coll functions.
 *
 *Exceptions:
 *       Input parameters are validated. Refer to the validation section of the function.

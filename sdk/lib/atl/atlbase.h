@@ -1801,7 +1801,8 @@ inline HRESULT WINAPI AtlRegisterClassCategoriesHelper(REFCLSID clsid, const _AT
     {
         WCHAR reg_path[256] = L"CLSID\\";
 
-        StringFromGUID2(clsid, reg_path + wcslen(reg_path), 64);
+        if (StringFromGUID2(clsid, reg_path + wcslen(reg_path), 64) == 0)
+            return E_FAIL;
         wcscat(reg_path, L"\\");
         WCHAR* ptr = reg_path + wcslen(reg_path);
 

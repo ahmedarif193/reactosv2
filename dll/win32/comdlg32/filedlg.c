@@ -428,7 +428,10 @@ static void filedlg_collect_places_pidls(FileOpenDlgInfos *fodInfos)
     }
 
     for (i = 0; i < ARRAY_SIZE(default_places); i++)
-        SHGetSpecialFolderLocation(NULL, default_places[i], &fodInfos->places[i]);
+    {
+        HRESULT hr = SHGetSpecialFolderLocation(NULL, default_places[i], &fodInfos->places[i]);
+        UNREFERENCED_PARAMETER(hr);
+    }
 }
 
 /***********************************************************************
@@ -1158,7 +1161,7 @@ static INT_PTR FILEDLG95_HandleCustomDialogMessages(HWND hwnd, UINT uMsg, WPARAM
 {
     FileOpenDlgInfos *fodInfos = get_filedlg_infoptr(hwnd);
     WCHAR lpstrPath[MAX_PATH];
-    INT_PTR retval;
+    INT_PTR retval = 0;
 
     if(!fodInfos) return FALSE;
 
@@ -1766,7 +1769,8 @@ static LRESULT FILEDLG95_InitControls(HWND hwnd)
 
   /* Retrieve and add desktop icon to the toolbar */
   toolbarImageList = (HIMAGELIST)SendMessageW(fodInfos->DlgInfos.hwndTB, TB_GETIMAGELIST, 0, 0L);
-  SHGetSpecialFolderLocation(hwnd, CSIDL_DESKTOP, &desktopPidl);
+  HRESULT hr = SHGetSpecialFolderLocation(hwnd, CSIDL_DESKTOP, &desktopPidl);
+  UNREFERENCED_PARAMETER(hr);
   SHGetFileInfoW((const WCHAR *)desktopPidl, 0, &fileinfo, sizeof(fileinfo),
     SHGFI_PIDL | SHGFI_ICON | SHGFI_SMALLICON);
   ImageList_AddIcon(toolbarImageList, fileinfo.hIcon);
@@ -2254,7 +2258,8 @@ static LRESULT FILEDLG95_OnWMCommand(HWND hwnd, WPARAM wParam)
   {
     LPITEMIDLIST pidl;
 
-    SHGetSpecialFolderLocation(0, CSIDL_DESKTOP, &pidl);
+    HRESULT hr = SHGetSpecialFolderLocation(0, CSIDL_DESKTOP, &pidl);
+    UNREFERENCED_PARAMETER(hr);
     filedlg_browse_to_pidl(fodInfos, pidl);
     ILFree(pidl);
     break;
@@ -2795,11 +2800,13 @@ static void FILEDLG95_MRU_load_ext(LPWSTR stored_path, size_t cchMax, LPCWSTR de
         LPITEMIDLIST pidl;
         if (ExtIsPicture(defext))
         {
-            SHGetSpecialFolderLocation(NULL, CSIDL_MYPICTURES, &pidl);
+            HRESULT hr = SHGetSpecialFolderLocation(NULL, CSIDL_MYPICTURES, &pidl);
+            UNREFERENCED_PARAMETER(hr);
         }
         else
         {
-            SHGetSpecialFolderLocation(NULL, CSIDL_MYDOCUMENTS, &pidl);
+            HRESULT hr = SHGetSpecialFolderLocation(NULL, CSIDL_MYDOCUMENTS, &pidl);
+            UNREFERENCED_PARAMETER(hr);
         }
         SHGetPathFromIDListW(pidl, stored_path);
         ILFree(pidl);
@@ -3853,13 +3860,16 @@ static void FILEDLG95_LOOKIN_Init(HWND hwndCombo)
   SendMessageW(hwndCombo, CB_SETEXTENDEDUI, TRUE, 0);
 
   /* Initialise data of Desktop folder */
-  SHGetSpecialFolderLocation(0,CSIDL_DESKTOP,&pidlTmp);
+  HRESULT hr = SHGetSpecialFolderLocation(0,CSIDL_DESKTOP,&pidlTmp);
+  UNREFERENCED_PARAMETER(hr);
   FILEDLG95_LOOKIN_AddItem(hwndCombo, pidlTmp,LISTEND);
   ILFree(pidlTmp);
 
-  SHGetSpecialFolderLocation(0,CSIDL_DRIVES,&pidlDrives);
+  HRESULT hr2 = SHGetSpecialFolderLocation(0,CSIDL_DRIVES,&pidlDrives);
+  UNREFERENCED_PARAMETER(hr2);
 
-  SHGetDesktopFolder(&psfRoot);
+  HRESULT hr3 = SHGetDesktopFolder(&psfRoot);
+  UNREFERENCED_PARAMETER(hr3);
 
   if (psfRoot)
   {
@@ -4533,7 +4543,8 @@ static HRESULT GetName(LPSHELLFOLDER lpsf, LPITEMIDLIST pidl,DWORD dwFlags,LPWST
 
   if(!lpsf)
   {
-    SHGetDesktopFolder(&lpsf);
+    HRESULT hr = SHGetDesktopFolder(&lpsf);
+    UNREFERENCED_PARAMETER(hr);
     hRes = GetName(lpsf,pidl,dwFlags,lpstrFileName);
     IShellFolder_Release(lpsf);
     return hRes;

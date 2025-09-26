@@ -190,7 +190,8 @@ BOOL PrepareAdapterForService( PDHCP_ADAPTER Adapter ) {
 }
 
 void AdapterInit() {
-    WSAStartup(0x0101,&wsd);
+    int wsaStatus = WSAStartup(0x0101,&wsd);
+    (void)wsaStatus;
 
     InitializeListHead( &AdapterList );
 }

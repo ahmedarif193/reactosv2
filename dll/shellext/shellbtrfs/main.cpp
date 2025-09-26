@@ -312,7 +312,8 @@ static void register_clsid(const GUID clsid, const WCHAR* description) {
     wstring inproc, clsidkeyname;
     WCHAR dllpath[MAX_PATH];
 
-    StringFromCLSID(clsid, &clsidstring);
+    HRESULT hr = StringFromCLSID(clsid, &clsidstring);
+    UNREFERENCED_PARAMETER(hr);
 
     try {
 #ifndef __REACTOS__
@@ -394,7 +395,8 @@ static void reg_delete_tree(HKEY hkey, const wstring& keyname) {
 static void unregister_clsid(const GUID clsid) {
     WCHAR* clsidstring;
 
-    StringFromCLSID(clsid, &clsidstring);
+    HRESULT hr = StringFromCLSID(clsid, &clsidstring);
+    UNREFERENCED_PARAMETER(hr);
 
     try {
 #ifndef __REACTOS__
@@ -414,7 +416,8 @@ static void unregister_clsid(const GUID clsid) {
 static void reg_icon_overlay(const GUID clsid, const wstring& name) {
     WCHAR* clsidstring;
 
-    StringFromCLSID(clsid, &clsidstring);
+    HRESULT hr = StringFromCLSID(clsid, &clsidstring);
+    UNREFERENCED_PARAMETER(hr);
 
     try {
 #ifndef __REACTOS__
@@ -444,7 +447,8 @@ static void unreg_icon_overlay(const wstring& name) {
 static void reg_context_menu_handler(const GUID clsid, const wstring& filetype, const wstring& name) {
     WCHAR* clsidstring;
 
-    StringFromCLSID(clsid, &clsidstring);
+    HRESULT hr = StringFromCLSID(clsid, &clsidstring);
+    UNREFERENCED_PARAMETER(hr);
 
     try {
 #ifndef __REACTOS__
@@ -472,7 +476,8 @@ static void unreg_context_menu_handler(const wstring& filetype, const wstring& n
 static void reg_prop_sheet_handler(const GUID clsid, const wstring& filetype, const wstring& name) {
     WCHAR* clsidstring;
 
-    StringFromCLSID(clsid, &clsidstring);
+    HRESULT hr = StringFromCLSID(clsid, &clsidstring);
+    UNREFERENCED_PARAMETER(hr);
 
     try {
 #ifndef __REACTOS__

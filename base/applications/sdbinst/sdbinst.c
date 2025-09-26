@@ -436,7 +436,8 @@ SdbInstall(
         goto end;
     }
 
-    StringFromGUID2(&dbGuid, guidDbStr, GUID_SBD_NAME_LENGTH);
+    INT cchGuid = StringFromGUID2(&dbGuid, guidDbStr, GUID_SBD_NAME_LENGTH);
+    UNREFERENCED_PARAMETER(cchGuid);
     HRESULT hres = StringCchCatW(guidDbStr, GUID_SBD_NAME_LENGTH, SDB_EXT);
     if (FAILED(hres))
     {
@@ -598,7 +599,8 @@ SdbUninstall(
     // Database name must be GUID string
     if (wcslen(sdbName) + 1 != GUID_SBD_NAME_LENGTH)
     {
-        StringFromGUID2(&dbGuid, guidDbStr, GUID_SBD_NAME_LENGTH);
+        INT cchGuid = StringFromGUID2(&dbGuid, guidDbStr, GUID_SBD_NAME_LENGTH);
+    UNREFERENCED_PARAMETER(cchGuid);
         SdbCloseDatabase(pdb);
         return SdbUninstallByGuid(guidDbStr);
     }

@@ -2111,7 +2111,7 @@ MmCreateArm3Section(OUT PVOID *SectionObject,
     SECTION Section;
     PSECTION NewSection;
     PSUBSECTION Subsection;
-    PSEGMENT NewSegment, Segment;
+    PSEGMENT NewSegment, Segment = NULL;
     NTSTATUS Status;
     PCONTROL_AREA ControlArea;
     ULONG ProtectionMask, ControlAreaSize, Size, NonPagedCharge, PagedCharge;

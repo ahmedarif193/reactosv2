@@ -350,6 +350,7 @@ extern "C" __acrt_has_trailing_digits __cdecl __acrt_fltout(
 
     switch (classification)
     {
+    case __acrt_fp_class::finite:        break; // Continue with normal processing
     case __acrt_fp_class::infinity:      _ERRCHECK(strcpy_s(result, result_count, "1#INF" )); return __acrt_has_trailing_digits::trailing;
     case __acrt_fp_class::quiet_nan:     _ERRCHECK(strcpy_s(result, result_count, "1#QNAN")); return __acrt_has_trailing_digits::no_trailing;
     case __acrt_fp_class::signaling_nan: _ERRCHECK(strcpy_s(result, result_count, "1#SNAN")); return __acrt_has_trailing_digits::no_trailing;

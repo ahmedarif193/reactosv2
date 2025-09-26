@@ -117,7 +117,8 @@ CDeviceNode::SetupNode()
     if (cr == CR_SUCCESS)
     {
         // Convert the string to a proper guid
-        CLSIDFromString(ClassGuidString, &m_ClassGuid);
+        HRESULT result = CLSIDFromString(ClassGuidString, &m_ClassGuid);
+        UNREFERENCED_PARAMETER(result);
     }
     else
     {

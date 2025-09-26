@@ -622,7 +622,8 @@ CNetConnectionManager::EnumerateINetConnections()
         ZeroMemory(pNew, sizeof(INetConnectionItem));
         pNew->dwAdapterIndex = dwAdapterIndex;
         /* store NetCfgInstanceId */
-        CLSIDFromString(szNetCfg, &pNew->Props.guidId);
+        HRESULT hr = CLSIDFromString(szNetCfg, &pNew->Props.guidId);
+        UNREFERENCED_PARAMETER(hr);
         NormalizeOperStatus(&IfEntry, &pNew->Props);
 
         switch (IfEntry.dwType)

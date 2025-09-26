@@ -1678,7 +1678,7 @@ InstallBootManagerAndBootEntries(
     _In_ PCUNICODE_STRING DestinationArcPath,
     _In_ ULONG_PTR Options)
 {
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;
     HANDLE DeviceHandle;
     FILE_FS_DEVICE_INFORMATION DeviceInfo;
     ULONG DiskNumber;

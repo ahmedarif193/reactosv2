@@ -63,10 +63,15 @@ public:
                 // we just won't track anything
                 //
                 FxVerifierLock * verifierLock = NULL;
-                (void) FxVerifierLock::CreateAndInitialize(&verifierLock,
+                NTSTATUS status = FxVerifierLock::CreateAndInitialize(&verifierLock,
                                                     GetDriverGlobals(),
                                                     this);
-                GetDebugExtension()->VerifierLock = verifierLock;
+                if (NT_SUCCESS(status)) {
+                    GetDebugExtension()->VerifierLock = verifierLock;
+                }
+                else {
+                    GetDebugExtension()->VerifierLock = verifierLock;
+                }
             }
         }
     }
@@ -86,10 +91,15 @@ public:
                 // we just won't track anything
                 //
                 FxVerifierLock * verifierLock = NULL;
-                (void) FxVerifierLock::CreateAndInitialize(&verifierLock,
+                NTSTATUS status = FxVerifierLock::CreateAndInitialize(&verifierLock,
                                                     GetDriverGlobals(),
                                                     this);
-                GetDebugExtension()->VerifierLock = verifierLock;
+                if (NT_SUCCESS(status)) {
+                    GetDebugExtension()->VerifierLock = verifierLock;
+                }
+                else {
+                    GetDebugExtension()->VerifierLock = verifierLock;
+                }
             }
         }
     }

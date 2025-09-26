@@ -179,7 +179,10 @@ int abort(FILE* output, int err)
     if (output != stdout)
         fclose(output);
     else
-        _getch();
+    {
+        int ch = _getch();
+        (void)ch; // Explicitly ignore the character read
+    }
 
     return err;
 }
@@ -380,7 +383,8 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, LPWSTR cmdLine, INT)
     CStringW FormattedMessage;
     FormattedMessage.Format(IDS_USER_ALERT_MESSAGE, data.ProcessName.c_str(), OutputPath.c_str());
     CStringW DialogTitle;
-    DialogTitle.LoadString(hInstance, IDS_APP_TITLE);
+    BOOL bResult = DialogTitle.LoadString(hInstance, IDS_APP_TITLE);
+    UNREFERENCED_PARAMETER(bResult);
 
     MessageBoxW(NULL, FormattedMessage.GetString(), DialogTitle.GetString(), MB_OK);
 

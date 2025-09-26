@@ -654,8 +654,9 @@ STDMETHODIMP CThreadMgr::ActivateEx(
     if (!g_processId)
     {
         GUID guid;
-        CoCreateGuid(&guid);
-        GetClientId(guid, &g_processId);
+        HRESULT hr = CoCreateGuid(&guid);
+        if (SUCCEEDED(hr))
+            GetClientId(guid, &g_processId);
     }
 
     activate_textservices(this);

@@ -567,10 +567,12 @@ UINT ACTION_MsiPublishAssemblies( MSIPACKAGE *package )
         }
         TRACE("publishing %s\n", debugstr_w(comp->Component));
 
-        CLSIDFromString( package->ProductCode, &guid );
+        HRESULT hr = CLSIDFromString( package->ProductCode, &guid );
+        UNREFERENCED_PARAMETER(hr);
         encode_base85_guid( &guid, buffer );
         buffer[20] = '>';
-        CLSIDFromString( comp->ComponentId, &guid );
+        hr = CLSIDFromString( comp->ComponentId, &guid );
+        UNREFERENCED_PARAMETER(hr);
         encode_base85_guid( &guid, buffer + 21 );
         buffer[42] = 0;
 

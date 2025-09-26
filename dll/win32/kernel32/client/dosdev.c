@@ -555,7 +555,7 @@ QueryDosDeviceW(
     BOOLEAN IsGlobal, GlobalNeeded, Found;
     POBJECT_DIRECTORY_INFORMATION DirInfo;
     OBJECT_DIRECTORY_INFORMATION NullEntry = {{0}};
-    ULONG ReturnLength, NameLength, Length, Context, BufferLength;
+    ULONG ReturnLength, NameLength, Length = 0, Context, BufferLength;
 
     /* Open the '\??' directory */
     RtlInitUnicodeString(&UnicodeString, L"\\??");

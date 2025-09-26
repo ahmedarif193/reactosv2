@@ -35,7 +35,7 @@ memmove(
 _NODISCARD
 _Check_return_
 _VCRTIMP
-char _CONST_RETURN*
+char*
 __cdecl
 strchr(
     _In_z_ const char *_Str,
@@ -45,7 +45,7 @@ _NODISCARD
 _Check_return_
 _When_(return != NULL, _Ret_range_(_Str, _Str + _String_length_(_Str) - 1))
 _VCRTIMP
-wchar_t _CONST_RETURN*
+wchar_t*
 __cdecl
 wcschr(
     _In_z_ const wchar_t *_Str,
@@ -54,20 +54,47 @@ wcschr(
 _NODISCARD
 _Check_return_
 _VCRTIMP
-char _CONST_RETURN*
+char*
 __cdecl strrchr(
     _In_z_ const char *_Str,
     _In_ int _Ch);
+
+#ifdef __cplusplus
+extern "C++" {
+    _NODISCARD
+    _Check_return_
+    inline char* __cdecl strrchr(
+        _In_z_ char* const _Str,
+        _In_ int _Ch) throw()
+    {
+        return const_cast<char*>(strrchr(static_cast<const char*>(_Str), _Ch));
+    }
+}
+#endif
 
 _NODISCARD
 _Check_return_
 _Ret_maybenull_
 _VCRTIMP
-char _CONST_RETURN*
+char*
 __cdecl
 strstr(
     _In_z_ const char *_Str,
     _In_z_ const char *_SubStr);
+
+#ifdef __cplusplus
+extern "C++" {
+    _NODISCARD
+    _Check_return_
+    _Ret_maybenull_
+    inline char* __cdecl strstr(
+        _In_z_ char* const _Str,
+        _In_z_ const char* const _SubStr) throw()
+    {
+        return const_cast<char*>(strstr(static_cast<const char*>(_Str), _SubStr));
+    }
+}
+#endif
 
 _NODISCARD
 _Check_return_
@@ -83,7 +110,7 @@ _Check_return_
 _Ret_maybenull_
 _When_(return != NULL, _Ret_range_(_Str, _Str + _String_length_(_Str) - 1))
 _VCRTIMP
-wchar_t _CONST_RETURN*
+wchar_t*
 __cdecl
 wcsstr(
     _In_z_ const wchar_t *_Str,
@@ -92,17 +119,31 @@ wcsstr(
 _NODISCARD
 _Check_return_
 _VCRTIMP
-void _CONST_RETURN*
+void*
 __cdecl
 memchr(
     _In_reads_bytes_opt_(_MaxCount) const void *_Buf,
     _In_ int _Val,
     _In_ size_t _MaxCount);
 
+#ifdef __cplusplus
+extern "C++" {
+    _NODISCARD
+    _Check_return_
+    inline void* __cdecl memchr(
+        _In_reads_bytes_opt_(_MaxCount) void* const _Buf,
+        _In_ int _Val,
+        _In_ size_t _MaxCount) throw()
+    {
+        return const_cast<void*>(memchr(static_cast<const void*>(_Buf), _Val, _MaxCount));
+    }
+}
+#endif
+
 _NODISCARD
 _Check_return_
 _VCRTIMP
-wchar_t _CONST_RETURN*
+wchar_t*
 __cdecl
 wcsrchr(
     _In_z_ const wchar_t *_Str,

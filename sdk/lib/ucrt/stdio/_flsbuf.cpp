@@ -123,6 +123,7 @@ static int __cdecl common_flush_and_write_nolock(
     _ASSERTE(stream.valid());
 
     int const fh = _fileno(stream.public_stream());
+    (void)fh; // Suppress unused variable warning
 
     if (!stream.has_any_of(_IOWRITE | _IOUPDATE))
     {

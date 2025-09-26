@@ -1205,7 +1205,8 @@ STDMETHODIMP CFindFolder::MessageSFVCB(UINT uMsg, WPARAM wParam, LPARAM lParam)
             if (FAILED_UNEXPECTEDLY(hr))
                 return hr;
             WCHAR wszGuid[39];
-            StringFromGUID2(CLSID_FileSearchBand, wszGuid, _countof(wszGuid));
+            if (StringFromGUID2(CLSID_FileSearchBand, wszGuid, _countof(wszGuid)) == 0)
+                return E_FAIL;
             CComVariant searchBar(wszGuid);
             return pWebBrowser2->ShowBrowserBar(&searchBar, NULL, NULL);
         }

@@ -159,9 +159,9 @@ extern "C" void __cdecl __acrt_locale_free_time(
     free_crt_array(lc_time->month);
     free_crt_array(lc_time->ampm);
 
-    _free_crt(lc_time->ww_sdatefmt);
-    _free_crt(lc_time->ww_ldatefmt);
-    _free_crt(lc_time->ww_timefmt);
+    _free_crt(const_cast<void*>(static_cast<const void*>(lc_time->ww_sdatefmt)));
+    _free_crt(const_cast<void*>(static_cast<const void*>(lc_time->ww_ldatefmt)));
+    _free_crt(const_cast<void*>(static_cast<const void*>(lc_time->ww_timefmt)));
 
     free_crt_array(lc_time->_W_wday_abbr);
     free_crt_array(lc_time->_W_wday);
@@ -169,9 +169,9 @@ extern "C" void __cdecl __acrt_locale_free_time(
     free_crt_array(lc_time->_W_month);
     free_crt_array(lc_time->_W_ampm);
 
-    _free_crt(lc_time->_W_ww_sdatefmt);
-    _free_crt(lc_time->_W_ww_ldatefmt);
-    _free_crt(lc_time->_W_ww_timefmt);
+    _free_crt(const_cast<void*>(static_cast<const void*>(lc_time->_W_ww_sdatefmt)));
+    _free_crt(const_cast<void*>(static_cast<const void*>(lc_time->_W_ww_ldatefmt)));
+    _free_crt(const_cast<void*>(static_cast<const void*>(lc_time->_W_ww_timefmt)));
 
-    _free_crt(lc_time->_W_ww_locale_name);
+    _free_crt(const_cast<void*>(static_cast<const void*>(lc_time->_W_ww_locale_name)));
 }

@@ -2391,7 +2391,8 @@ int _tmain(int argc, const TCHAR *argv[])
     lpOriginalEnvironment = DuplicateEnvironment();
 
     GetCurrentDirectory(ARRAYSIZE(startPath), startPath);
-    _tchdir(startPath);
+    int iResult = _tchdir(startPath);
+    UNREFERENCED_PARAMETER(iResult);
 
     SetFileApisToOEM();
     InputCodePage  = GetConsoleCP();

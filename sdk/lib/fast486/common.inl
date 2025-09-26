@@ -1049,6 +1049,7 @@ Fast486ParseModRegRm(PFAST486_STATE State,
 
     /* The second operand is memory */
     ModRegRm->Memory = TRUE;
+    ModRegRm->MemoryAddress = 0;
 
     if (AddressSize)
     {

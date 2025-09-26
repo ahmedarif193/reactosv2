@@ -710,8 +710,10 @@ generate_random(uint8 * random)
 {
   int i;
 
-  rand();
-  rand();
+  int dummy1 = rand();
+  int dummy2 = rand();
+  (void)dummy1;
+  (void)dummy2;
   for (i = 0; i < 32; i++)
   {
     random[i] = rand(); /* higher bits are more random */

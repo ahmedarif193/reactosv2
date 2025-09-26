@@ -343,13 +343,15 @@ LRESULT CLayerUIPropPage::OnInitDialog(UINT uMsg, WPARAM wParam, LPARAM lParam, 
     CStringW explanation;
     if (!m_AllowPermLayer)
     {
-        explanation.LoadString(g_hModule, IDS_FAILED_NETWORK);
+        BOOL bResult = explanation.LoadString(g_hModule, IDS_FAILED_NETWORK);
+        UNREFERENCED_PARAMETER(bResult);
         DisableControls();
         ACDBG(L"AllowPermLayer returned FALSE\r\n");
     }
     else if (m_IsSfcProtected)
     {
-        explanation.LoadString(g_hModule, IDS_FAILED_PROTECTED);
+        BOOL bResult = explanation.LoadString(g_hModule, IDS_FAILED_PROTECTED);
+        UNREFERENCED_PARAMETER(bResult);
         DisableControls();
         ACDBG(L"Protected OS file\r\n");
     }

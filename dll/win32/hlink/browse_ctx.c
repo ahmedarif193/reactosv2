@@ -114,9 +114,11 @@ static HRESULT WINAPI IHlinkBC_Register(IHlinkBrowseContext* iface,
     hr = CreateItemMoniker(NULL, szIdent, &mon);
     if (FAILED(hr))
         return hr;
-    CreateGenericComposite(mon, pimk, &composite);
+    hr = CreateGenericComposite(mon, pimk, &composite);
+    UNREFERENCED_PARAMETER(hr);
 
-    GetRunningObjectTable(0, &ROT);
+    HRESULT hr2 = GetRunningObjectTable(0, &ROT);
+    UNREFERENCED_PARAMETER(hr2);
     IRunningObjectTable_Register(ROT, 0, piunk, composite, pdwRegister);
 
     IRunningObjectTable_Release(ROT);
@@ -139,9 +141,11 @@ static HRESULT WINAPI IHlinkBC_GetObject(IHlinkBrowseContext* iface,
 
     hr = CreateItemMoniker(NULL, szIdent, &mon);
     if (FAILED(hr)) return hr;
-    CreateGenericComposite(mon, pimk, &composite);
+    hr = CreateGenericComposite(mon, pimk, &composite);
+    UNREFERENCED_PARAMETER(hr);
 
-    GetRunningObjectTable(0, &ROT);
+    HRESULT hr2 = GetRunningObjectTable(0, &ROT);
+    UNREFERENCED_PARAMETER(hr2);
     hr = IRunningObjectTable_GetObject(ROT, composite, ppiunk);
 
     IRunningObjectTable_Release(ROT);
@@ -160,7 +164,8 @@ static HRESULT WINAPI IHlinkBC_Revoke(IHlinkBrowseContext* iface,
 
     FIXME("(%p)->(%i)\n", This, dwRegister);
 
-    GetRunningObjectTable(0, &ROT);
+    HRESULT hr2 = GetRunningObjectTable(0, &ROT);
+    UNREFERENCED_PARAMETER(hr2);
     r = IRunningObjectTable_Revoke(ROT, dwRegister);
     IRunningObjectTable_Release(ROT);
 

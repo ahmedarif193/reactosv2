@@ -1342,11 +1342,12 @@ Return Value:
         //
         // Ignore potential failure, power ref tracking is not an essential feature.
         //
-        (void)FxTagTracker::CreateAndInitialize(&m_TagTracker,
+        NTSTATUS status = FxTagTracker::CreateAndInitialize(&m_TagTracker,
                                                 pFxDriverGlobals,
                                                 FxTagTrackerTypePower,
                                                 pFxDriverGlobals->DebugExtension->TrackPower == FxTrackPowerRefsAndStack,
                                                 pPkgPnp->GetDevice());
+        UNREFERENCED_PARAMETER(status);
     }
 
     SendD0Notification();

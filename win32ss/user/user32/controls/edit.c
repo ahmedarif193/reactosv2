@@ -471,16 +471,16 @@ static SCRIPT_STRING_ANALYSIS EDIT_UpdateUniscribeData(EDITSTATE *es, HDC dc, IN
 			if (es->style & ES_PASSWORD)
 #ifdef __REACTOS__
 				/* ReactOS r57677 */
-				ScriptStringAnalyse(udc, &es->password_char, length, (3*length/2+16), -1, SSA_LINK|SSA_FALLBACK|SSA_GLYPHS|SSA_PASSWORD, -1, NULL, NULL, NULL, NULL, NULL, &es->ssa);
+				(void)ScriptStringAnalyse(udc, &es->password_char, length, (3*length/2+16), -1, SSA_LINK|SSA_FALLBACK|SSA_GLYPHS|SSA_PASSWORD, -1, NULL, NULL, NULL, NULL, NULL, &es->ssa);
 #else
-				ScriptStringAnalyse(udc, &es->password_char, length, (1.5*length+16), -1, SSA_LINK|SSA_FALLBACK|SSA_GLYPHS|SSA_PASSWORD, -1, NULL, NULL, NULL, NULL, NULL, &es->ssa);
+				(void)ScriptStringAnalyse(udc, &es->password_char, length, (1.5*length+16), -1, SSA_LINK|SSA_FALLBACK|SSA_GLYPHS|SSA_PASSWORD, -1, NULL, NULL, NULL, NULL, NULL, &es->ssa);
 #endif
 			else
 #ifdef __REACTOS__
 				/* ReactOS r57677 */
-				ScriptStringAnalyse(udc, es->text, length, (3*length/2+16), -1, SSA_LINK|SSA_FALLBACK|SSA_GLYPHS, -1, NULL, NULL, NULL, NULL, NULL, &es->ssa);
+				(void)ScriptStringAnalyse(udc, es->text, length, (3*length/2+16), -1, SSA_LINK|SSA_FALLBACK|SSA_GLYPHS, -1, NULL, NULL, NULL, NULL, NULL, &es->ssa);
 #else
-				ScriptStringAnalyse(udc, es->text, length, (1.5*length+16), -1, SSA_LINK|SSA_FALLBACK|SSA_GLYPHS, -1, NULL, NULL, NULL, NULL, NULL, &es->ssa);
+				(void)ScriptStringAnalyse(udc, es->text, length, (1.5*length+16), -1, SSA_LINK|SSA_FALLBACK|SSA_GLYPHS, -1, NULL, NULL, NULL, NULL, NULL, &es->ssa);
 #endif
 
 			if (es->font)
@@ -694,7 +694,7 @@ static void EDIT_BuildLineDefs_ML(EDITSTATE *es, INT istart, INT iend, INT delta
 				{
 					count = ScriptString_pcOutChars(current_line->ssa);
 					piDx = HeapAlloc(GetProcessHeap(),0,sizeof(INT) * (*count));
-					ScriptStringGetLogicalWidths(current_line->ssa,piDx);
+					(void)ScriptStringGetLogicalWidths(current_line->ssa,piDx);
 
 					prev = current_line->net_length-1;
 					do {
@@ -2392,7 +2392,7 @@ static void EDIT_PaintLine(EDITSTATE *es, HDC dc, INT line, BOOL rev)
 	}
 
 	if (ssa)
-		ScriptStringOut(ssa, x, y, 0, &es->format_rect, s - li, e - li, FALSE);
+		(void)ScriptStringOut(ssa, x, y, 0, &es->format_rect, s - li, e - li, FALSE);
 	else if (rev && (s != e) &&
 			((es->flags & EF_FOCUSED) || (es->style & ES_NOHIDESEL))) {
 		x += EDIT_PaintText(es, dc, x, y, line, 0, s - li, FALSE);

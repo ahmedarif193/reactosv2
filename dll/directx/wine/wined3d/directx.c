@@ -4304,7 +4304,8 @@ static BOOL wined3d_adapter_init_gl_caps(struct wined3d_adapter *adapter,
         TRACE("GLSL version string: %s.\n", debugstr_a(str));
 
         /* The format of the GLSL version string is "major.minor[.release] [vendor info]". */
-        sscanf(str, "%u.%u", &major, &minor);
+        int result = sscanf(str, "%u.%u", &major, &minor);
+        UNREFERENCED_PARAMETER(result);
         gl_info->glsl_version = MAKEDWORD_VERSION(major, minor);
         if (gl_info->glsl_version >= MAKEDWORD_VERSION(1, 30))
             gl_info->supported[WINED3D_GLSL_130] = TRUE;

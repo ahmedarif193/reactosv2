@@ -9380,7 +9380,8 @@ HRESULT WINAPI WriteFmtUserTypeStg(
     else
         clsid = CLSID_NULL;
 
-    ProgIDFromCLSID(&clsid, &wstrProgID);
+    HRESULT hr = ProgIDFromCLSID(&clsid, &wstrProgID);
+    UNREFERENCED_PARAMETER(hr);
 
     TRACE("progid is %s\n",debugstr_w(wstrProgID));
 

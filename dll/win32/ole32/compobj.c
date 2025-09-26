@@ -1207,7 +1207,8 @@ DWORD apartment_release(struct apartment *apt)
 
             memset(&zero, 0, sizeof(zero));
             IStream_Seek(local_server->marshal_stream, zero, STREAM_SEEK_SET, NULL);
-            CoReleaseMarshalData(local_server->marshal_stream);
+            HRESULT hr = CoReleaseMarshalData(local_server->marshal_stream);
+            UNREFERENCED_PARAMETER(hr);
             IStream_Release(local_server->marshal_stream);
             local_server->marshal_stream = NULL;
 
@@ -2412,7 +2413,8 @@ HRESULT WINAPI IIDFromString(LPCOLESTR s, IID *iid)
 HRESULT WINAPI StringFromCLSID(REFCLSID id, LPOLESTR *idstr)
 {
     if (!(*idstr = CoTaskMemAlloc(CHARS_IN_GUID * sizeof(WCHAR)))) return E_OUTOFMEMORY;
-    StringFromGUID2( id, *idstr, CHARS_IN_GUID );
+    INT result = StringFromGUID2( id, *idstr, CHARS_IN_GUID );
+    UNREFERENCED_PARAMETER(result);
     return S_OK;
 }
 
@@ -2453,7 +2455,8 @@ HRESULT COM_OpenKeyForCLSID(REFCLSID clsid, LPCWSTR keyname, REGSAM access, HKEY
     HKEY key;
 
     lstrcpyW(path, wszCLSIDSlash);
-    StringFromGUID2(clsid, path + lstrlenW(wszCLSIDSlash), CHARS_IN_GUID);
+    INT result = StringFromGUID2(clsid, path + lstrlenW(wszCLSIDSlash), CHARS_IN_GUID);
+    UNREFERENCED_PARAMETER(result);
     res = open_classes_key(HKEY_CLASSES_ROOT, path, keyname ? KEY_READ : access, &key);
     if (res == ERROR_FILE_NOT_FOUND)
         return REGDB_E_CLASSNOTREG;
@@ -2734,7 +2737,8 @@ HRESULT WINAPI CoGetPSClsid(REFIID riid, CLSID *pclsid)
 
     /* Interface\\{string form of riid}\\ProxyStubClsid32 */
     lstrcpyW(path, wszInterface);
-    StringFromGUID2(riid, path + ARRAY_SIZE(wszInterface) - 1, CHARS_IN_GUID);
+    INT result = StringFromGUID2(riid, path + ARRAY_SIZE(wszInterface) - 1, CHARS_IN_GUID);
+    UNREFERENCED_PARAMETER(result);
     lstrcpyW(path + ARRAY_SIZE(wszInterface) - 1 + CHARS_IN_GUID - 1, wszPSC);
 
     hr = get_ps_clsid_from_registry(path, 0, pclsid);
