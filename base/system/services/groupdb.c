@@ -253,6 +253,24 @@ ScmCreateGroupList(VOID)
                                     NULL,
                                     NULL);
 
+    if (Status == STATUS_OBJECT_NAME_NOT_FOUND ||
+        Status == STATUS_OBJECT_PATH_NOT_FOUND)
+    {
+        /*
+         * The ServiceGroupOrder key is optional. On media where the registry
+         * hive is read-only or trimmed down (e.g. LiveCD) it may not exist.
+         * Treat this as a benign condition and continue with an empty list.
+         */
+        DPRINT1("ScmCreateGroupList: ServiceGroupOrder missing, continuing without group data\n");
+        return ERROR_SUCCESS;
+    }
+
+    if (!NT_SUCCESS(Status))
+    {
+        DPRINT1("ScmCreateGroupList: RtlQueryRegistryValues failed (Status 0x%08lx)\n",
+                Status);
+    }
+
     return RtlNtStatusToDosError(Status);
 }
 

@@ -20,8 +20,17 @@
 #include <ndk/rtlfuncs.h>
 #include <ndk/obfuncs.h>
 
-#define ROUND_DOWN(n, align) (((ULONG)n) & ~((align) - 1l))
-#define ROUND_UP(n, align) ROUND_DOWN(((ULONG)n) + (align) - 1, (align))
+#define ROUND_DOWN(n, align) ((SIZE_T)(n) & ~((SIZE_T)(align) - 1))
+#define ROUND_UP(n, align)   ROUND_DOWN(((SIZE_T)(n) + ((SIZE_T)(align) - 1)), (align))
+
+static __inline SIZE_T
+LogfAlignmentPadding(
+    _In_ SIZE_T Value,
+    _In_ SIZE_T Alignment)
+{
+    SIZE_T Mask = Alignment - 1;
+    return (Alignment - (Value & Mask)) & Mask;
+}
 
 #include <evtlib.h>
 

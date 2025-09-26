@@ -44,32 +44,20 @@ typedef struct _KI_TB_FLUSH_CONTEXT
 } KI_TB_FLUSH_CONTEXT, *PKI_TB_FLUSH_CONTEXT;
 
 static
-VOID
+ULONG_PTR
 NTAPI
-KiFlushEntireTbDpcRoutine(
-    _In_ PKDPC Dpc,
-    _In_opt_ PVOID DeferredContext,
-    _In_opt_ PVOID SystemArgument1,
-    _In_opt_ PVOID SystemArgument2)
+KiFlushEntireTbIpiWorker(
+    _In_ ULONG_PTR Context)
 {
-    PKI_TB_FLUSH_CONTEXT Context;
+    PKI_TB_FLUSH_CONTEXT FlushContext = (PKI_TB_FLUSH_CONTEXT)Context;
 
-    UNREFERENCED_PARAMETER(Dpc);
-
-    Context = (PKI_TB_FLUSH_CONTEXT)DeferredContext;
-
-    /* Flush the local translation buffer */
     KeFlushCurrentTb();
-
-    /* Optionally invalidate caches */
-    if (Context && Context->FlushCaches)
+    if (FlushContext && FlushContext->FlushCaches)
     {
         KeInvalidateAllCaches();
     }
 
-    /* Synchronize with the generic call barrier */
-    KeSignalCallDpcSynchronize(SystemArgument2);
-    KeSignalCallDpcDone(SystemArgument1);
+    return 0;
 }
 
 typedef union _CPU_SIGNATURE
@@ -696,16 +684,12 @@ KeFlushEntireTb(IN BOOLEAN Invalid,
                 IN BOOLEAN AllProcessors)
 {
     KIRQL OldIrql;
-    BOOLEAN Broadcast;
-
-    Broadcast = (AllProcessors && (KeNumberProcessors > 1));
-
-    if (Broadcast)
+    if (AllProcessors && (KeNumberProcessors > 1))
     {
         KI_TB_FLUSH_CONTEXT Context;
 
         Context.FlushCaches = Invalid;
-        KeGenericCallDpc(KiFlushEntireTbDpcRoutine, &Context);
+        KeIpiGenericCall(KiFlushEntireTbIpiWorker, (ULONG_PTR)&Context);
     }
     else
     {

@@ -259,6 +259,10 @@ wWinMain(HINSTANCE hInstance,
     DPRINT("SERVICES: Service Control Manager\n");
 
     dwError = CheckForLiveCD();
+    DPRINT1("SERVICES: CheckForLiveCD returned %lu (LiveSetup=%d SetupInProgress=%d)\n",
+            dwError,
+            ScmLiveSetup,
+            ScmSetupInProgress);
     if (dwError != ERROR_SUCCESS)
     {
         DPRINT1("SERVICES: Failed to check for LiveCD (Error %lu)\n", dwError);
@@ -311,8 +315,22 @@ wWinMain(HINSTANCE hInstance,
     dwError = ScmCreateLastKnownGoodControlSet();
     if (dwError != ERROR_SUCCESS)
     {
-        DPRINT1("SERVICES: Failed to create the 'Last Known Good' control set (Error %lu)\n", dwError);
-        goto done;
+        if (dwError == ERROR_ACCESS_DENIED ||
+            dwError == ERROR_WRITE_PROTECT  ||
+            dwError == ERROR_SHARING_VIOLATION)
+        {
+            /*
+             * This happens on read-only media (e.g. LiveCD) where the registry
+             * hives cannot be updated. Log it but continue so that the SCM
+             * remains operational.
+             */
+            DPRINT1("SERVICES: Ignoring LastKnownGood update failure (Error %lu)\n", dwError);
+        }
+        else
+        {
+            DPRINT1("SERVICES: Failed to create the 'Last Known Good' control set (Error %lu)\n", dwError);
+            goto done;
+        }
     }
 
     /* Create the services database */
@@ -322,6 +340,7 @@ wWinMain(HINSTANCE hInstance,
         DPRINT1("SERVICES: Failed to create SCM database (Error %lu)\n", dwError);
         goto done;
     }
+    DPRINT1("SERVICES: Service database initialized\n");
 
     /* Update the services database */
     ScmGetBootAndSystemDriverState();
@@ -349,6 +368,7 @@ wWinMain(HINSTANCE hInstance,
 
     /* Signal start event */
     SetEvent(hScmStartEvent);
+    DPRINT1("SERVICES: RPC server started, start event signaled\n");
 
     DPRINT("SERVICES: Initialized\n");
 
@@ -363,6 +383,7 @@ wWinMain(HINSTANCE hInstance,
 
     /* Start auto-start services */
     ScmAutoStartServices();
+    DPRINT1("SERVICES: Auto-start services sequence complete\n");
 
     /* Signal auto-start complete event */
     SetEvent(hScmAutoStartCompleteEvent);
@@ -376,6 +397,7 @@ wWinMain(HINSTANCE hInstance,
     ScmInitialize = FALSE;
 
     DPRINT("SERVICES: Running\n");
+    DPRINT1("SERVICES: Initialization complete, waiting for shutdown\n");
 
     /* Wait until the shutdown event gets signaled */
     WaitForSingleObject(hScmShutdownEvent, INFINITE);

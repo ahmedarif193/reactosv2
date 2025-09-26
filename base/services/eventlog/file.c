@@ -563,7 +563,6 @@ ReadRecord(IN  PEVTLOGFILE LogFile,
     UNICODE_STRING StringW;
     PVOID SrcPtr, DstPtr;
     DWORD i;
-    DWORD dwPadding;
     DWORD dwRecordLength;
     PDWORD pLength;
 
@@ -650,11 +649,17 @@ ReadRecord(IN  PEVTLOGFILE LogFile,
     }
 
     /* Add the padding and the User SID */
-    dwPadding = sizeof(ULONG) - (((ULONG_PTR)DstPtr - (ULONG_PTR)Dst) % sizeof(ULONG));
-    RtlZeroMemory(DstPtr, dwPadding);
+    {
+        SIZE_T Padding = LogfAlignmentPadding((ULONG_PTR)DstPtr - (ULONG_PTR)Dst,
+                                              sizeof(ULONG));
+        if (Padding != 0)
+        {
+            RtlZeroMemory(DstPtr, Padding);
+            DstPtr = (PVOID)((ULONG_PTR)DstPtr + Padding);
+        }
+    }
 
     SrcPtr = (PVOID)((ULONG_PTR)Src + Src->UserSidOffset);
-    DstPtr = (PVOID)((ULONG_PTR)DstPtr + dwPadding);
 
     Dst->UserSidOffset = (DWORD)((ULONG_PTR)DstPtr - (ULONG_PTR)Dst);
     RtlCopyMemory(DstPtr, SrcPtr, Src->UserSidLength);
@@ -690,13 +695,20 @@ ReadRecord(IN  PEVTLOGFILE LogFile,
     DstPtr = (PVOID)((ULONG_PTR)DstPtr + Src->DataLength);
 
     /* Add the padding */
-    dwPadding = sizeof(ULONG) - (((ULONG_PTR)DstPtr - (ULONG_PTR)Dst) % sizeof(ULONG));
-    RtlZeroMemory(DstPtr, dwPadding);
+    {
+        SIZE_T Padding = LogfAlignmentPadding((ULONG_PTR)DstPtr - (ULONG_PTR)Dst,
+                                              sizeof(ULONG));
+        if (Padding != 0)
+        {
+            RtlZeroMemory(DstPtr, Padding);
+            DstPtr = (PVOID)((ULONG_PTR)DstPtr + Padding);
+        }
+    }
 
     /* Set the record length at the beginning and the end of the record */
-    dwRecordLength = (DWORD)((ULONG_PTR)DstPtr + dwPadding + sizeof(ULONG) - (ULONG_PTR)Dst);
+    dwRecordLength = (DWORD)((ULONG_PTR)DstPtr + sizeof(ULONG) - (ULONG_PTR)Dst);
     Dst->Length = dwRecordLength;
-    pLength = (PDWORD)((ULONG_PTR)DstPtr + dwPadding);
+    pLength = (PDWORD)DstPtr;
     *pLength = dwRecordLength;
 
     if (BytesRead)
@@ -912,7 +924,8 @@ LogfAllocAndBuildNewRecord(PSIZE_T pRecSize,
     PBYTE Buffer;
     PEVENTLOGRECORD pRec;
     PWSTR str;
-    UINT i, pos;
+    UINT i;
+    SIZE_T pos;
 
     SourceNameSize   = (SourceName   && SourceName->Buffer)   ? SourceName->Length   : 0;
     ComputerNameSize = (ComputerName && ComputerName->Buffer) ? ComputerName->Length : 0;
@@ -952,7 +965,7 @@ LogfAllocAndBuildNewRecord(PSIZE_T pRecSize,
     }
 
     pRec = (PEVENTLOGRECORD)Buffer;
-    pRec->Length = RecSize;
+    pRec->Length = (DWORD)RecSize;
     pRec->Reserved = LOGFILE_SIGNATURE;
 
     /*
@@ -999,11 +1012,11 @@ LogfAllocAndBuildNewRecord(PSIZE_T pRecSize,
     {
         RtlCopyMemory(Buffer + pos, pUserSid, dwSidLength);
         pRec->UserSidLength = dwSidLength;
-        pRec->UserSidOffset = pos;
+        pRec->UserSidOffset = (DWORD)pos;
         pos += dwSidLength;
     }
 
-    pRec->StringOffset = pos;
+    pRec->StringOffset = (DWORD)pos;
     for (i = 0, str = pStrings; i < wNumStrings; i++)
     {
         StringLen = wcslen(str) + 1; // str must be != NULL
@@ -1019,7 +1032,7 @@ LogfAllocAndBuildNewRecord(PSIZE_T pRecSize,
     {
         RtlCopyMemory(Buffer + pos, pRawData, dwDataSize);
         pRec->DataLength = dwDataSize;
-        pRec->DataOffset = pos;
+        pRec->DataOffset = (DWORD)pos;
         pos += dwDataSize;
     }
 
@@ -1027,7 +1040,7 @@ LogfAllocAndBuildNewRecord(PSIZE_T pRecSize,
     pos = ROUND_UP(pos, sizeof(ULONG));
 
     /* Initialize the trailing 'Length' member */
-    *((PDWORD)(Buffer + pos)) = RecSize;
+    *((PDWORD)(Buffer + pos)) = (DWORD)RecSize;
 
     *pRecSize = RecSize;
     return pRec;

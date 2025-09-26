@@ -483,20 +483,84 @@ static int rosfmt_default_dbg_vlog( enum __wine_debug_class cls, struct __wine_d
                                     const char *file, const char *func, const int line, const char *format, va_list args )
 {
     int ret = 0;
+    static char buffer[1024];
+    char *ptr = buffer;
+    int remaining = sizeof(buffer) - 1;
+    int len;
 
-    if (TRACE_ON(tid))
-        ret += wine_dbg_printf( "%04x:", HandleToULong(NtCurrentTeb()->ClientId.UniqueThread) );
-
-    if (cls < sizeof(debug_classes)/sizeof(debug_classes[0]))
-        ret += wine_dbg_printf( "%s:", debug_classes[cls] );
-
-    if (file && line)
-        ret += wine_dbg_printf( "(%s:%d) ", file, line );
+    /* Build entire message in buffer first to avoid split output */
+    if (cls == __WINE_DBCL_ERR)
+    {
+        /* Simplified output for ERR class - build complete message in buffer */
+        if (file && line)
+        {
+            len = snprintf(ptr, remaining, "(%s:%d) ", file, line);
+            if (len > 0 && len < remaining)
+            {
+                ptr += len;
+                remaining -= len;
+            }
+        }
+        if (format)
+        {
+            vsnprintf(ptr, remaining, format, args);
+        }
+        /* Print entire message at once */
+        ret = wine_dbg_printf("%s", buffer);
+    }
     else
-        ret += wine_dbg_printf( "%s:%s: ", channel->name, func );
+    {
+        /* Buffer other debug classes too to avoid split output */
+        buffer[0] = '\0';
+        ptr = buffer;
+        remaining = sizeof(buffer) - 1;
 
-    if (format)
-        ret += funcs.dbg_vprintf( format, args );
+        if (TRACE_ON(tid))
+        {
+            len = snprintf(ptr, remaining, "%04x:", HandleToULong(NtCurrentTeb()->ClientId.UniqueThread));
+            if (len > 0 && len < remaining)
+            {
+                ptr += len;
+                remaining -= len;
+            }
+        }
+
+        if (cls < sizeof(debug_classes)/sizeof(debug_classes[0]))
+        {
+            len = snprintf(ptr, remaining, "%s:", debug_classes[cls]);
+            if (len > 0 && len < remaining)
+            {
+                ptr += len;
+                remaining -= len;
+            }
+        }
+
+        if (file && line)
+        {
+            len = snprintf(ptr, remaining, "(%s:%d) ", file, line);
+            if (len > 0 && len < remaining)
+            {
+                ptr += len;
+                remaining -= len;
+            }
+        }
+        else
+        {
+            len = snprintf(ptr, remaining, "%s:%s: ", channel->name, func);
+            if (len > 0 && len < remaining)
+            {
+                ptr += len;
+                remaining -= len;
+            }
+        }
+
+        if (format)
+        {
+            vsnprintf(ptr, remaining, format, args);
+        }
+        /* Print entire message at once */
+        ret = wine_dbg_printf("%s", buffer);
+    }
     return ret;
 }
 /* Extended format */

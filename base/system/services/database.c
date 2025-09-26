@@ -144,6 +144,11 @@ ScmCreateNewControlPipe(
         return GetLastError();
     }
 
+    DPRINT1("SERVICES: Control pipe %S created for image '%S' (SecurityProcess=%d)\n",
+            szControlPipeName,
+            (pServiceImage->pszImagePath != NULL) ? pServiceImage->pszImagePath : L"<unknown>",
+            bSecurityServiceProcess);
+
     return ERROR_SUCCESS;
 }
 
@@ -1651,6 +1656,8 @@ ScmWaitForServiceConnect(PSERVICE Service)
 #endif
 
     DPRINT("ScmWaitForServiceConnect()\n");
+    DPRINT1("SERVICES: Waiting for control pipe connection from '%S'\n",
+            Service->lpServiceName);
 
     bResult = ConnectNamedPipe(Service->lpImage->hControlPipe,
                                &Overlapped);
@@ -1687,7 +1694,8 @@ ScmWaitForServiceConnect(PSERVICE Service)
                             2,
                             lpLogStrings);
 #endif
-                DPRINT1("Log EVENT_CONNECTION_TIMEOUT by %S\n", Service->lpDisplayName);
+                DPRINT1("SERVICES: Control pipe connection timed out for '%S'\n",
+                        Service->lpServiceName);
 
                 return ERROR_SERVICE_REQUEST_TIMEOUT;
             }
@@ -1700,7 +1708,9 @@ ScmWaitForServiceConnect(PSERVICE Service)
                 if (bResult == FALSE)
                 {
                     dwError = GetLastError();
-                    DPRINT1("GetOverlappedResult failed (Error %lu)\n", dwError);
+                    DPRINT1("SERVICES: GetOverlappedResult failed for '%S' (Error %lu)\n",
+                            Service->lpServiceName,
+                            dwError);
 
                     return dwError;
                 }
@@ -1708,7 +1718,9 @@ ScmWaitForServiceConnect(PSERVICE Service)
         }
         else if (dwError != ERROR_PIPE_CONNECTED)
         {
-            DPRINT1("ConnectNamedPipe failed (Error %lu)\n", dwError);
+            DPRINT1("SERVICES: ConnectNamedPipe failed for '%S' (Error %lu)\n",
+                    Service->lpServiceName,
+                    dwError);
             return dwError;
         }
     }
@@ -1753,7 +1765,8 @@ ScmWaitForServiceConnect(PSERVICE Service)
                             1,
                             lpLogStrings);
 #endif
-                DPRINT1("Log EVENT_READFILE_TIMEOUT by %S\n", Service->lpDisplayName);
+                DPRINT1("SERVICES: Timed out waiting for process id from '%S'\n",
+                        Service->lpServiceName);
 
                 return ERROR_SERVICE_REQUEST_TIMEOUT;
             }
@@ -1770,7 +1783,9 @@ ScmWaitForServiceConnect(PSERVICE Service)
                 if (bResult == FALSE)
                 {
                     dwError = GetLastError();
-                    DPRINT1("GetOverlappedResult() failed (Error %lu)\n", dwError);
+                    DPRINT1("SERVICES: GetOverlappedResult for process id failed for '%S' (Error %lu)\n",
+                            Service->lpServiceName,
+                            dwError);
 
                     return dwError;
                 }
@@ -1782,7 +1797,9 @@ ScmWaitForServiceConnect(PSERVICE Service)
         }
         else
         {
-            DPRINT1("ReadFile() failed (Error %lu)\n", dwError);
+            DPRINT1("SERVICES: ReadFile for process id failed for '%S' (Error %lu)\n",
+                    Service->lpServiceName,
+                    dwError);
             return dwError;
         }
     }
@@ -1804,10 +1821,17 @@ ScmWaitForServiceConnect(PSERVICE Service)
                     lpLogStrings);
 #endif
 
-        DPRINT1("Log EVENT_SERVICE_DIFFERENT_PID_CONNECTED by %S\n", Service->lpDisplayName);
+        DPRINT1("SERVICES: Process id mismatch for '%S' (expected %lu got %lu)\n",
+                Service->lpServiceName,
+                Service->lpImage->dwProcessId,
+                dwProcessId);
     }
 
     DPRINT("ScmWaitForServiceConnect() done\n");
+
+    DPRINT1("SERVICES: Control pipe connected for '%S' (pid %lu)\n",
+            Service->lpServiceName,
+            dwProcessId);
 
     return ERROR_SUCCESS;
 }
@@ -1825,6 +1849,8 @@ ScmStartUserModeService(PSERVICE Service,
     DWORD dwError = ERROR_SUCCESS;
 
     DPRINT("ScmStartUserModeService(%p)\n", Service);
+    DPRINT1("SERVICES: Preparing to start user-mode service '%S'\n",
+            Service->lpServiceName);
 
     /* If the image is already running, just send a start command */
     if (Service->lpImage->dwImageRunCount > 1)
@@ -1922,7 +1948,7 @@ ScmStartUserModeService(PSERVICE Service,
 
     if (!Result)
     {
-        DPRINT1("Starting '%S' failed with error %d\n",
+        DPRINT1("SERVICES: Starting '%S' failed with error %lu\n",
                 Service->lpServiceName, dwError);
         return dwError;
     }
@@ -1946,13 +1972,17 @@ ScmStartUserModeService(PSERVICE Service,
     dwError = ScmWaitForServiceConnect(Service);
     if (dwError != ERROR_SUCCESS)
     {
-        DPRINT1("Connecting control pipe failed! (Error %lu)\n", dwError);
+        DPRINT1("SERVICES: Control pipe handshake failed for '%S' (Error %lu)\n",
+                Service->lpServiceName,
+                dwError);
         Service->lpImage->dwProcessId = 0;
         return dwError;
     }
 
 Quit:
     /* Send the start command and return */
+    DPRINT1("SERVICES: Dispatching start control to '%S'\n",
+            Service->lpServiceName);
     return ScmControlServiceEx(Service->lpImage->hControlPipe,
                                Service->lpServiceName,
                                (Service->Status.dwServiceType & SERVICE_WIN32_OWN_PROCESS)
@@ -1975,6 +2005,10 @@ ScmLoadService(PSERVICE Service,
 
     DPRINT("ScmLoadService() called\n");
     DPRINT("Start Service %p (%S)\n", Service, Service->lpServiceName);
+    DPRINT1("SERVICES: Loading service '%S' (Type=%lx StartType=%lu)\n",
+            Service->lpServiceName,
+            Service->Status.dwServiceType,
+            Service->dwStartType);
 
     if (Service->Status.dwCurrentState != SERVICE_STOPPED)
     {
@@ -2015,6 +2049,12 @@ ScmLoadService(PSERVICE Service,
     }
 
     DPRINT("ScmLoadService() done (Error %lu)\n", dwError);
+
+    if (dwError == ERROR_SUCCESS)
+    {
+        DPRINT1("SERVICES: Service '%S' launch request succeeded\n",
+                Service->lpServiceName);
+    }
 
     if (dwError == ERROR_SUCCESS)
     {

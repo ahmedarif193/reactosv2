@@ -61,6 +61,13 @@ static UINTN                   UefiDiskHandleCount = 0;
 /* CD-ROM physical handles (separate index space for cdrom(#)) */
 static EFI_HANDLE*             UefiCdromHandles    = NULL;
 static ULONG                   UefiCdromCount      = 0;
+static BOOLEAN                UefiArcDiskTableReady = FALSE;
+
+BOOLEAN
+UefiArcDiskInfoReady(VOID)
+{
+    return UefiArcDiskTableReady;
+}
 
 /* -------------------------------------------------------------------------- */
 /* Minimal Device Path helpers                                                */
@@ -366,7 +373,7 @@ MapToCdromIndex(IN EFI_HANDLE CdHandle)
     for (ULONG i = 0; i < UefiCdromCount; ++i)
         if (UefiCdromHandles[i] == CdHandle)
             return i;
-    return 0; /* fallback */
+    return (ULONG)-1; /* not found */
 }
 
 /* -------------------------------------------------------------------------- */
@@ -478,7 +485,8 @@ UefiEnumerateArcDisks(VOID)
     TRACE("UefiEnumerateArcDisks: Found %lu HDD/SSD, %lu CD-ROM\n",
           (ULONG)UefiDiskHandleCount, (ULONG)UefiCdromCount);
 
-    return (UefiDiskHandleCount + UefiCdromCount) > 0;
+    UefiArcDiskTableReady = (UefiDiskHandleCount + UefiCdromCount) > 0;
+    return UefiArcDiskTableReady;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -572,12 +580,16 @@ UefiGetBootPartitionInfo(
     if (IsCdRomHandle(BootHandle))
     {
         ULONG cdIndex = MapToCdromIndex(BootHandle);
-        if (RDiskNumber)     *RDiskNumber     = cdIndex;
-        if (PartitionNumber) *PartitionNumber = 0;
-        if (BootDevice)
-            RtlStringCbPrintfA(BootDevice, BootDeviceSize, "multi(0)disk(0)cdrom(%lu)", cdIndex);
-        TRACE("UEFI ARC: Boot device -> cdrom(%lu)\n", cdIndex);
-        return TRUE;
+        if (cdIndex != (ULONG)-1)
+        {
+            if (RDiskNumber)     *RDiskNumber     = cdIndex;
+            if (PartitionNumber) *PartitionNumber = 0;
+            if (BootDevice)
+                RtlStringCbPrintfA(BootDevice, BootDeviceSize, "multi(0)disk(0)cdrom(%lu)", cdIndex);
+            TRACE("UEFI ARC: Boot device -> cdrom(%lu)\n", cdIndex);
+            return TRUE;
+        }
+        TRACE("UEFI ARC: Boot handle looked like CD but not indexed; falling back\n");
     }
 
     /* HDD/SSD boot */

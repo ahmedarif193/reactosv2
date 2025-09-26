@@ -3,6 +3,7 @@
 
 // AGENT-MODIFIED: Updated function declarations to match renamed implementations
 BOOLEAN UefiEnumerateArcDisks(VOID);
+BOOLEAN UefiArcDiskInfoReady(VOID);
 BOOLEAN UefiInitializeArcDisks(PLOADER_PARAMETER_BLOCK LoaderBlock);
 BOOLEAN UefiGetBootPartitionInfo(OUT PULONG RDiskNumber,
                                  OUT PULONG PartitionNumber,

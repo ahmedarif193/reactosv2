@@ -28,6 +28,7 @@ PBOOT_TABLE HalpSimpleBootFlagTable;
 PHYSICAL_ADDRESS HalpMaxHotPlugMemoryAddress;
 PHYSICAL_ADDRESS HalpLowStubPhysicalAddress;
 PHARDWARE_PTE HalpPteForFlush;
+
 PVOID HalpVirtAddrForFlush;
 PVOID HalpLowStub;
 
@@ -958,30 +959,62 @@ HalpSetupAcpiPhase0(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     return STATUS_SUCCESS;
 }
 
+/* Device info buffer for complete device output */
+static CHAR DeviceInfoBuffer[2048];
+
+/* Helper function to add to device buffer */
+CODE_SEG("INIT")
+static VOID
+PciDbgPrint(const char *Format, ...)
+{
+    va_list args;
+    SIZE_T currentLen = strlen(DeviceInfoBuffer);
+    SIZE_T remaining = sizeof(DeviceInfoBuffer) - currentLen - 1;
+
+    if (remaining > 0)
+    {
+        va_start(args, Format);
+        _vsnprintf(DeviceInfoBuffer + currentLen, remaining, Format, args);
+        va_end(args);
+    }
+}
+
+/* Function to print and clear device buffer */
+CODE_SEG("INIT")
+static VOID
+PciDbgFlush(VOID)
+{
+    if (DeviceInfoBuffer[0])
+    {
+        DbgPrint("%s", DeviceInfoBuffer);
+        DeviceInfoBuffer[0] = '\0';
+    }
+}
+
 /* Helper function to show PCI BAR size */
 CODE_SEG("INIT")
 static VOID
 ShowSize(ULONG Size)
 {
     if (!Size) return;
-    DbgPrint(" [size=");
+    PciDbgPrint(" [size=");
     if (Size < 1024)
     {
-        DbgPrint("%d", (int)Size);
+        PciDbgPrint("%d", (int)Size);
     }
     else if (Size < 1048576)
     {
-        DbgPrint("%dK", (int)(Size / 1024));
+        PciDbgPrint("%dK", (int)(Size / 1024));
     }
     else if (Size < 0x80000000)
     {
-        DbgPrint("%dM", (int)(Size / 1048576));
+        PciDbgPrint("%dM", (int)(Size / 1048576));
     }
     else
     {
-        DbgPrint("%d", Size);
+        PciDbgPrint("%d", Size);
     }
-    DbgPrint("]");
+    PciDbgPrint("]");
 }
 
 /* These includes provide the PCI device/vendor lookup tables */
@@ -1126,7 +1159,7 @@ HalpDebugPciDumpBusAcpi(
     }
 
     /* Print out the device information */
-    DbgPrint("%02x:%02x.%x %s [%02x%02x]: %s %s [%04x:%04x] (rev %02x)\n",
+    PciDbgPrint("%02x:%02x.%x %s [%02x%02x]: %s %s [%04x:%04x] (rev %02x)\n",
              BusNumber,
              PciSlot.u.bits.DeviceNumber,
              PciSlot.u.bits.FunctionNumber,
@@ -1141,35 +1174,35 @@ HalpDebugPciDumpBusAcpi(
 
     if (HeaderType == PCI_DEVICE_TYPE)
     {
-        DbgPrint("\tSubsystem: %s [%04x:%04x]\n",
+        PciDbgPrint("\tSubsystem: %s [%04x:%04x]\n",
                  bSubVendorName,
                  PciData->u.type0.SubVendorID,
                  PciData->u.type0.SubSystemID);
     }
 
     /* Print out and decode flags */
-    DbgPrint("\tFlags:");
-    if (PciData->Command & PCI_ENABLE_BUS_MASTER) DbgPrint(" bus master,");
-    if (PciData->Status & PCI_STATUS_66MHZ_CAPABLE) DbgPrint(" 66MHz,");
-    if ((PciData->Status & PCI_STATUS_DEVSEL) == 0x000) DbgPrint(" fast devsel,");
-    if ((PciData->Status & PCI_STATUS_DEVSEL) == 0x200) DbgPrint(" medium devsel,");
-    if ((PciData->Status & PCI_STATUS_DEVSEL) == 0x400) DbgPrint(" slow devsel,");
-    if ((PciData->Status & PCI_STATUS_DEVSEL) == 0x600) DbgPrint(" unknown devsel,");
-    DbgPrint(" latency %d", PciData->LatencyTimer);
+    PciDbgPrint("\tFlags:");
+    if (PciData->Command & PCI_ENABLE_BUS_MASTER) PciDbgPrint(" bus master,");
+    if (PciData->Status & PCI_STATUS_66MHZ_CAPABLE) PciDbgPrint(" 66MHz,");
+    if ((PciData->Status & PCI_STATUS_DEVSEL) == 0x000) PciDbgPrint(" fast devsel,");
+    if ((PciData->Status & PCI_STATUS_DEVSEL) == 0x200) PciDbgPrint(" medium devsel,");
+    if ((PciData->Status & PCI_STATUS_DEVSEL) == 0x400) PciDbgPrint(" slow devsel,");
+    if ((PciData->Status & PCI_STATUS_DEVSEL) == 0x600) PciDbgPrint(" unknown devsel,");
+    PciDbgPrint(" latency %d", PciData->LatencyTimer);
     if (PciData->u.type0.InterruptPin != 0 &&
         PciData->u.type0.InterruptLine != 0 &&
-        PciData->u.type0.InterruptLine != 0xFF) DbgPrint(", IRQ %02d", PciData->u.type0.InterruptLine);
-    else if (PciData->u.type0.InterruptPin != 0) DbgPrint(", IRQ assignment required");
-    DbgPrint("\n");
+        PciData->u.type0.InterruptLine != 0xFF) PciDbgPrint(", IRQ %02d", PciData->u.type0.InterruptLine);
+    else if (PciData->u.type0.InterruptPin != 0) PciDbgPrint(", IRQ assignment required");
+    PciDbgPrint("\n");
 
     if (HeaderType == PCI_BRIDGE_TYPE)
     {
-        DbgPrint("\tBridge:");
-        DbgPrint(" primary bus %d,", PciData->u.type1.PrimaryBus);
-        DbgPrint(" secondary bus %d,", PciData->u.type1.SecondaryBus);
-        DbgPrint(" subordinate bus %d,", PciData->u.type1.SubordinateBus);
-        DbgPrint(" secondary latency %d", PciData->u.type1.SecondaryLatency);
-        DbgPrint("\n");
+        PciDbgPrint("\tBridge:");
+        PciDbgPrint(" primary bus %d,", PciData->u.type1.PrimaryBus);
+        PciDbgPrint(" secondary bus %d,", PciData->u.type1.SecondaryBus);
+        PciDbgPrint(" subordinate bus %d,", PciData->u.type1.SubordinateBus);
+        PciDbgPrint(" secondary latency %d", PciData->u.type1.SecondaryLatency);
+        PciDbgPrint("\n");
     }
 
     /* Scan and display BARs (Base Address Registers) */
@@ -1214,7 +1247,7 @@ HalpDebugPciDumpBusAcpi(
                 while (!(PciBar & Size) && (Size)) Size <<= 1;
 
                 /* Print I/O BAR info */
-                DbgPrint("\tI/O ports at %04lx", Mem & PCI_ADDRESS_IO_ADDRESS_MASK);
+                PciDbgPrint("\tI/O ports at %04lx", Mem & PCI_ADDRESS_IO_ADDRESS_MASK);
                 ShowSize(Size);
             }
             else
@@ -1224,13 +1257,13 @@ HalpDebugPciDumpBusAcpi(
                 while (!(PciBar & Size) && (Size)) Size <<= 1;
 
                 /* Print Memory BAR info */
-                DbgPrint("\tMemory at %08lx (%d-bit, %sprefetchable)",
+                PciDbgPrint("\tMemory at %08lx (%d-bit, %sprefetchable)",
                          Mem & PCI_ADDRESS_MEMORY_ADDRESS_MASK,
                          (Mem & PCI_ADDRESS_MEMORY_TYPE_MASK) == PCI_TYPE_32BIT ? 32 : 64,
                          (Mem & PCI_ADDRESS_MEMORY_PREFETCHABLE) ? "" : "non-");
                 ShowSize(Size);
             }
-            DbgPrint("\n");
+            PciDbgPrint("\n");
         }
     }
 }
@@ -1251,8 +1284,8 @@ HalpInitializePciBus(VOID)
     /* Set the NMI crash flag */
     HalpGetNMICrashFlag();
 
-    /* Print PCI bus enumeration header */
-    DbgPrint("\n====== PCI BUS HARDWARE DETECTION (ACPI HAL) =======\n\n");
+    /* Print PCI bus enumeration header directly */
+    DbgPrint("\n====== PCI BUS HARDWARE DETECTION (ACPI HAL) =======\n");
 
     /* Enumerate all PCI buses */
     for (BusNumber = 0; BusNumber < 256; BusNumber++)
@@ -1309,6 +1342,9 @@ HalpInitializePciBus(VOID)
                 /* Use the enhanced debug output function */
                 HalpDebugPciDumpBusAcpi(BusNumber, PciSlot, &PciConfig);
 
+                /* Flush the complete device info */
+                PciDbgFlush();
+
                 /* For function 0, check if this is a multi-function device */
                 if (FunctionNumber == 0 && !(PciConfig.HeaderType & PCI_MULTIFUNCTION))
                 {
@@ -1319,7 +1355,7 @@ HalpInitializePciBus(VOID)
         }
     }
 
-    DbgPrint("\n====== END PCI BUS DETECTION =======\n\n");
+    DbgPrint("====== END PCI BUS DETECTION =======\n");
 }
 
 VOID

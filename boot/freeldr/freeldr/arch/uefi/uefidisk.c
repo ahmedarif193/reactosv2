@@ -341,7 +341,8 @@ GetHarddiskInformation(UCHAR DriveNumber)
 
     /* Fill out the ARC disk block */
     sprintf(ArcName, "multi(0)disk(0)rdisk(%u)", DriveNumber - FIRST_BIOS_DISK);
-    AddReactOSArcDiskInfo(ArcName, Signature, Checksum, ValidPartitionTable);
+    if (!UefiArcDiskInfoReady())
+        AddReactOSArcDiskInfo(ArcName, Signature, Checksum, ValidPartitionTable);
 
     sprintf(ArcName, "multi(0)disk(0)rdisk(%u)partition(0)", DriveNumber - FIRST_BIOS_DISK);
     FsRegisterDevice(ArcName, &UefiDiskVtbl);
@@ -613,7 +614,8 @@ UefiInitializeBootDevices(VOID)
         TRACE("Checksum: %x\n", Checksum);
 
         /* Fill out the ARC disk block */
-        AddReactOSArcDiskInfo(FrLdrBootPath, Signature, Checksum, TRUE);
+        if (!UefiArcDiskInfoReady())
+            AddReactOSArcDiskInfo(FrLdrBootPath, Signature, Checksum, TRUE);
 
         if (TempBufferAllocated)
             FrLdrTempFree(ReadBuffer, TAG_HW_DISK_CONTEXT);
