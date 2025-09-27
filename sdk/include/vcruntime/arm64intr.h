@@ -50,8 +50,12 @@ typedef enum _tag_ARM64INTR_BARRIER_TYPE
 #define _ReadWriteBarrier __reactos___ReadWriteBarrier
 #define _ReadBarrier __reactos___ReadBarrier
 #define _WriteBarrier __reactos___WriteBarrier
+#ifndef _rotl
 #define _rotl __reactos___rotl
+#endif
+#ifndef _rotr
 #define _rotr __reactos___rotr
+#endif
 #define _InterlockedCompareExchange16 __reactos___InterlockedCompareExchange16
 #define _InterlockedCompareExchange __reactos___InterlockedCompareExchange
 #define _InterlockedIncrement16 __reactos___InterlockedIncrement16

@@ -8,6 +8,10 @@
 #include <corecrt_internal.h>
 #include <malloc.h>
 
+/* Enable PSEH2 macros locally for C++ without leaking project-wide */
+#define __PSEH_USE_IN_CXX 1
+#include <pseh/pseh2.h>
+
 
 
 // Calls HeapWalk and guards against access violations in case a bad pointer is

@@ -1639,6 +1639,9 @@ LoadAndBootWindowsCommon(
 
     /* Emit detailed debug information via UART before handoff */
 #if defined(_M_ARM64) || defined(__aarch64__)
+    TRACE("ARM64: LoaderBlock->KernelStack before jump = 0x%llx\n",
+          (unsigned long long)LoaderBlock->KernelStack);
+
     {
         UartPuts("ARM64 FreeLoader: Kernel handoff - Entry: 0x");
         UartPutHex64((ULONGLONG)(ULONG_PTR)KiSystemStartup);
@@ -1647,6 +1650,18 @@ LoadAndBootWindowsCommon(
         UartPuts("\nCalling kernel now...\n");
 
     }
+
+    if (LoaderBlock->KernelStack == 0) {
+        ERR("ARM64: WARNING - LoaderBlock->KernelStack is zero before kernel jump!\n");
+    }
+
+    LoaderBlockVA->KernelStack = LoaderBlock->KernelStack;
+    LoaderBlockVA->u.Arm64.PanicStack = LoaderBlock->u.Arm64.PanicStack;
+    LoaderBlockVA->u.Arm64.InterruptStack = LoaderBlock->u.Arm64.InterruptStack;
+    TRACE("ARM64: LoaderBlockVA stack pointers sync - Kernel=0x%llx Panic=0x%llx Interrupt=0x%llx\n",
+          (unsigned long long)LoaderBlockVA->KernelStack,
+          (unsigned long long)LoaderBlockVA->u.Arm64.PanicStack,
+          (unsigned long long)LoaderBlockVA->u.Arm64.InterruptStack);
 
     {
         ULONGLONG loader_block_va64 = (ULONGLONG)(ULONG_PTR)LoaderBlockVA;

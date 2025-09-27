@@ -23,6 +23,7 @@ VOID Arm64DisableMMU(VOID);
 BOOLEAN Arm64IsMMUEnabled(VOID);
 BOOLEAN Arm64MapVirtualMemory(ULONGLONG VirtualAddress, ULONGLONG PhysicalAddress, ULONGLONG Size, ULONG Attributes);
 BOOLEAN Arm64UnmapVirtualMemory(ULONGLONG VirtualAddress, ULONGLONG Size);
+BOOLEAN Arm64MapUserSharedDataPage(ULONGLONG VirtualAddress, ULONGLONG PhysicalAddress, ULONG Attributes);
 ULONGLONG Arm64GetPhysicalAddress(ULONGLONG VirtualAddress);
 ULONG Arm64GetMemoryAttributes(ULONGLONG Address);
 VOID Arm64FlushTlbRange(ULONGLONG VirtualAddress, ULONGLONG Size);

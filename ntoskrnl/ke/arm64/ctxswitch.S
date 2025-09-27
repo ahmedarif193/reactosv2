@@ -496,12 +496,16 @@ KiInitializeProcessorState:
  *
  * Returns:
  *   x0 = PKTHREAD (current thread pointer)
+ *
+ * NOTE: Commented out to avoid duplicate symbol - defined in thrdobj.c
  */
+#if 0
 .globl KeGetCurrentThread
 /* .type KeGetCurrentThread, %function - not supported by MinGW */
 KeGetCurrentThread:
     mrs x0, tpidr_el1
     ret
+#endif
 
 /**
  * Set current thread pointer in TPIDR_EL1

@@ -259,6 +259,11 @@ BOOLEAN
 NTAPI
 HalInitializeGIC(VOID);
 
+/* Initialize the ARM64 GIC (Distributor + CPU interface) */
+BOOLEAN
+NTAPI
+HalInitializeInterruptController(VOID);
+
 BOOLEAN
 NTAPI
 HalInitializeSystemTimer(VOID);
@@ -271,9 +276,9 @@ VOID
 NTAPI
 HalInitializeCacheManager(VOID);
 
-VOID
+BOOLEAN
 NTAPI
-HalInitializeACPI(
+HalInitializeAcpi(
     IN PLOADER_PARAMETER_BLOCK LoaderBlock);
 
 VOID
@@ -482,10 +487,7 @@ HalGetMemoryInformation(
     OUT PARM64_MEMORY_INFO MemoryInfo);
 
 /* ACPI Functions */
-BOOLEAN
-NTAPI
-HalInitializeAcpi(
-    IN PLOADER_PARAMETER_BLOCK LoaderBlock);
+/* Duplicate declaration removed; see HalInitializeAcpi above */
 
 BOOLEAN
 NTAPI

@@ -56,22 +56,35 @@ HalInitializeAcpi(
 {
     DPRINT("Initializing ARM64 ACPI support\n");
 
-    /* TODO: Get RSDP from loader block
-     * The bootloader should have located and validated the RSDP
-     */
-    if (LoaderBlock && LoaderBlock->Extension)
+    /* Try to get ACPI root table pointer from the loader block extension. */
+    if (LoaderBlock && LoaderBlock->Extension && LoaderBlock->Extension->AcpiTable)
     {
-        /* TODO: Extract ACPI root pointer from loader block */
-        AcpiRootSystemDescriptionPointer = NULL;  /* Get from LoaderBlock */
+        PACPI_TABLE_HEADER Root = (PACPI_TABLE_HEADER)LoaderBlock->Extension->AcpiTable;
+        /* The extension provides a copy of either the RSDT or XSDT. */
+        if (Root)
+        {
+            /* Compare signature bytes to identify the root type. */
+            if (Root->Signature[0] == 'X' && Root->Signature[1] == 'S' &&
+                Root->Signature[2] == 'D' && Root->Signature[3] == 'T')
+            {
+                AcpiXsdt = Root;
+                DPRINT("ACPI XSDT provided by loader at %p, length %u\n", Root, Root->Length);
+            }
+            else if (Root->Signature[0] == 'R' && Root->Signature[1] == 'S' &&
+                     Root->Signature[2] == 'D' && Root->Signature[3] == 'T')
+            {
+                AcpiRsdt = Root;
+                DPRINT("ACPI RSDT provided by loader at %p, length %u\n", Root, Root->Length);
+            }
+            else
+            {
+                DPRINT1("Unknown ACPI root signature '%.4s'\n", Root->Signature);
+            }
+        }
     }
 
-    if (!AcpiRootSystemDescriptionPointer)
-    {
-        DPRINT1("ACPI RSDP not found\n");
-        return FALSE;
-    }
-
-    /* TODO: Parse ACPI tables for ARM64-specific information */
+    /* Parse ACPI tables for ARM64-specific information
+     * if available. We do not require RSDP/XSDT here. */
     if (!HalParseAcpiTables())
     {
         DPRINT1("Failed to parse ARM64 ACPI tables\n");
@@ -104,7 +117,7 @@ HalParseAcpiTables(VOID)
 {
     DPRINT("Parsing ARM64 ACPI tables\n");
 
-    /* TODO: Parse Multiple APIC Description Table (MADT) for ARM64
+    /* Parse Multiple APIC Description Table (MADT) for ARM64
      * The MADT contains information about:
      * - GIC CPU interfaces
      * - GIC Distributor
@@ -127,7 +140,7 @@ HalParseAcpiTables(VOID)
         return FALSE;
     }
 
-    /* TODO: Parse Generic Timer Description Table (GTDT)
+    /* Parse Generic Timer Description Table (GTDT)
      * The GTDT contains information about ARM64 Generic Timers:
      * - System counter frequency
      * - Timer interrupt numbers
@@ -492,11 +505,12 @@ HalParseGicRedistributor(
     DPRINT("GIC Redistributor: Address=0x%016llx, Length=0x%08x\n",
            GicRedistributor->BaseAddress, GicRedistributor->Length);
 
-    /* TODO: Register GIC Redistributor information (GICv3+)
-     * - Store redistributor base address and region length
-     * - Configure per-CPU redistributor interfaces
-     * - Set up LPI (Locality-specific Peripheral Interrupts) support
-     */
+    if (AcpiGicInfo.RedistributorBase.QuadPart == 0)
+    {
+        AcpiGicInfo.RedistributorBase.QuadPart = GicRedistributor->BaseAddress;
+        AcpiGicInfo.RedistributorSize = GicRedistributor->Length;
+        AcpiGicDataAvailable = TRUE;
+    }
 }
 
 /*

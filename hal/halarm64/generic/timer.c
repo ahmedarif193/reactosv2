@@ -58,6 +58,19 @@ HalInitializeTimer(VOID)
         : "=r"(TimerFrequency)
     );
 
+    /* If ACPI provides a frequency, prefer that */
+    if (HalAcpiIsAvailable())
+    {
+        ARM64_TIMER_INFO Ti;
+        if (HalAcpiGetTimerConfiguration(&Ti) && Ti.Frequency)
+        {
+            TimerFrequency = Ti.Frequency;
+            HalTimerConfiguration.PhysicalTimerIRQ = Ti.PhysicalTimerIRQ;
+            HalTimerConfiguration.VirtualTimerIRQ  = Ti.VirtualTimerIRQ;
+            HalTimerConfiguration.HypervisorTimerIRQ = Ti.HypervisorTimerIRQ;
+        }
+    }
+
     if (TimerFrequency == 0)
     {
         DPRINT1("Timer frequency not set by firmware, using default %lu Hz\n", ARM64_TIMER_DEFAULT_FREQ);
@@ -97,10 +110,13 @@ HalInitializeTimer(VOID)
 
     /* Store timer configuration */
     HalTimerConfiguration.Frequency = TimerFrequency;
-    HalTimerConfiguration.PhysicalTimerIRQ = 30;        /* Standard ARM64 physical timer IRQ */
-    HalTimerConfiguration.VirtualTimerIRQ = 27;         /* Standard ARM64 virtual timer IRQ */
-    HalTimerConfiguration.HypervisorTimerIRQ = 26;      /* Standard ARM64 hypervisor timer IRQ */
-    HalTimerConfiguration.SecureTimerPresent = TRUE;    /* Assume secure timer is available */
+    if (!HalTimerConfiguration.PhysicalTimerIRQ)
+        HalTimerConfiguration.PhysicalTimerIRQ = 30;        /* Default physical timer PPI */
+    if (!HalTimerConfiguration.VirtualTimerIRQ)
+        HalTimerConfiguration.VirtualTimerIRQ = 27;         /* Default virtual timer PPI */
+    if (!HalTimerConfiguration.HypervisorTimerIRQ)
+        HalTimerConfiguration.HypervisorTimerIRQ = 26;      /* Default hypervisor timer PPI */
+    HalTimerConfiguration.SecureTimerPresent = TRUE;
 
     /* Set up performance frequency for QueryPerformanceCounter */
     PerformanceFrequency.QuadPart = (LONGLONG)TimerFrequency;

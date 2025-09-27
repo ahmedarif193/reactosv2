@@ -10,6 +10,7 @@
 #include <ntoskrnl.h>
 #define NDEBUG
 #include <debug.h>
+#include <internal/arm64/earlydbg.h>
 
 /* GLOBALS *******************************************************************/
 
@@ -76,7 +77,7 @@ typedef struct _ARM64_DEBUG_STATE {
  * @param reg Register name
  * @return Register value
  */
-static FORCEINLINE ULONG64
+FORCEINLINE ULONG64
 Arm64ReadDebugIdRegister(const char* reg)
 {
     ULONG64 value;
@@ -106,7 +107,7 @@ Arm64ReadDebugIdRegister(const char* reg)
  * @param reg Register name
  * @param value Value to write
  */
-static FORCEINLINE VOID
+FORCEINLINE VOID
 Arm64WriteDebugRegister(const char* reg, ULONG64 value)
 {
 #ifdef _M_ARM64
@@ -447,47 +448,27 @@ KiDisableSingleStep(VOID)
  *
  * This function provides early boot debug output before the full
  * kernel debugger is initialized.
+ * Now uses the centralized early debug infrastructure.
  */
 VOID
 Arm64SerialPutString(
     _In_ PCHAR String)
 {
-    volatile ULONG *const Pl011Dr = (volatile ULONG *)0x09000000;
-
-    if (!String) return;
-
-    while (*String)
-    {
-        /* Write character to PL011 UART data register */
-        *Pl011Dr = (UCHAR)(*String);
-
-        /* Simple delay for UART transmission */
-        for (volatile ULONG Delay = 0; Delay < 1000; Delay++)
-        {
-            __asm__ __volatile__("nop");
-        }
-
-        String++;
-    }
+    KiEarlyDebugString(String);
 }
 
 /*
  * @brief Output a single character to ARM64 serial port
+ * Now uses the centralized early debug infrastructure.
  */
 VOID
 Arm64SerialPutChar(
     _In_ CHAR Character)
 {
-    volatile ULONG *const Pl011Dr = (volatile ULONG *)0x09000000;
-
-    /* Write character to PL011 UART data register */
-    *Pl011Dr = (UCHAR)Character;
-
-    /* Simple delay for UART transmission */
-    for (volatile ULONG Delay = 0; Delay < 1000; Delay++)
-    {
-        __asm__ __volatile__("nop");
-    }
+    CHAR Buffer[2];
+    Buffer[0] = Character;
+    Buffer[1] = '\0';
+    KiEarlyDebugString(Buffer);
 }
 
 /*
@@ -497,24 +478,7 @@ VOID
 Arm64SerialPutHex64(
     _In_ ULONGLONG Value)
 {
-    CHAR HexBuffer[20];
-    INT Pos = 0;
-    INT Shift;
-
-    /* Build hex string */
-    HexBuffer[Pos++] = '0';
-    HexBuffer[Pos++] = 'x';
-
-    for (Shift = 60; Shift >= 0; Shift -= 4)
-    {
-        UCHAR Nibble = (UCHAR)((Value >> Shift) & 0xF);
-        HexBuffer[Pos++] = (Nibble < 10) ? ('0' + Nibble) : ('A' + Nibble - 10);
-    }
-
-    HexBuffer[Pos] = '\0';
-
-    /* Output the hex string */
-    Arm64SerialPutString(HexBuffer);
+    KiEarlyDebugHex(NULL, Value);
 }
 
 /*

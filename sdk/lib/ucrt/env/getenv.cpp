@@ -68,15 +68,9 @@ static Character* __cdecl common_getenv(Character const* const name) throw()
     Character* result = 0;
 
     __acrt_lock(__acrt_environment_lock);
-    __try
-    {
-        result = common_getenv_nolock(name);
-    }
-    __finally
-    {
-        __acrt_unlock(__acrt_environment_lock);
-    }
-    __endtry
+    /* Non-MSVC/Clang build without SEH: perform action and cleanup sequentially */
+    result = common_getenv_nolock(name);
+    __acrt_unlock(__acrt_environment_lock);
     
     return result;
 }
@@ -153,15 +147,8 @@ static errno_t __cdecl common_getenv_s(
     errno_t status = 0;
 
     __acrt_lock(__acrt_environment_lock);
-    __try
-    {
-        status = common_getenv_s_nolock(required_count, buffer, buffer_count, name);
-    }
-    __finally
-    {
-        __acrt_unlock(__acrt_environment_lock);
-    }
-    __endtry
+    status = common_getenv_s_nolock(required_count, buffer, buffer_count, name);
+    __acrt_unlock(__acrt_environment_lock);
     
     return status;
 }
@@ -263,21 +250,14 @@ static errno_t __cdecl common_dupenv_s(
     errno_t status = 0;
 
     __acrt_lock(__acrt_environment_lock);
-    __try
-    {
-        status = common_dupenv_s_nolock(
-            buffer_pointer,
-            buffer_count,
-            name,
-            block_use,
-            file_name,
-            line_number);
-    }
-    __finally
-    {
-        __acrt_unlock(__acrt_environment_lock);
-    }
-    __endtry
+    status = common_dupenv_s_nolock(
+        buffer_pointer,
+        buffer_count,
+        name,
+        block_use,
+        file_name,
+        line_number);
+    __acrt_unlock(__acrt_environment_lock);
     
     return status;
 }

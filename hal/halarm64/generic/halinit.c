@@ -121,6 +121,9 @@ HalInitSystem(
             /* Initialize ARM64 cache and memory coherency early */
             HalInitializeCacheManager();
 
+            /* Initialize ACPI first so GIC can use MADT if available */
+            HalInitializeAcpi(LoaderBlock);
+
             /* Initialize ARM64 Generic Interrupt Controller */
             if (!HalInitializeGIC())
             {
@@ -172,7 +175,7 @@ HalInitSystem(
             HalEnableTimerInterrupt();
 
             /* Initialize ACPI support for ARM64 platform discovery */
-            HalInitializeACPI(LoaderBlock);
+            HalInitializeAcpi(LoaderBlock);
 
             /* Initialize DMA coherency and IOMMU support */
             HalInitializeDMA();
@@ -359,19 +362,10 @@ BOOLEAN
 NTAPI
 HalInitializeGIC(VOID)
 {
-    /* TODO: Initialize ARM64 GIC (Generic Interrupt Controller)
-     * - Detect GIC version (GICv2, GICv3, GICv4)
-     * - Initialize GIC Distributor interface
-     * - Initialize GIC CPU interface(s)
-     * - Set up interrupt routing and priorities
-     * - Configure system interrupts (SGI, PPI, SPI)
-     * - Enable GIC and configure basic interrupt delivery
-     */
-
     DPRINT("Initializing ARM64 Generic Interrupt Controller\n");
 
-    /* Placeholder - basic GIC initialization would go here */
-    return TRUE;
+    /* Call into GIC support to perform real initialization */
+    return HalInitializeInterruptController();
 }
 
 /*
@@ -381,19 +375,16 @@ BOOLEAN
 NTAPI
 HalInitializeSystemTimer(VOID)
 {
-    /* TODO: Initialize ARM64 Generic Timer
-     * - Configure CNTKCTL_EL1 for timer access
-     * - Set up virtual and physical timer interrupts
-     * - Initialize timer frequency and calibration
-     * - Set up timer interrupt handling
-     * - Configure timer for system tick generation
-     */
-
     DPRINT("Initializing ARM64 Generic Timer\n");
 
-    /* Mark timer as initialized */
-    HalTimerInitialized = TRUE;
+    /* Initialize the architectural timer and base frequency */
+    if (!HalInitializeTimer())
+    {
+        DPRINT1("HalInitializeTimer failed\n");
+        return FALSE;
+    }
 
+    /* The interrupt system will register the timer ISR when initialized. */
     return TRUE;
 }
 
@@ -571,17 +562,10 @@ VOID
 NTAPI
 HalEnableTimerInterrupt(VOID)
 {
-    /* TODO: Enable ARM64 Generic Timer interrupt
-     * - Configure timer interrupt routing in GIC
-     * - Set appropriate interrupt priority
-     * - Enable timer interrupt in the interrupt controller
-     * - Set up timer interrupt handler registration
-     */
-
     DPRINT("Enabling ARM64 Generic Timer interrupt\n");
 
-    /* For now, just mark as enabled - actual implementation needed */
-    HalTimerInitialized = TRUE;
+    /* Program a 100 Hz system tick and enable IRQ in the GIC. */
+    HalInitializeSystemClock(100);
 }
 
 /*

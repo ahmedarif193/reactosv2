@@ -20,12 +20,12 @@ typedef KIPCR KPCR, *PKPCR;
 #define SYNCH_LEVEL DISPATCH_LEVEL
 #endif
 
-/* ARM64 PCR (Processor Control Region) */
-#define PCR ((KPCR *)(ARM64_PCR_ADDRESS))
-
 /* ARM64 specific addresses */
 #define ARM64_PCR_ADDRESS           0xFFFFF80000000000ULL
 #define ARM64_SHARED_USER_DATA      0x7FFE0000ULL
+
+/* ARM64 PCR (Processor Control Region) */
+#define PCR (KeGetPcr())
 
 /* ARM64 breakpoint definitions */
 #define KD_BREAKPOINT_TYPE          ULONG
@@ -113,6 +113,15 @@ typedef KIPCR KPCR, *PKPCR;
 #define ARM64_FEATURE_ATOMIC        0x00000020
 #define ARM64_FEATURE_RAS           0x00000040
 #define ARM64_FEATURE_SVE           0x00000080
+#define ARM64_FEATURE_PAC           0x00000100  /* Pointer Authentication */
+#define ARM64_FEATURE_BTI           0x00000200  /* Branch Target Identification */
+#define ARM64_FEATURE_MTE           0x00000400  /* Memory Tagging Extensions */
+
+/* Global ARM64 feature flags */
+extern ULONG KiArmV8Features;
+extern BOOLEAN KiArmV83PacSupported;
+extern BOOLEAN KiArmV85BtiSupported;
+extern BOOLEAN KiArmV85MteSupported;
 
 /* ARM64 cache operations */
 #define ARM64_DC_CIVAC(addr)    __asm__ volatile("dc civac, %0" :: "r" (addr) : "memory")
@@ -142,8 +151,72 @@ typedef KIPCR KPCR, *PKPCR;
 #define ARM64_RESTORE_INTERRUPTS(daif) \
     __asm__ volatile("msr daif, %0" :: "r" (daif) : "memory")
 
+/* ARM64 context preservation for DPC/APC handlers */
+#define ARM64_SAVE_NEON_CONTEXT() \
+    do { \
+        ULONG64 __fpcr, __fpsr; \
+        __asm__ volatile( \
+            "mrs %0, fpcr\n" \
+            "mrs %1, fpsr\n" \
+            : "=r" (__fpcr), "=r" (__fpsr) :: "memory"); \
+        KeGetCurrentThread()->FpcrSaved = __fpcr; \
+        KeGetCurrentThread()->FpsrSaved = __fpsr; \
+    } while(0)
+
+#define ARM64_RESTORE_NEON_CONTEXT() \
+    do { \
+        ULONG64 __fpcr = KeGetCurrentThread()->FpcrSaved; \
+        ULONG64 __fpsr = KeGetCurrentThread()->FpsrSaved; \
+        __asm__ volatile( \
+            "msr fpcr, %0\n" \
+            "msr fpsr, %1\n" \
+            :: "r" (__fpcr), "r" (__fpsr) : "memory"); \
+    } while(0)
+
+/* ARM64 pointer authentication context preservation */
+#define ARM64_SAVE_PAC_KEYS() \
+    do { \
+        if (KiArmV83PacSupported) { \
+            /* Save pointer authentication keys if supported */ \
+            /* This would save APIA, APIB, APDA, APDB, APGA keys */ \
+            /* Implementation depends on kernel policy */ \
+        } \
+    } while(0)
+
+#define ARM64_RESTORE_PAC_KEYS() \
+    do { \
+        if (KiArmV83PacSupported) { \
+            /* Restore pointer authentication keys if supported */ \
+        } \
+    } while(0)
+
 /* Stack alignment for ARM64 */
 #define STACK_ALIGN                 16
+
+/* ARM64 DPC/APC context preservation functions */
+VOID
+NTAPI
+KiSaveFloatingPointState(
+    IN PKTHREAD Thread
+);
+
+VOID
+NTAPI
+KiRestoreFloatingPointState(
+    IN PKTHREAD Thread
+);
+
+VOID
+NTAPI
+KiSaveSveLengthContext(
+    IN PKTHREAD Thread
+);
+
+VOID
+NTAPI
+KiRestoreSveLengthContext(
+    IN PKTHREAD Thread
+);
 
 /* ARM64 kernel function declarations */
 NTSTATUS
@@ -198,8 +271,7 @@ KiSwapContextARM64(
 /* KiSwapContext is declared in generic ke.h - no ARM64 specific version needed */
 
 /* ARM64 specific PCR access */
-#define KeGetPcr() PCR
-#define KeGetCurrentPrcb() (&(PCR->Prcb))
+#define KeGetCurrentPrcb() (&(KeGetPcr()->Prcb))
 
 /* ARM64 IRQL function declarations */
 VOID
@@ -242,19 +314,159 @@ extern volatile KSYSTEM_TIME KeTickCount;
 /* ARM64 Performance Measurement (stub for x86 compatibility) */
 #define Ki386PerfEnd()
 
-/* ARM64 spinlock operations - use Arm64 prefix to avoid name conflict */
+/* ARM64 spinlock operations using LDXR/STXR for better performance */
 #define Arm64AcquireSpinLock(SpinLock) do { \
-    while (__sync_lock_test_and_set(SpinLock, 1)) { \
-        while (*(volatile LONG*)(SpinLock)) \
-            __asm__ volatile("yield"); \
-    } \
+    ULONG tmp; \
+    __asm__ volatile( \
+        "1: ldxr    %w0, [%1]\n" \
+        "   cbnz    %w0, 2f\n" \
+        "   mov     %w0, #1\n" \
+        "   stxr    %w2, %w0, [%1]\n" \
+        "   cbnz    %w2, 1b\n" \
+        "   dmb     sy\n" \
+        "   b       3f\n" \
+        "2: yield\n" \
+        "   b       1b\n" \
+        "3:\n" \
+        : "=&r" (tmp), "+Q" (*(SpinLock)) \
+        : "r" (tmp) \
+        : "memory"); \
 } while(0)
 
-#define Arm64ReleaseSpinLock(SpinLock) \
-    __sync_lock_release(SpinLock)
+#define Arm64ReleaseSpinLock(SpinLock) do { \
+    __asm__ volatile( \
+        "dmb    sy\n" \
+        "str    wzr, [%0]\n" \
+        : \
+        : "r" (SpinLock) \
+        : "memory"); \
+} while(0)
 
-/* ARM64 atomic operations - use system provided intrinsics */
-/* InterlockedXX functions are already defined in wdm.h */
+/* ARM64 atomic operations using LDXR/STXR for kernel operations */
+
+/* ARM64-specific atomic compare and swap */
+FORCEINLINE
+LONG
+Arm64InterlockedCompareExchange(
+    IN OUT volatile LONG* Destination,
+    IN LONG Exchange,
+    IN LONG Comparand)
+{
+    LONG Result, tmp;
+    __asm__ volatile(
+        "1: ldxr    %w0, [%3]\n"
+        "   cmp     %w0, %w4\n"
+        "   b.ne    2f\n"
+        "   stxr    %w1, %w2, [%3]\n"
+        "   cbnz    %w1, 1b\n"
+        "   dmb     sy\n"
+        "2:\n"
+        : "=&r" (Result), "=&r" (tmp)
+        : "r" (Exchange), "r" (Destination), "r" (Comparand)
+        : "memory", "cc");
+    return Result;
+}
+
+/* ARM64-specific atomic exchange */
+FORCEINLINE
+LONG
+Arm64InterlockedExchange(
+    IN OUT volatile LONG* Target,
+    IN LONG Value)
+{
+    LONG Result, tmp;
+    __asm__ volatile(
+        "1: ldxr    %w0, [%3]\n"
+        "   stxr    %w1, %w2, [%3]\n"
+        "   cbnz    %w1, 1b\n"
+        "   dmb     sy\n"
+        : "=&r" (Result), "=&r" (tmp)
+        : "r" (Value), "r" (Target)
+        : "memory");
+    return Result;
+}
+
+/* ARM64-specific atomic increment */
+FORCEINLINE
+LONG
+Arm64InterlockedIncrement(
+    IN OUT volatile LONG* Addend)
+{
+    LONG Result, tmp, tmp2;
+    __asm__ volatile(
+        "1: ldxr    %w0, [%3]\n"
+        "   add     %w1, %w0, #1\n"
+        "   stxr    %w2, %w1, [%3]\n"
+        "   cbnz    %w2, 1b\n"
+        "   dmb     sy\n"
+        "   mov     %w0, %w1\n"
+        : "=&r" (Result), "=&r" (tmp), "=&r" (tmp2)
+        : "r" (Addend)
+        : "memory");
+    return Result;
+}
+
+/* ARM64-specific atomic decrement */
+FORCEINLINE
+LONG
+Arm64InterlockedDecrement(
+    IN OUT volatile LONG* Addend)
+{
+    LONG Result, tmp, tmp2;
+    __asm__ volatile(
+        "1: ldxr    %w0, [%3]\n"
+        "   sub     %w1, %w0, #1\n"
+        "   stxr    %w2, %w1, [%3]\n"
+        "   cbnz    %w2, 1b\n"
+        "   dmb     sy\n"
+        "   mov     %w0, %w1\n"
+        : "=&r" (Result), "=&r" (tmp), "=&r" (tmp2)
+        : "r" (Addend)
+        : "memory");
+    return Result;
+}
+
+/* ARM64-specific atomic OR operation */
+FORCEINLINE
+CHAR
+Arm64InterlockedOr8(
+    IN OUT volatile CHAR* Destination,
+    IN CHAR Value)
+{
+    CHAR Result, tmp, tmp2;
+    __asm__ volatile(
+        "1: ldxrb   %w0, [%3]\n"
+        "   orr     %w1, %w0, %w4\n"
+        "   stxrb   %w2, %w1, [%3]\n"
+        "   cbnz    %w2, 1b\n"
+        "   dmb     sy\n"
+        : "=&r" (Result), "=&r" (tmp), "=&r" (tmp2)
+        : "r" (Destination), "r" ((ULONG)Value)
+        : "memory");
+    return Result;
+}
+
+/* ARM64-specific atomic AND operation */
+FORCEINLINE
+CHAR
+Arm64InterlockedAnd8(
+    IN OUT volatile CHAR* Destination,
+    IN CHAR Value)
+{
+    CHAR Result, tmp, tmp2;
+    __asm__ volatile(
+        "1: ldxrb   %w0, [%3]\n"
+        "   and     %w1, %w0, %w4\n"
+        "   stxrb   %w2, %w1, [%3]\n"
+        "   cbnz    %w2, 1b\n"
+        "   dmb     sy\n"
+        : "=&r" (Result), "=&r" (tmp), "=&r" (tmp2)
+        : "r" (Destination), "r" ((ULONG)Value)
+        : "memory");
+    return Result;
+}
+
+/* InterlockedXX functions are already defined in wdm.h, but we provide ARM64 optimized versions */
 
 /* ARM64 CPU yield for spin loops */
 #define YieldProcessor() __yield()

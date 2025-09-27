@@ -11,22 +11,42 @@
 #define NDEBUG
 #include <debug.h>
 
+/* ARM64 Architecture definitions */
+#include <internal/arm64/mm.h>
+
 /* ARM64 Specific Constants */
 #define PCR_MAJOR_VERSION       1
 #define PCR_MINOR_VERSION       1
 
-/* FORWARD DECLARATIONS *****************************************************/
+/* ARM64 Register Default Values - following Windows patterns */
+#define ARM64_DEFAULT_TIMER_FREQ    62500000ULL
+#define ARM64_CSSELR_L1_DCACHE      0ULL
 
-DECLSPEC_NORETURN
-VOID
-NTAPI
-KiSystemStartupReal(IN PLOADER_PARAMETER_BLOCK LoaderBlock);
+/* ARM64 MPIDR_EL1 parsing */
+#define ARM64_MPIDR_AFF0_MASK       0x000000FFULL
+#define ARM64_MPIDR_AFF1_MASK       0x0000FF00ULL
+#define ARM64_MPIDR_AFF2_MASK       0x00FF0000ULL
+#define ARM64_MPIDR_AFF3_MASK       0xFF00000000ULL
+#define ARM64_MPIDR_MT              (1ULL << 24)
+#define ARM64_MPIDR_UP              (1ULL << 30)
+
+/* ARM64 CPU Feature Detection Masks */
+#define ARM64_ISAR0_AES_MASK        0xF0ULL
+#define ARM64_ISAR0_SHA_MASK        0xF00ULL
+#define ARM64_ISAR0_CRC32_MASK      0xF0000ULL
+#define ARM64_ISAR0_ATOMIC_MASK     0xF00000ULL
+#define ARM64_PFR0_FP_MASK          0xFULL
+#define ARM64_PFR0_ASIMD_MASK       0xF0ULL
+
+/* Exception Level constants */
+#define ARM64_CURRENTEL_MASK        0xCULL
+#define ARM64_CURRENTEL_SHIFT       2
 
 /* GLOBALS *******************************************************************/
 
 /* ARM64 processor information */
 ULONG KiProcessorArchitecture = PROCESSOR_ARCHITECTURE_ARM64;
-ULONG KiProcessorLevel = 8;  /* ARMv8 */
+ULONG KiProcessorLevel = 0;
 ULONG KiProcessorRevision = 0;
 
 /* ARM64 CPU features */
@@ -61,59 +81,68 @@ KiInitializeArm64Features(VOID)
 {
     ULONGLONG midr, idr0, pfr0;
     
-    /* Read processor identification */
+    /* Read processor identification registers with proper barriers */
+    ARM64_ISB();  /* Ensure previous operations complete */
     midr = __readmidr();
     idr0 = ARM64_READ_SYSREG(id_aa64isar0_el1);
     pfr0 = ARM64_READ_SYSREG(id_aa64pfr0_el1);
-    
+    ARM64_ISB();  /* Synchronize register reads */
+ 
     /* Extract processor information */
+    KiProcessorLevel = (ULONG)((midr >> 4) & 0xFFF);
     KiProcessorRevision = (ULONG)(midr & 0xF);
+    KiProcessorArchitecture = PROCESSOR_ARCHITECTURE_ARM64;
+    KeProcessorArchitecture = PROCESSOR_ARCHITECTURE_ARM64;
+    KeProcessorLevel = (USHORT)KiProcessorLevel;
+    KeProcessorRevision = (USHORT)KiProcessorRevision;
     
     /* Detect CPU features */
     KiArm64Features = 0;
     
-    /* Check for AES support */
-    if ((idr0 & 0xF0) != 0)
+    /* Check for AES support - ID_AA64ISAR0_EL1.AES[7:4] */
+    if ((idr0 & ARM64_ISAR0_AES_MASK) != 0)
     {
         KiArm64Features |= ARM64_FEATURE_AES;
         DPRINT("ARM64: AES encryption support detected\n");
     }
-    
-    /* Check for SHA support */
-    if (((idr0 >> 8) & 0xF) != 0)
+
+    /* Check for SHA support - ID_AA64ISAR0_EL1.SHA1[11:8] */
+    if ((idr0 & ARM64_ISAR0_SHA_MASK) != 0)
     {
         KiArm64Features |= ARM64_FEATURE_SHA;
         DPRINT("ARM64: SHA hash support detected\n");
     }
     
-    /* Check for floating point support */
-    if ((pfr0 & 0xF) != 0xF)
+    /* Check for floating point support - ID_AA64PFR0_EL1.FP[3:0] */
+    if ((pfr0 & ARM64_PFR0_FP_MASK) != 0xF)
     {
         KiArm64Features |= ARM64_FEATURE_FP;
         DPRINT("ARM64: Floating point support detected\n");
     }
-    
-    /* Check for Advanced SIMD support */
-    if (((pfr0 >> 4) & 0xF) != 0xF)
+
+    /* Check for Advanced SIMD support - ID_AA64PFR0_EL1.AdvSIMD[7:4] */
+    if ((pfr0 & ARM64_PFR0_ASIMD_MASK) != 0xF0)
     {
         KiArm64Features |= ARM64_FEATURE_ASIMD;
         DPRINT("ARM64: Advanced SIMD support detected\n");
     }
     
-    /* Check for CRC32 support */
-    if (((idr0 >> 16) & 0xF) != 0)
+    /* Check for CRC32 support - ID_AA64ISAR0_EL1.CRC32[19:16] */
+    if ((idr0 & ARM64_ISAR0_CRC32_MASK) != 0)
     {
         KiArm64Features |= ARM64_FEATURE_CRC32;
         DPRINT("ARM64: CRC32 support detected\n");
     }
-    
-    /* Check for Atomic instructions support */
-    if (((idr0 >> 20) & 0xF) != 0)
+
+    /* Check for Atomic instructions support - ID_AA64ISAR0_EL1.Atomic[23:20] */
+    if ((idr0 & ARM64_ISAR0_ATOMIC_MASK) != 0)
     {
         KiArm64Features |= ARM64_FEATURE_ATOMIC;
-        DPRINT("ARM64: Atomic instructions support detected\n");
+        DPRINT("ARM64: LSE atomic instructions support detected\n");
     }
     
+    KeFeatureBits = KiArm64Features;
+
     DPRINT("ARM64: Features=0x%llx, Revision=%u\n", KiArm64Features, KiProcessorRevision);
 }
 
@@ -125,20 +154,21 @@ NTAPI
 KiInitializeArm64Cache(VOID)
 {
     ULONGLONG ctr, ccsidr;
-    
-    /* Read cache type register */
+
+    /* Read cache type register - accessible from all exception levels */
+    ARM64_ISB();  /* Synchronize before reading CTR_EL0 */
     ctr = ARM64_READ_SYSREG(ctr_el0);
     
     /* Extract cache line sizes dynamically from CTR_EL0 */
     KiDcacheLineSize = 4 << ((ctr & 0xF0000) >> 16);  /* DminLine field */
     KiIcacheLineSize = 4 << (ctr & 0xF);  /* IminLine field */
     
-    /* Select L1 data cache */
-    ARM64_WRITE_SYSREG(csselr_el1, 0);
-    ARM64_ISB();  /* Memory barrier after system register write */
-    ARM64_DSB_SY();  /* Data synchronization barrier for system register effects */
-    
+    /* Select L1 data cache for CCSIDR_EL1 reading */
+    ARM64_WRITE_SYSREG(csselr_el1, ARM64_CSSELR_L1_DCACHE);
+    ARM64_ISB();  /* Synchronize CSSELR_EL1 write before reading CCSIDR_EL1 */
+
     ccsidr = ARM64_READ_SYSREG(ccsidr_el1);
+    ARM64_ISB();  /* Synchronize CCSIDR_EL1 read */
     
     DPRINT("ARM64: DCache line=%u bytes, ICache line=%u bytes\n", 
            KiDcacheLineSize, KiIcacheLineSize);
@@ -152,23 +182,24 @@ VOID
 NTAPI
 KiInitializeArm64Timer(VOID)
 {
-    /* Read timer frequency */
+    /* Read timer frequency - CNTFRQ_EL0 set by firmware/EL2/EL3 */
+    ARM64_ISB();  /* Synchronize before reading timer frequency */
     KiTimerFrequency = __readcntfrq();
-    
+
     if (KiTimerFrequency == 0)
     {
         /* Use default frequency if not set by firmware */
-        KiTimerFrequency = ARM64_TIMER_FREQ_DEFAULT;
-        DPRINT("ARM64: Using default timer frequency %llu Hz\n", KiTimerFrequency);
+        KiTimerFrequency = ARM64_DEFAULT_TIMER_FREQ;
+        DPRINT1("ARM64: WARNING - Timer frequency not set by firmware, using default %llu Hz\n", KiTimerFrequency);
     }
     else
     {
         DPRINT("ARM64: Timer frequency %llu Hz\n", KiTimerFrequency);
     }
     
-    /* Disable timer interrupt initially */
+    /* Disable timer interrupt initially - clear all control bits */
     __writecntp_ctl_el0(0);
-    ARM64_ISB();  /* Memory barrier after timer control register write */
+    ARM64_ISB();  /* Synchronize timer control register write */
 }
 
 /**
@@ -179,31 +210,50 @@ NTAPI
 KiInitializeArm64Mmu(VOID)
 {
     ULONGLONG tcr, mair, sctlr;
-    
-    /* Configure Memory Attribute Indirection Register */
+
+    /* Configure Memory Attribute Indirection Register first */
     mair = ARM64_MAIR_VALUE;
     __writemair_el1(mair);
-    ARM64_ISB();  /* Memory barrier after MAIR_EL1 write */
+    ARM64_ISB();  /* Synchronize MAIR_EL1 write */
 
     /* Configure Translation Control Register */
     tcr = ARM64_TCR_DEFAULT;
     __writetcr_el1(tcr);
-    ARM64_ISB();  /* Memory barrier after TCR_EL1 write */
+    ARM64_ISB();  /* Synchronize TCR_EL1 write */
+
+    /* Ensure all translation table setup is visible */
+    ARM64_DSB_SY();  /* Data synchronization barrier */
     
     /* Read current SCTLR */
     sctlr = __readsctlr_el1();
     
-    /* Enable MMU if not already enabled */
+    /* Enable MMU if not already enabled - critical for Windows kernel */
     if (!(sctlr & ARM64_SCTLR_M))
     {
-        DPRINT("ARM64: Enabling MMU\n");
+        DPRINT("ARM64: Enabling MMU with Windows-compatible settings\n");
         sctlr |= ARM64_SCTLR_DEFAULT;
+
+        /* Critical synchronization sequence for MMU enable */
+        ARM64_DSB_SY();   /* Ensure all memory operations complete */
         __writesctlr_el1(sctlr);
-        ARM64_ISB();  /* Critical: ISB after SCTLR_EL1 write to ensure MMU is active */
+        ARM64_ISB();      /* Critical: Synchronize SCTLR_EL1 write */
+
+        /* Verify MMU is now enabled */
+        sctlr = __readsctlr_el1();
+        if (!(sctlr & ARM64_SCTLR_M))
+        {
+            DPRINT1("ARM64: FATAL - MMU enable failed\n");
+            KeBugCheckEx(PHASE0_INITIALIZATION_FAILED, 0x1001, sctlr, ARM64_SCTLR_M, 0);
+        }
     }
     else
     {
-        DPRINT("ARM64: MMU already enabled\n");
+        DPRINT("ARM64: MMU already enabled by firmware\n");
+        /* Update SCTLR with Windows-specific settings while keeping MMU enabled */
+        sctlr |= (ARM64_SCTLR_DEFAULT & ~ARM64_SCTLR_M) | ARM64_SCTLR_M;
+        ARM64_DSB_SY();
+        __writesctlr_el1(sctlr);
+        ARM64_ISB();
     }
     
     DPRINT("ARM64: TCR=0x%llx, MAIR=0x%llx, SCTLR=0x%llx\n", tcr, mair, sctlr);
@@ -217,12 +267,26 @@ NTAPI
 KiInitializeArm64Exceptions(VOID)
 {
     extern VOID KiExceptionVectors(VOID);
-    ULONGLONG vbar;
-    
-    /* Set Vector Base Address Register */
+    ULONGLONG vbar, current_vbar;
+
+    /* Validate exception vector alignment (must be 2048-byte aligned) */
     vbar = (ULONGLONG)&KiExceptionVectors;
+    if (vbar & 0x7FF)
+    {
+        DPRINT1("ARM64: FATAL - Exception vectors not properly aligned: 0x%llx\n", vbar);
+        KeBugCheckEx(PHASE0_INITIALIZATION_FAILED, 0x1002, vbar, 0x800, 0);
+    }
+
+    /* Set Vector Base Address Register */
     __writevbar_el1(vbar);
-    ARM64_ISB();  /* Memory barrier after VBAR_EL1 write */
+    ARM64_ISB();  /* Synchronize VBAR_EL1 write */
+
+    /* Verify VBAR_EL1 was set correctly */
+    current_vbar = __readvbar_el1();
+    if (current_vbar != vbar)
+    {
+        DPRINT1("ARM64: WARNING - VBAR_EL1 verification failed. Expected: 0x%llx, Got: 0x%llx\n", vbar, current_vbar);
+    }
     
     DPRINT("ARM64: Exception vectors at 0x%llx\n", vbar);
 }
@@ -236,11 +300,12 @@ KiInitializeArm64Pcr(
     IN PKIPCR Pcr,
     IN ULONG ProcessorNumber,
     IN PKTHREAD IdleThread,
+    IN PVOID IdleStack,
     IN PVOID DpcStack
 )
 {
-    /* Clear the PCR */
-    RtlZeroMemory(Pcr, sizeof(KIPCR));
+    if (!Pcr)
+        return;
 
     /* Set up self-referential members required by common macros */
     Pcr->Self = (PKPCR)(PVOID)Pcr;
@@ -248,39 +313,49 @@ KiInitializeArm64Pcr(
     Pcr->PcrReserved0 = NULL;
     Pcr->LockArray = NULL;
     Pcr->CurrentIrql = PASSIVE_LEVEL;
-    Pcr->Prcb.CurrentThread = NULL;
-    Pcr->Prcb.NextThread = NULL;
-    Pcr->Prcb.IdleThread = NULL;
-    Pcr->Prcb.DpcStack = NULL;
-    Pcr->Prcb.MultiThreadProcessorSet = 0;
-    Pcr->Prcb.BuildType = 0;
-    Pcr->Prcb.FeatureBits = 0;
 
     /* Set up basic PCR fields */
     Pcr->MajorVersion = PCR_MAJOR_VERSION;
     Pcr->MinorVersion = PCR_MINOR_VERSION;
+
+    /* Initialize PRCB header */
     Pcr->Prcb.MajorVersion = PRCB_MAJOR_VERSION;
     Pcr->Prcb.MinorVersion = PRCB_MINOR_VERSION;
-    
-    /* Set processor number */
     Pcr->Prcb.Number = (UCHAR)ProcessorNumber;
     Pcr->Prcb.SetMember = 1ULL << ProcessorNumber;
-    
-    /* Initialize PRCB */
-    Pcr->Prcb.CurrentThread = IdleThread;
-    Pcr->Prcb.IdleThread = IdleThread;
-    Pcr->Prcb.DpcStack = DpcStack;
     Pcr->Prcb.MultiThreadProcessorSet = Pcr->Prcb.SetMember;
+    Pcr->Prcb.CacheLineSize = (KiDcacheLineSize != 0) ? KiDcacheLineSize : 64;
+    Pcr->Prcb.FeatureBits = (ULONG)KeFeatureBits;
+    Pcr->Prcb.DpcStack = DpcStack;
+    Pcr->Prcb.CurrentThread = IdleThread;
+    Pcr->Prcb.NextThread = NULL;
+    Pcr->Prcb.IdleThread = IdleThread;
+#ifndef CONFIG_SMP
+    Pcr->Prcb.BuildType = PRCB_BUILD_UNIPROCESSOR;
+#else
+    Pcr->Prcb.BuildType = 0;
+#endif
+#if DBG
+    Pcr->Prcb.BuildType |= PRCB_BUILD_DEBUG;
+#endif
 
-    /* Initialize processor features */
-    Pcr->Prcb.FeatureBits = (ULONG)KiArm64Features;
-    
-    /* Initialize cache information */
-    Pcr->Prcb.CacheLineSize = KiDcacheLineSize;
+    /* Basic cache/STALL defaults */
+    Pcr->SecondLevelCacheSize = 0;
+    Pcr->StallScaleFactor = 50;
+
+    /* Record PCR in processor block array */
+    KiProcessorBlock[ProcessorNumber] = &Pcr->Prcb;
+
+    /* Ensure idle thread has consistent stack pointers */
+    if (IdleThread && IdleStack)
+    {
+        IdleThread->InitialStack = IdleStack;
+        IdleThread->KernelStack = IdleStack;
+    }
 
     /* Load PCR into TPIDR_EL1 for fast per-CPU access */
     ARM64_WRITE_SYSREG(tpidr_el1, (ULONG_PTR)Pcr);
-    ARM64_ISB();  /* Instruction synchronization barrier after TPIDR_EL1 write */
+    ARM64_ISB();
 
     DPRINT("ARM64: PCR initialized for processor %u, loaded into TPIDR_EL1\n", ProcessorNumber);
 }
@@ -292,16 +367,18 @@ VOID
 NTAPI
 KiInitializeProcessor(VOID)
 {
-    ULONGLONG el;
-    
-    /* Check current Exception Level */
-    el = __readcurrentel() >> 2;
+    ULONGLONG el, current_el_reg;
+
+    /* Read and validate current Exception Level */
+    ARM64_ISB();  /* Synchronize before reading CurrentEL */
+    current_el_reg = __readcurrentel();
+    el = (current_el_reg & ARM64_CURRENTEL_MASK) >> ARM64_CURRENTEL_SHIFT;
     DPRINT("ARM64: Running at Exception Level %llu\n", el);
     
-    if (el != 1)
+    if (el != ARM64_EL1)
     {
-        DPRINT1("ARM64: FATAL - Not running at EL1! Current EL: %llu\n", el);
-        KeBugCheckEx(UNSUPPORTED_PROCESSOR, el, ARM64_EL1, 0, 0);
+        DPRINT1("ARM64: FATAL - Kernel must run at EL1! Current EL: %llu (CurrentEL: 0x%llx)\n", el, current_el_reg);
+        KeBugCheckEx(UNSUPPORTED_PROCESSOR, el, ARM64_EL1, current_el_reg, 0);
     }
     
     /* Initialize ARM64 features */
@@ -336,36 +413,106 @@ KiInitializeKernel(
     IN PLOADER_PARAMETER_BLOCK LoaderBlock
 )
 {
-    UNREFERENCED_PARAMETER(Prcb);
-    UNREFERENCED_PARAMETER(LoaderBlock);
+    PKIPCR Pcr;
+    KAFFINITY ProcessorMask;
+    PVOID AlignedIdleStack;
+    PVOID DpcStack;
+    NTSTATUS Status;
 
-    /* Early processor initialization */
-    KiInitializeProcessor();
-
-    /* Initialize PCR and load into TPIDR_EL1 for per-CPU access */
-    KiInitializeArm64Pcr((PKIPCR)&KiInitialPcr, Number, InitThread, IdleStack);
-
-    /* Ensure PCR is accessible via system register */
-    ARM64_WRITE_SYSREG(tpidr_el1, (ULONG_PTR)&KiInitialPcr);
-    ARM64_ISB();  /* Critical: Synchronize TPIDR_EL1 update */
-    
-    /* Initialize PRCB */
-    RtlCopyMemory(&KiInitialPrcb, &KiInitialPcr.Prcb, sizeof(KPRCB));
-
-    /* Set up initial thread/process information when available */
-    if (InitThread != NULL && InitProcess != NULL)
+    if (!InitProcess || !InitThread || !Prcb)
     {
-        InitThread->ApcState.Process = InitProcess;
+        return STATUS_INVALID_PARAMETER;
+    }
 
-        /* Preserve the loader supplied top-level translation base */
-        InitProcess->DirectoryTableBase[0] = __readttbr1_el1();
+    Pcr = CONTAINING_RECORD(Prcb, KIPCR, Prcb);
+    ProcessorMask = ((KAFFINITY)1) << Number;
+    AlignedIdleStack = (PVOID)ALIGN_DOWN_BY((ULONG_PTR)IdleStack, STACK_ALIGN);
+
+    /* Initialize per-processor spin locks and queues */
+    KiInitSpinLocks(Prcb, Number);
+
+    /* Boot processor initialization */
+    if (Number == 0)
+    {
+        ULONG_PTR PageDirectory[2] = {0, 0};
+
+        SharedUserData->NXSupportPolicy = NX_SUPPORT_POLICY_ALWAYSON;
+
+        KiInitSystem();
+
+        InitializeListHead(&KiProcessListHead);
+
+        KeInitializeProcess(InitProcess,
+                            0,
+                            MAXULONG_PTR,
+                            PageDirectory,
+                            FALSE);
+        InitProcess->QuantumReset = MAXCHAR;
+    }
+
+    /* Build the idle thread */
+    KeInitializeThread(InitProcess,
+                       InitThread,
+                       NULL,
+                       NULL,
+                       NULL,
+                       NULL,
+                       NULL,
+                       AlignedIdleStack);
+
+    InitThread->ApcState.Process = InitProcess;
+    InitThread->NextProcessor = Number;
+    InitThread->Priority = HIGH_PRIORITY;
+    InitThread->State = Running;
+    InitThread->Affinity = ProcessorMask;
+    InitThread->WaitIrql = DISPATCH_LEVEL;
+    InitProcess->ActiveProcessors |= ProcessorMask;
+    ((PETHREAD)InitThread)->ThreadsProcess = (PEPROCESS)InitProcess;
+
+    /* Initialize PRCB thread pointers */
+    Prcb->CurrentThread = InitThread;
+    Prcb->NextThread = NULL;
+    Prcb->IdleThread = InitThread;
+    Prcb->SetMember = ProcessorMask;
+    Prcb->MultiThreadProcessorSet = ProcessorMask;
+
+    /* Ensure a DPC stack exists for this processor */
+    if (Prcb->DpcStack == NULL)
+    {
+        DpcStack = MmCreateKernelStack(FALSE, 0);
+        if (!DpcStack)
+        {
+            return STATUS_NO_MEMORY;
+        }
+        Prcb->DpcStack = DpcStack;
     }
     else
     {
-        DPRINT1("ARM64: KiInitializeKernel called without initial thread/process context\n");
+        DpcStack = Prcb->DpcStack;
     }
 
-    DPRINT("ARM64: Kernel initialization completed\n");
+    /* Initialize the PCR for this processor */
+    KiInitializeArm64Pcr(Pcr, Number, InitThread, InitThread->KernelStack, DpcStack);
+
+    /* Update PRCB scheduling parameters */
+    Prcb->MaximumDpcQueueDepth = KiMaximumDpcQueueDepth;
+    Prcb->MinimumDpcRate = KiMinimumDpcRate;
+    Prcb->AdjustDpcThreshold = KiAdjustDpcThreshold;
+
+    if (Number == 0)
+    {
+        Status = KiSchedulerStartup(LoaderBlock);
+        if (!NT_SUCCESS(Status))
+        {
+            return Status;
+        }
+
+        ExpInitializeExecutive(Number, LoaderBlock);
+
+        KiTimeIncrementReciprocal =
+            KiComputeReciprocal(KeMaximumIncrement,
+                                &KiTimeIncrementShiftCount);
+    }
 
     return STATUS_SUCCESS;
 }
@@ -373,88 +520,155 @@ KiInitializeKernel(
 /**
  * @brief System startup routine called from boot code
  */
+CODE_SEG("INIT")
+DECLSPEC_NORETURN
 VOID
 NTAPI
 KiSystemStartupBootStack(
     IN PLOADER_PARAMETER_BLOCK LoaderBlock
 )
 {
-    /* Emit early debug message to track kernel handoff */
-    {
-        CHAR Message[128];
-        RtlStringCbPrintfA(Message, sizeof(Message),
-                          "ARM64: KiSystemStartupBootStack entry - LoaderBlock: 0x%p\r\n",
-                          LoaderBlock);
-        HalDisplayString(Message);
-    }
+    PKTHREAD Thread;
+    PKPROCESS Process;
+    PKPRCB Prcb;
+    PKIPCR Pcr;
+    KAFFINITY ProcessorMask;
+    CCHAR Cpu;
+    ULONGLONG Mpidr;
+    PVOID IdleStack;
+    NTSTATUS Status;
 
-    DPRINT("ARM64: System startup - LoaderBlock at 0x%p\n", LoaderBlock);
-
-    /* Validate LoaderBlock pointer */
     if (!LoaderBlock)
     {
-        HalDisplayString("ARM64: FATAL - NULL LoaderBlock\r\n");
         KeBugCheck(PHASE0_INITIALIZATION_FAILED);
     }
 
-    /* Disable interrupts during initialization */
-    ARM64_DISABLE_INTERRUPTS();
+    KeLoaderBlock = LoaderBlock;
 
-    /* Emit debug checkpoint */
-    HalDisplayString("ARM64: Starting kernel initialization\r\n");
+    /* Determine the boot processor */
+    Mpidr = __readmpidr();
+    Cpu = (CCHAR)(Mpidr & ARM64_MPIDR_AFF0_MASK);
 
-    /* Early kernel initialization */
-    KiInitializeKernel(NULL, NULL, NULL, NULL, 0, LoaderBlock);
-
-    /* Emit debug checkpoint */
-    HalDisplayString("ARM64: Calling KiSystemStartup\r\n");
-
-    /* Call generic kernel startup */
-    KiSystemStartupReal(LoaderBlock);
-
-    /* Should never reach here */
-    KeBugCheck(PHASE0_INITIALIZATION_FAILED);
-}
-
-/**
- * @brief Main system startup routine for ARM64
- */
-CODE_SEG("INIT")
-DECLSPEC_NORETURN
-VOID
-NTAPI
-KiSystemStartupReal(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
-{
-    CCHAR Cpu;
-
-    DPRINT("ARM64: KiSystemStartupReal - LoaderBlock at 0x%p\n", LoaderBlock);
-
-    /* Emit a serial banner so automated tests can confirm kernel entry. */
-    HalDisplayString("ARM64 kernel entry reached\r\n");
-
-    /* TODO: Get the current CPU number - for now assume CPU 0 */
-    Cpu = 0;
-    KeNumberProcessors = 1; // Start with 1 processor
-
-    /* LoaderBlock initialization for Cpu 0 */
-    if (Cpu == 0)
+    if (Cpu != 0)
     {
-        /* Set the initial LoaderBlock pointer */
-        KeLoaderBlock = LoaderBlock;
-
-        /* TODO: Initialize PCR for ARM64 */
-        /* TODO: Initialize IDT/Exception vectors */
-        /* TODO: Initialize memory management */
-        /* TODO: Initialize scheduler */
+        KeBugCheckEx(UNSUPPORTED_PROCESSOR, Cpu, 0, Mpidr, 0);
     }
 
-    /* TODO: For now, just loop to prevent returning */
-    /* Real implementation would initialize the system and start the scheduler */
-    DPRINT1("ARM64: KiSystemStartupReal not yet implemented - bugchecking to avoid hang\n");
+    /* Ensure loader block fields are populated */
+    if (LoaderBlock->Process == 0)
+    {
+        LoaderBlock->Process = (ULONG_PTR)&KiInitialProcess.Pcb;
+    }
 
-    /* Fail fast until full bring-up is implemented */
-    ARM64_DISABLE_INTERRUPTS();
-    KeBugCheckEx(PHASE0_INITIALIZATION_FAILED, 0, 0, 0, 0);
+    if (LoaderBlock->Thread == 0)
+    {
+        LoaderBlock->Thread = (ULONG_PTR)&KiInitialThread.Tcb;
+    }
+
+    if (LoaderBlock->Prcb == 0)
+    {
+        LoaderBlock->Prcb = (ULONG_PTR)&KiInitialPrcb;
+    }
+
+    if (LoaderBlock->KernelStack == 0)
+    {
+        KeBugCheckEx(PHASE0_INITIALIZATION_FAILED, 0xA6400000, 0, 0, (ULONG_PTR)LoaderBlock);
+    }
+
+    Process = (PKPROCESS)(ULONG_PTR)LoaderBlock->Process;
+    Thread = (PKTHREAD)(ULONG_PTR)LoaderBlock->Thread;
+    Prcb = (PKPRCB)(ULONG_PTR)LoaderBlock->Prcb;
+    Pcr = CONTAINING_RECORD(Prcb, KIPCR, Prcb);
+    IdleStack = (PVOID)ALIGN_DOWN_BY((ULONG_PTR)LoaderBlock->KernelStack, STACK_ALIGN);
+    ProcessorMask = ((KAFFINITY)1) << Cpu;
+
+    /* Clear PCR/PRCB structures and initialize basic relationships */
+    RtlZeroMemory(Pcr, sizeof(*Pcr));
+
+    if (KeNodeBlock[0] == NULL)
+    {
+        extern KNODE KiNode0;
+        Prcb->ParentNode = &KiNode0;
+    }
+    else
+    {
+        Prcb->ParentNode = KeNodeBlock[0];
+    }
+    Prcb->ParentNode->ProcessorMask |= ProcessorMask;
+
+    PoInitializePrcb(Prcb);
+
+    KeNumberProcessors = Cpu + 1;
+    KeActiveProcessors = ProcessorMask;
+
+    KiProcessorBlock[Cpu] = Prcb;
+
+    InitializeListHead(&Thread->ApcState.ApcListHead[KernelMode]);
+    Thread->ApcState.Process = Process;
+
+    /* Detect processor capabilities */
+    KiInitializeProcessor();
+
+    /* Initialize kernel debugger early */
+    KdInitSystem(0, KeLoaderBlock);
+    if (KdPollBreakIn())
+    {
+        DbgBreakPointWithStatus(DBG_STATUS_CONTROL_C);
+    }
+
+    /* Initialize the HAL for this processor */
+    HalInitializeProcessor(Cpu, LoaderBlock);
+
+    /* Set processor affinity information */
+    Prcb->SetMember = ProcessorMask;
+
+    /* Prepare per-processor pool structures */
+    ExInitPoolLookasidePointers();
+
+    /* Raise IRQL to HIGH_LEVEL and then lower to APC_LEVEL for initialization */
+    KfRaiseIrql(HIGH_LEVEL);
+    KeLowerIrql(APC_LEVEL);
+
+    Status = KiInitializeKernel(Process,
+                                Thread,
+                                IdleStack,
+                                Prcb,
+                                Cpu,
+                                LoaderBlock);
+    if (!NT_SUCCESS(Status))
+    {
+        KeBugCheckEx(PHASE0_INITIALIZATION_FAILED,
+                     0xA6400001,
+                     Status,
+                     Cpu,
+                     (ULONG_PTR)LoaderBlock);
+    }
+
+    /* Update loader block state */
+    LoaderBlock->KernelStack = (ULONG_PTR)IdleStack;
+
+    /* Finalize PRCB scheduler bookkeeping */
+    KfRaiseIrql(DISPATCH_LEVEL);
+    KeSetPriorityThread(Thread, 0);
+
+    KiAcquirePrcbLock(Prcb);
+    if (!Prcb->NextThread)
+    {
+        KiIdleSummary |= ProcessorMask;
+    }
+    KiReleasePrcbLock(Prcb);
+
+    KfRaiseIrql(HIGH_LEVEL);
+    LoaderBlock->Prcb = 0;
+
+    Thread = KeGetCurrentThread();
+    Thread->Priority = 0;
+
+    ARM64_ENABLE_INTERRUPTS();
+    KeLowerIrql(DISPATCH_LEVEL);
+    Thread->WaitIrql = DISPATCH_LEVEL;
+
+    KiIdleLoop();
 }
 
 /**
@@ -476,27 +690,40 @@ KiInitMachineDependent(VOID)
     {
         /* Enable Advanced SIMD for the kernel */
         DPRINT("ARM64: Advanced SIMD support enabled\n");
-        /* TODO: Initialize SIMD state management */
+        /* TODO: Initialize SIMD state management
+         * - Set up FPCR/FPSR defaults
+         * - Configure SIMD context switching
+         * - Enable SIMD for kernel if needed
+         */
     }
 
     /* Check for and initialize crypto extensions if present */
     if (KiArm64Features & ARM64_FEATURE_AES)
     {
         DPRINT("ARM64: AES crypto acceleration available\n");
-        /* TODO: Register crypto acceleration routines */
+        /* TODO: Register AES crypto acceleration routines
+         * - Hook into kernel crypto APIs
+         * - Enable hardware-accelerated AES operations
+         */
     }
 
     if (KiArm64Features & ARM64_FEATURE_SHA)
     {
         DPRINT("ARM64: SHA crypto acceleration available\n");
-        /* TODO: Register SHA acceleration routines */
+        /* TODO: Register SHA crypto acceleration routines
+         * - Hook into kernel hash APIs
+         * - Enable hardware-accelerated SHA operations
+         */
     }
 
     /* Check for and initialize CRC32 if present */
     if (KiArm64Features & ARM64_FEATURE_CRC32)
     {
         DPRINT("ARM64: CRC32 hardware acceleration available\n");
-        /* TODO: Register CRC32 acceleration routines */
+        /* TODO: Register CRC32 acceleration routines
+         * - Hook into kernel checksum APIs
+         * - Use CRC32 instructions for performance
+         */
     }
 
     /* Initialize cache management */
@@ -507,18 +734,31 @@ KiInitMachineDependent(VOID)
     if (KiTimerFrequency != 0)
     {
         DPRINT("ARM64: System timer frequency: %llu Hz\n", KiTimerFrequency);
-        /* TODO: Initialize performance counter infrastructure */
+        /* TODO: Initialize performance counter infrastructure
+         * - Set up PMU (Performance Monitoring Unit)
+         * - Configure cycle counters and event counters
+         * - Enable performance monitoring for profiling
+         */
     }
 
     /* Initialize atomics support */
     if (KiArm64Features & ARM64_FEATURE_ATOMIC)
     {
         DPRINT("ARM64: Large System Extensions (LSE) atomics available\n");
-        /* TODO: Use LSE atomics instead of LL/SC sequences */
+        /* TODO: Use LSE atomics instead of LL/SC sequences
+         * - Replace compiler atomic builtins with LSE instructions
+         * - Improve performance of atomic operations
+         * - Update spinlock implementations
+         */
     }
 
     /* Platform-specific initialization (if needed) */
-    /* TODO: Initialize platform-specific features like GIC, etc. */
+    /* TODO: Initialize platform-specific features
+         * - Configure GIC (Generic Interrupt Controller)
+         * - Set up interrupt routing and priorities
+         * - Initialize SMMU if present
+         * - Configure platform-specific timers
+         */
 
     DPRINT("ARM64: Machine-dependent initialization complete\n");
 }
@@ -539,7 +779,9 @@ KeGetPcr(VOID)
 {
     ASSERTMSG("TODO: ARM64 SMP PCR accessor not implemented. Update KeGetPcr before enabling SMP.",
               KeNumberProcessors <= 1);
-    /* TODO: In SMP, this should read TPIDR_EL1 to get per-CPU PCR */
+
+    /* For SMP support, this should be: */
+    /* return (PKIPCR)ARM64_READ_SYSREG(tpidr_el1); */
     return PCR;
 }
 
@@ -555,7 +797,10 @@ KeGetCurrentPrcb(VOID)
 {
     ASSERTMSG("TODO: ARM64 SMP PRCB accessor not implemented. Update KeGetCurrentPrcb before enabling SMP.",
               KeNumberProcessors <= 1);
-    /* TODO: In SMP, this should read TPIDR_EL1 to get per-CPU PCR */
+
+    /* For SMP support, this should be: */
+    /* PKIPCR Pcr = (PKIPCR)ARM64_READ_SYSREG(tpidr_el1); */
+    /* return &Pcr->Prcb; */
     return &PCR->Prcb;
 }
 
@@ -571,7 +816,10 @@ KeGetCurrentIrql(VOID)
 {
     ASSERTMSG("TODO: ARM64 SMP IRQL accessor not implemented. Update KeGetCurrentIrql before enabling SMP.",
               KeNumberProcessors <= 1);
-    /* TODO: In SMP, this should read from per-CPU PCR */
+
+    /* For SMP support, this should be: */
+    /* PKIPCR Pcr = (PKIPCR)ARM64_READ_SYSREG(tpidr_el1); */
+    /* return Pcr->CurrentIrql; */
     return PCR->CurrentIrql;
 }
 
@@ -595,9 +843,12 @@ KeStartAllProcessors(VOID)
 
     /* TODO: Implement ARM64 SMP support:
      * 1. Detect number of CPUs from device tree or ACPI MADT
-     * 2. Allocate stacks for each AP
-     * 3. Send SGI (Software Generated Interrupt) to wake APs
-     * 4. Initialize each AP's PCR/PRCB
-     * 5. Start AP initialization sequence
+     * 2. Allocate per-CPU stacks (idle, DPC, interrupt)
+     * 3. Initialize per-CPU PCR/PRCB structures
+     * 4. Set up per-CPU TPIDR_EL1 pointing to respective PCRs
+     * 5. Use PSCI or platform-specific method to start APs
+     * 6. Send SGI (Software Generated Interrupt) to synchronize
+     * 7. Wait for APs to complete initialization
+     * 8. Update KeNumberProcessors and processor affinity masks
      */
 }

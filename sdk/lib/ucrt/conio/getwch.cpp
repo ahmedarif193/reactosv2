@@ -13,6 +13,10 @@
 #include <string.h>
 #include <wchar.h>
 
+/* Enable PSEH2 macros locally for C++ without leaking project-wide */
+#define __PSEH_USE_IN_CXX 1
+#include <pseh/pseh2.h>
+
 
 
 namespace

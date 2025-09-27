@@ -10,63 +10,30 @@
 #include <ntoskrnl.h>
 #define NDEBUG
 #include <debug.h>
+#include <internal/arm64/earlydbg.h>
+#include <internal/arm64/ke.h>
+#include <internal/arm64/mm.h>
+#include <internal/kd64.h>
 
-#define PL011_BASE   0x09000000U
-#define PL011_FR     (*(volatile ULONG *)(PL011_BASE + 0x18))
-#define PL011_DR     (*(volatile ULONG *)(PL011_BASE + 0x00))
-#define PL011_TXFF   (1u << 5)
-
-static VOID KiTrapUartPutc(char Ch)
+/* Now using centralized early debug functions instead of direct UART access */
+static inline VOID KiTrapUartPuts(const char *String)
 {
-    while (PL011_FR & PL011_TXFF)
-    {
-        __asm__ __volatile__("wfi");
-    }
-    PL011_DR = (unsigned char)Ch;
+    /* Avoid duplicate output once KD is enabled */
+    if (KdDebuggerEnabled) return;
+    KiEarlyDebugString(String);
 }
 
-static VOID KiTrapUartPuts(const char *String)
+static inline VOID KiTrapUartPutHex(ULONGLONG Value, ULONG Nibbles)
 {
-    while (*String)
-    {
-        if (*String == '\n')
-            KiTrapUartPutc('\r');
-        KiTrapUartPutc(*String++);
-    }
+    UNREFERENCED_PARAMETER(Nibbles);
+    if (KdDebuggerEnabled) return;
+    KiEarlyKernelDebugPrint("0x%llx", Value);
 }
 
-static VOID KiTrapUartPutHex(ULONGLONG Value, ULONG Nibbles)
+static inline VOID KiTrapUartPutDec(ULONG Value)
 {
-    static const char HexDigits[] = "0123456789ABCDEF";
-
-    for (LONG Index = (LONG)Nibbles - 1; Index >= 0; --Index)
-    {
-        ULONG Shift = (ULONG)Index * 4;
-        KiTrapUartPutc(HexDigits[(Value >> Shift) & 0xFULL]);
-    }
-}
-
-static VOID KiTrapUartPutDec(ULONG Value)
-{
-    char Buffer[10];
-    ULONG Pos = 0;
-
-    if (Value == 0)
-    {
-        KiTrapUartPutc('0');
-        return;
-    }
-
-    while (Value && Pos < RTL_NUMBER_OF(Buffer))
-    {
-        Buffer[Pos++] = (char)('0' + (Value % 10));
-        Value /= 10;
-    }
-
-    while (Pos)
-    {
-        KiTrapUartPutc(Buffer[--Pos]);
-    }
+    if (KdDebuggerEnabled) return;
+    KiEarlyKernelDebugPrint("%u", Value);
 }
 
 /* TYPES *********************************************************************/
@@ -77,6 +44,7 @@ static VOID KiTrapUartPutDec(ULONG Value)
 
 /* Forward declarations for functions defined later in this file */
 VOID NTAPI KiBreakpointTrapC(IN PKTRAP_FRAME TrapFrame);
+VOID NTAPI KiDebugServiceC(IN PKTRAP_FRAME TrapFrame);
 VOID NTAPI KiBugCheck(IN PKTRAP_FRAME TrapFrame);
 VOID NTAPI KiIllegalInstruction(IN PKTRAP_FRAME TrapFrame);
 VOID NTAPI KiKernelDataAbort(IN PKTRAP_FRAME TrapFrame);
@@ -88,6 +56,9 @@ VOID NTAPI KiStackAlignmentFault(IN PKTRAP_FRAME TrapFrame);
 #define ESR_ELx_EC_SHIFT        26
 #define ESR_ELx_EC_MASK         (0x3F << ESR_ELx_EC_SHIFT)
 #define ESR_ELx_EC(esr)         (((esr) & ESR_ELx_EC_MASK) >> ESR_ELx_EC_SHIFT)
+#define ESR_ELx_ISS_MASK        0x1FFFFFF
+#define ESR_ELx_ISS(esr)        ((esr) & ESR_ELx_ISS_MASK)
+#define ESR_ELx_BRK64_IMM(esr)  ((esr) & 0xFFFF)
 
 /* Exception Classes */
 #define ESR_ELx_EC_UNKNOWN      0x00
@@ -147,7 +118,6 @@ VOID NTAPI KiStackAlignmentFault(IN PKTRAP_FRAME TrapFrame);
 #define ESR_ELx_S1PTW           (1ULL << 7)
 #define ESR_ELx_WnR             (1ULL << 6)
 #define ESR_ELx_DFSC_MASK       0x3F
-#define ESR_ELx_ISS_MASK        0x1FFFFFF
 
 static const char* Arm64FaultStatusNames[] = {
     "Address size fault (level 0)", "Address size fault (level 1)", "Address size fault (level 2)", "Address size fault (level 3)",
@@ -190,11 +160,30 @@ static VOID KiDescribeAbort(ULONG ExceptionClass, ULONG ISS, ULONGLONG FaultAddr
 static VOID KiDumpBacktrace(PKTRAP_FRAME TrapFrame)
 {
     PKTHREAD Thread = KeGetCurrentThread();
-    ULONG_PTR StackTop = Thread ? (ULONG_PTR)Thread->StackBase : TrapFrame->Sp;
-    ULONG_PTR StackBottom = Thread ? (ULONG_PTR)Thread->StackLimit : (StackTop - KERNEL_STACK_SIZE);
+    ULONG_PTR StackTop = 0;
+    ULONG_PTR StackBottom = 0;
     ULONG_PTR fp_walk = (ULONG_PTR)TrapFrame->Fp;
     ULONG frames = 0;
     const ULONG max_frames = 32;
+
+    if (Thread &&
+        Thread->StackBase &&
+        Thread->StackLimit &&
+        ((ULONG_PTR)Thread->StackBase > (ULONG_PTR)Thread->StackLimit) &&
+        ((ULONG_PTR)Thread->StackBase >= KSEG0_BASE) &&
+        ((ULONG_PTR)Thread->StackBase < ARM64_PCR_ADDRESS) &&
+        ((ULONG_PTR)Thread->StackLimit >= KSEG0_BASE) &&
+        ((ULONG_PTR)Thread->StackLimit < ARM64_PCR_ADDRESS))
+    {
+        StackTop = (ULONG_PTR)Thread->StackBase;
+        StackBottom = (ULONG_PTR)Thread->StackLimit;
+    }
+    else
+    {
+        ULONG_PTR AlignedSp = (TrapFrame->Sp + (STACK_ALIGN - 1)) & ~(STACK_ALIGN - 1);
+        StackTop = AlignedSp + STACK_ALIGN;
+        StackBottom = (StackTop > KERNEL_STACK_SIZE) ? (StackTop - KERNEL_STACK_SIZE) : 0;
+    }
 
     DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL, "Backtrace (ARM64):\n");
     KiTrapUartPuts("Backtrace (ARM64)\n");
@@ -270,35 +259,38 @@ KiDumpTrapFrameDebug(
     ULONGLONG *Regs = &TrapFrame->X0;
     ULONG ExceptionClass = ESR_ELx_EC((ULONG)TrapFrame->Esr);
 
-    DbgPrintEx(DPFLTR_DEFAULT_ID,
-               DPFLTR_ERROR_LEVEL,
-               "ARM64 Trap: %s (EC=0x%02lX %s)\n"
-               "  ESR=0x%016llX FAR=0x%016llX\n"
-               "  PC =0x%016llX SP =0x%016llX PSTATE=0x%016llX\n",
-               Reason,
-               ExceptionClass,
-               KiGetExceptionClassString(ExceptionClass),
-               (unsigned long long)TrapFrame->Esr,
-               (unsigned long long)TrapFrame->Far,
-               (unsigned long long)TrapFrame->Pc,
-               (unsigned long long)TrapFrame->Sp,
-               (unsigned long long)TrapFrame->Pstate);
+    if (KdDebuggerEnabled)
+    {
+        DbgPrintEx(DPFLTR_DEFAULT_ID,
+                   DPFLTR_ERROR_LEVEL,
+                   "ARM64 Trap: %s (EC=0x%02lX %s)\n"
+                   "  ESR=0x%016llX FAR=0x%016llX\n"
+                   "  PC =0x%016llX SP =0x%016llX PSTATE=0x%016llX\n",
+                   Reason,
+                   ExceptionClass,
+                   KiGetExceptionClassString(ExceptionClass),
+                   (unsigned long long)TrapFrame->Esr,
+                   (unsigned long long)TrapFrame->Far,
+                   (unsigned long long)TrapFrame->Pc,
+                   (unsigned long long)TrapFrame->Sp,
+                   (unsigned long long)TrapFrame->Pstate);
+    }
 
     KiTrapUartPuts("ARM64 Trap: ");
     KiTrapUartPuts(Reason);
-    KiTrapUartPuts(" (EC=0x");
+    KiTrapUartPuts(" (EC=");
     KiTrapUartPutHex(ExceptionClass, 2);
     KiTrapUartPuts(" ");
     KiTrapUartPuts(KiGetExceptionClassString(ExceptionClass));
-    KiTrapUartPuts(")\n  ESR=0x");
+    KiTrapUartPuts(")\n  ESR=");
     KiTrapUartPutHex(TrapFrame->Esr, 16);
-    KiTrapUartPuts(" FAR=0x");
+    KiTrapUartPuts(" FAR=");
     KiTrapUartPutHex(TrapFrame->Far, 16);
-    KiTrapUartPuts("\n  PC =0x");
+    KiTrapUartPuts("\n  PC =");
     KiTrapUartPutHex(TrapFrame->Pc, 16);
-    KiTrapUartPuts(" SP =0x");
+    KiTrapUartPuts(" SP =");
     KiTrapUartPutHex(TrapFrame->Sp, 16);
-    KiTrapUartPuts(" PSTATE=0x");
+    KiTrapUartPuts(" PSTATE=");
     KiTrapUartPutHex(TrapFrame->Pstate, 16);
     KiTrapUartPuts("\n");
 
@@ -306,35 +298,41 @@ KiDumpTrapFrameDebug(
     {
         if (i + 1 < 31)
         {
-            DbgPrintEx(DPFLTR_DEFAULT_ID,
-                       DPFLTR_ERROR_LEVEL,
-                       "    X%02lu=0x%016llX  X%02lu=0x%016llX\n",
-                       i,
-                       (unsigned long long)Regs[i],
-                       i + 1,
-                       (unsigned long long)Regs[i + 1]);
+            if (KdDebuggerEnabled)
+            {
+                DbgPrintEx(DPFLTR_DEFAULT_ID,
+                           DPFLTR_ERROR_LEVEL,
+                           "    X%02lu=0x%016llX  X%02lu=0x%016llX\n",
+                           i,
+                           (unsigned long long)Regs[i],
+                           i + 1,
+                           (unsigned long long)Regs[i + 1]);
+            }
 
             KiTrapUartPuts("    X");
             KiTrapUartPutDec(i);
-            KiTrapUartPuts("=0x");
+            KiTrapUartPuts("=");
             KiTrapUartPutHex(Regs[i], 16);
             KiTrapUartPuts("  X");
             KiTrapUartPutDec(i + 1);
-            KiTrapUartPuts("=0x");
+            KiTrapUartPuts("=");
             KiTrapUartPutHex(Regs[i + 1], 16);
             KiTrapUartPuts("\n");
         }
         else
         {
-            DbgPrintEx(DPFLTR_DEFAULT_ID,
-                       DPFLTR_ERROR_LEVEL,
-                       "    X%02lu=0x%016llX\n",
-                       i,
-                       (unsigned long long)Regs[i]);
+            if (KdDebuggerEnabled)
+            {
+                DbgPrintEx(DPFLTR_DEFAULT_ID,
+                           DPFLTR_ERROR_LEVEL,
+                           "    X%02lu=0x%016llX\n",
+                           i,
+                           (unsigned long long)Regs[i]);
+            }
 
             KiTrapUartPuts("    X");
             KiTrapUartPutDec(i);
-            KiTrapUartPuts("=0x");
+            KiTrapUartPuts("=");
             KiTrapUartPutHex(Regs[i], 16);
             KiTrapUartPuts("\n");
         }
@@ -357,6 +355,19 @@ KiTrapHandlerC(
 )
 {
     ULONG ExceptionClass = ESR_ELx_EC((ULONG)TrapFrame->Esr);
+
+    /* Handle debug service breakpoints without dumping the trap frame noise */
+    if (ExceptionClass == ESR_ELx_EC_BRK64)
+    {
+        ULONG Iss = ESR_ELx_ISS((ULONG)TrapFrame->Esr);
+        ULONG BrkImmediate = ESR_ELx_BRK64_IMM(Iss);
+
+        if (BrkImmediate == 0xF003)
+        {
+            KiDebugServiceC(TrapFrame);
+            return;
+        }
+    }
 
     KiDumpTrapFrameDebug("Synchronous exception", TrapFrame);
     
@@ -394,9 +405,21 @@ KiTrapHandlerC(
             break;
             
         case ESR_ELx_EC_BRK64:
-            /* Software breakpoint */
-            KiBreakpointTrapC(TrapFrame);
+        {
+            ULONG Iss = ESR_ELx_ISS((ULONG)TrapFrame->Esr);
+            ULONG BrkImmediate = ESR_ELx_BRK64_IMM(Iss);
+
+            if (BrkImmediate == 0xF003)
+            {
+                /* Should have been handled above, but keep it safe */
+                KiDebugServiceC(TrapFrame);
+            }
+            else
+            {
+                KiBreakpointTrapC(TrapFrame);
+            }
             break;
+        }
             
         case ESR_ELx_EC_ILL:
             /* Illegal execution state */
@@ -601,9 +624,87 @@ KiDebugServiceC(
     IN PKTRAP_FRAME TrapFrame
 )
 {
-    DPRINT("ARM64: Debug service at PC=0x%llX\n", TrapFrame->Pc);
-    
-    /* TODO: Implement debug services */
+    ULONG ServiceCode = (ULONG)TrapFrame->X0;
+
+    /* Default: indicate the request was consumed */
+    TrapFrame->X0 = STATUS_SUCCESS;
+
+    /* For now we do not support interactive debugger services. */
+    switch (ServiceCode)
+    {
+        case BREAKPOINT_PRINT:
+        {
+            const CHAR *Message = (const CHAR *)(ULONG_PTR)TrapFrame->X1;
+            ULONG Length = (ULONG)TrapFrame->X2;
+            CHAR LocalBuffer[512 + 1];
+            BOOLEAN Copied = FALSE;
+
+            if (Length == 0 && Message)
+            {
+                /* Fallback if caller didn't specify a length */
+                __try
+                {
+                    const CHAR *Scan = Message;
+                    while (Length < RTL_NUMBER_OF(LocalBuffer) - 1 && Scan[Length] != '\0')
+                    {
+                        Length++;
+                    }
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    Length = 0;
+                }
+                __endtry;
+            }
+
+            if (Length >= RTL_NUMBER_OF(LocalBuffer))
+            {
+                Length = RTL_NUMBER_OF(LocalBuffer) - 1;
+            }
+
+            if (Message && Length > 0)
+            {
+                __try
+                {
+                    RtlCopyMemory(LocalBuffer, Message, Length);
+                    LocalBuffer[Length] = '\0';
+                    Copied = TRUE;
+                }
+                __except (EXCEPTION_EXECUTE_HANDLER)
+                {
+                    Copied = FALSE;
+                }
+                __endtry;
+            }
+
+            if (Copied)
+            {
+                KiEarlyDebugString(LocalBuffer);
+                if (Length > 0 && LocalBuffer[Length - 1] != '\n')
+                {
+                    KiEarlyDebugString("\r\n");
+                }
+            }
+            break;
+        }
+        case BREAKPOINT_LOAD_SYMBOLS:
+        case BREAKPOINT_UNLOAD_SYMBOLS:
+        case BREAKPOINT_COMMAND_STRING:
+        case BREAKPOINT_PROMPT:
+            /* Nothing to do yet – acknowledge and continue. */
+            break;
+
+        default:
+            KiEarlyKernelDebugPrint(
+                "ARM64: DebugService unsupported code=%lu Buffer=0x%llx Length=0x%llx\r\n",
+                (unsigned long)ServiceCode,
+                (unsigned long long)TrapFrame->X1,
+                (unsigned long long)TrapFrame->X2);
+            break;
+    }
+
+    /* Skip over the BRK instruction */
+    TrapFrame->Pc += KD_BREAKPOINT_SIZE;
 }
 
 /**

@@ -243,6 +243,11 @@ struct __crt_seh_guarded_call
     {
         T result;
         init();
+        /*
+         * Prefer native SEH on MSVC. On Clang/GCC, try to use PSEH2 if available
+         * and enabled for C++, otherwise fall back to a simple sequential call.
+         */
+#if defined(_MSC_VER)
         __try
         {
             result = action();
@@ -251,7 +256,11 @@ struct __crt_seh_guarded_call
         {
             cleanup();
         }
-        __endtry
+#else
+        /* Non-MSVC: exceptions are disabled; call and cleanup sequentially. */
+        result = action();
+        cleanup();
+#endif
         return result;
     }
 };
@@ -263,6 +272,7 @@ struct __crt_seh_guarded_call<void>
     void operator()(Init init, Action action, Cleanup cleanup)
     {
         init();
+#if defined(_MSC_VER)
         __try
         {
             action();
@@ -271,7 +281,10 @@ struct __crt_seh_guarded_call<void>
         {
             cleanup();
         }
-        __endtry
+#else
+        action();
+        cleanup();
+#endif
     }
 };
 

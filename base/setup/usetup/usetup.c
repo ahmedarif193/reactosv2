@@ -1844,8 +1844,18 @@ CreateInstallPartition:
 
 
 #define PARTITION_SIZE_INPUT_FIELD_LENGTH 9
-/* Restriction for MaxSize */
-#define PARTITION_MAXSIZE (pow(10, (PARTITION_SIZE_INPUT_FIELD_LENGTH - 1)) - 1)
+/*
+ * Restriction for MaxSize
+ * Avoid using floating-point pow() in a native subsystem binary.
+ * Compute 10^(n) using integer arithmetic to prevent CRT math dependency.
+ */
+static inline ULONG USetupPow10U(unsigned n)
+{
+    ULONG v = 1;
+    while (n--) v *= 10;
+    return v;
+}
+#define PARTITION_MAXSIZE (USetupPow10U(PARTITION_SIZE_INPUT_FIELD_LENGTH - 1) - 1)
 
 static VOID
 ShowPartitionSizeInputBox(SHORT Left,

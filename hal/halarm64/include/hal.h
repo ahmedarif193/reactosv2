@@ -250,4 +250,133 @@ NTAPI
 HalStallExecution(
     IN ULONG Microseconds);
 
+/* ARM64 Power Management Functions */
+NTSTATUS
+NTAPI
+HalInitializePowerManagement(VOID);
+
+NTSTATUS
+NTAPI
+HalStartProcessor(
+    IN ULONG ProcessorNumber,
+    IN ULONG64 Mpidr,
+    IN PHYSICAL_ADDRESS EntryPoint,
+    IN ULONG64 ContextId);
+
+VOID
+NTAPI
+HalStopProcessor(VOID);
+
+NTSTATUS
+NTAPI
+HalSuspendProcessor(
+    IN ULONG PowerState,
+    IN PHYSICAL_ADDRESS EntryPoint,
+    IN ULONG64 ContextId);
+
+NTSTATUS
+NTAPI
+HalGetCpuAffinityInfo(
+    IN ULONG64 Mpidr,
+    IN ULONG AffinityLevel,
+    OUT PULONG AffinityState);
+
+VOID
+NTAPI
+HalSystemShutdown(VOID);
+
+VOID
+NTAPI
+HalSystemRestart(VOID);
+
+NTSTATUS
+NTAPI
+HalSystemSuspend(
+    IN PHYSICAL_ADDRESS EntryPoint,
+    IN ULONG64 ContextId);
+
+BOOLEAN
+NTAPI
+HalIsPsciAvailable(VOID);
+
+ULONG
+NTAPI
+HalGetPsciVersion(VOID);
+
+ULONG
+NTAPI
+HalGetCpuPowerState(
+    IN ULONG64 Mpidr);
+
+/* ARM64 HAL Import Functions */
+NTSTATUS
+NTAPI
+HalParkProcessor(
+    IN ULONG ProcessorNumber);
+
+NTSTATUS
+NTAPI
+HalUnparkProcessor(
+    IN ULONG ProcessorNumber);
+
+ULONG
+NTAPI
+HalGetProcessorIdleState(VOID);
+
+VOID
+NTAPI
+HalPerformCacheMaintenanceForPowerTransition(
+    IN ULONG Operation);
+
+/* Remove local declaration - use the one from NDK halfuncs.h */
+#if 0
+NTSTATUS
+NTAPI
+HalRequestIpi(
+    IN KAFFINITY TargetProcessors);
+#endif
+
+VOID
+NTAPI
+HalInitializePowerManagementImports(VOID);
+
+/* Additional ARM64 Power Management Functions */
+VOID
+NTAPI
+KiProcessorIdle(VOID);
+
+BOOLEAN
+NTAPI
+KiHandleFreezeIpi(
+    IN PKTRAP_FRAME TrapFrame);
+
+VOID
+NTAPI
+KiYieldProcessor(VOID);
+
+VOID
+NTAPI
+HalFlushCachesForPowerTransition(
+    IN ULONG FlushType);
+
+/* ARM64 Processor Freeze/Thaw Functions (from freeze.c) */
+BOOLEAN
+NTAPI
+KiProcessorFreezeHandler(
+    IN PKTRAP_FRAME TrapFrame,
+    IN PKEXCEPTION_FRAME ExceptionFrame);
+
+VOID
+NTAPI
+KxFreezeExecution(VOID);
+
+VOID
+NTAPI
+KxThawExecution(VOID);
+
+KCONTINUE_STATUS
+NTAPI
+KxSwitchKdProcessor(
+    IN ULONG ProcessorNumber);
+
 #endif /* _HAL_H_ */

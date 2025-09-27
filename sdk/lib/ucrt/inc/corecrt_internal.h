@@ -27,6 +27,11 @@
 
 #ifdef __cplusplus
     #include <roapi.h>
+    /* Enable PSEH2 for C++ UCRT sources using __try/__except/__finally */
+    #ifndef __PSEH_USE_IN_CXX
+    #define __PSEH_USE_IN_CXX 1
+    #endif
+    #include <pseh/pseh2.h>
 #endif
 
 _CRT_BEGIN_C_HEADER

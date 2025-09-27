@@ -9,7 +9,13 @@
 #include <vcruntime.h>
 
 #if !defined(RC_INVOKED)
+/*
+ * Only include PSEH2 by default for C translation units. In C++, it clashes
+ * with libstdc++'s __try/__catch macros unless explicitly opted into.
+ */
+#if !defined(__cplusplus) || defined(__PSEH_USE_IN_CXX)
 #include <pseh/pseh2.h>
+#endif
 #endif
 
 #pragma pack(push,_CRT_PACKING)

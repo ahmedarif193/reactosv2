@@ -53,6 +53,10 @@ DBG_DEFAULT_CHANNEL(WINDOWS);
 #define ALIGN_DOWN(x, a) ((UINT64)((x) & ~((UINT64)(a) - 1)))
 #define IS_ALIGNED(x, a) (((x) & ((a) - 1)) == 0)
 
+#ifndef KI_USER_SHARED_DATA
+#define KI_USER_SHARED_DATA     0xFFFFF78000000000ULL
+#endif
+
 /* -------------------------------------------------------------------------- */
 /* Minimal PL011 UART helper for bring-up logs (QEMU -M virt default)         */
 /* -------------------------------------------------------------------------- */
@@ -89,6 +93,7 @@ typedef struct _ARM64_KERNEL_DATA
 } ARM64_KERNEL_DATA, *PARM64_KERNEL_DATA;
 
 static PARM64_KERNEL_DATA KernelDataBlock = NULL;
+static PVOID Arm64SharedUserDataPage = NULL;
 
 static BOOLEAN Arm64InitializeMemory(IN PLOADER_PARAMETER_BLOCK LoaderBlock);
 static VOID    Arm64ConfigureProcessorContext(USHORT OperatingSystemVersion);
@@ -96,6 +101,46 @@ static BOOLEAN Arm64AllocateKernelDataStructures(VOID);
 
 /* Low-level mapper provided by the platform */
 extern BOOLEAN Arm64MapVirtualMemory(ULONGLONG Va, ULONGLONG Pa, ULONGLONG Size, ULONG Attrs);
+
+static
+BOOLEAN
+Arm64EnsureSharedUserDataMapped(VOID)
+{
+    if (Arm64SharedUserDataPage)
+        return TRUE;
+
+    PVOID shared_page = MmAllocateMemoryWithType(MM_PAGE_SIZE, LoaderStartupPcrPage);
+    if (!shared_page)
+    {
+        ERR("ARM64: Failed to allocate SharedUserData page\n");
+        return FALSE;
+    }
+
+    RtlZeroMemory(shared_page, MM_PAGE_SIZE);
+
+    ULONGLONG shared_pa = (ULONGLONG)(ULONG_PTR)shared_page;
+    ULONGLONG shared_va = KI_USER_SHARED_DATA;
+    ULONG shared_attrs = ARM64_MAP_ATTR_NORMAL | ARM64_MAP_ATTR_UXN | ARM64_MAP_ATTR_PXN;
+
+    if (!Arm64MapVirtualMemory(shared_va, shared_pa, MM_PAGE_SIZE, shared_attrs))
+    {
+        if (!Arm64MapUserSharedDataPage(shared_va, shared_pa, shared_attrs))
+        {
+            ERR("ARM64: Failed to map SharedUserData (PA=0x%llx VA=0x%llx)\n",
+                (unsigned long long)shared_pa,
+                (unsigned long long)shared_va);
+            return FALSE;
+        }
+    }
+
+    Arm64SharedUserDataPage = shared_page;
+
+    TRACE("ARM64: SharedUserData mapped VA=0x%llx -> PA=0x%llx\n",
+          (unsigned long long)shared_va,
+          (unsigned long long)shared_pa);
+
+    return TRUE;
+}
 
 /* -------------------------------------------------------------------------- */
 /* Hierarchical range mapping (1G -> 2M -> 4K)                                */
@@ -283,6 +328,11 @@ Arm64SetupForNt(
     LoaderBlock->KernelStack             = (KernelStackPA     < ARM64_KSEG0_BASE) ? (KernelStackPA     + ARM64_KSEG0_BASE) : KernelStackPA;
     LoaderBlock->u.Arm64.PanicStack      = (PanicStackPA      < ARM64_KSEG0_BASE) ? (PanicStackPA      + ARM64_KSEG0_BASE) : PanicStackPA;
     LoaderBlock->u.Arm64.InterruptStack  = (InterruptStackPA  < ARM64_KSEG0_BASE) ? (InterruptStackPA  + ARM64_KSEG0_BASE) : InterruptStackPA;
+
+    TRACE("ARM64: LoaderBlock stack pointers - Kernel=0x%llx Panic=0x%llx Interrupt=0x%llx\n",
+          (unsigned long long)LoaderBlock->KernelStack,
+          (unsigned long long)LoaderBlock->u.Arm64.PanicStack,
+          (unsigned long long)LoaderBlock->u.Arm64.InterruptStack);
     LoaderBlock->u.Arm64.PcrPage         = (PcrPA             < ARM64_KSEG0_BASE) ? (PcrPA             + ARM64_KSEG0_BASE) : PcrPA;
     LoaderBlock->u.Arm64.PdrPage         = 0; /* Not used on ARM64 */
     LoaderBlock->Prcb                     = (PrcbPA           < ARM64_KSEG0_BASE) ? (PrcbPA            + ARM64_KSEG0_BASE) : PrcbPA;
@@ -451,6 +501,9 @@ Arm64AllocateKernelDataStructures(VOID)
               (unsigned long long)block_va,
               (unsigned long long)map_size);
     }
+
+    if (!Arm64EnsureSharedUserDataMapped())
+        return FALSE;
 
     return TRUE;
 }

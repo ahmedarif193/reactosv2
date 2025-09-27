@@ -28,6 +28,7 @@ RtlAssert(IN PVOID FailedAssertion,
     CHAR Action[2];
     CONTEXT Context;
 
+
     /* Capture caller's context for the debugger */
     RtlCaptureContext(&Context);
 

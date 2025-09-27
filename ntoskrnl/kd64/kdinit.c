@@ -566,6 +566,10 @@ KdInitSystem(
         KdPitchDebugger = FALSE;
         KdDebuggerEnabled = TRUE;
 
+#ifdef _M_ARM64
+        Arm64SerialPutString("KdInitSystem: Timer initialized, officially enabling KD 2\r\n");
+#endif
+
         /* Let user-mode know that it's enabled as well */
         SharedUserData->KdDebuggerEnabled = TRUE;
 

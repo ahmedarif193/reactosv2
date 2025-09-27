@@ -396,6 +396,7 @@ elseif(ARCH STREQUAL "arm64")
     list(APPEND ASM_SOURCE
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/boot.S
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/ctxswitch.S
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/earlydbg_asm.S
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/trap.S)
     list(APPEND SOURCE
         ${REACTOS_SOURCE_DIR}/ntoskrnl/config/arm64/cmhardwr.c
@@ -407,6 +408,7 @@ elseif(ARCH STREQUAL "arm64")
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/context.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/cpu.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/debug.c
+        ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/earlydbg.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/except.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/freeze.c
         ${REACTOS_SOURCE_DIR}/ntoskrnl/ke/arm64/halimports.c

@@ -61,6 +61,8 @@
 #define ICC_IAR1_EL1        "S3_0_C12_C12_0"   /* Interrupt Acknowledge Register 1 */
 #define ICC_EOIR1_EL1       "S3_0_C12_C12_1"   /* End Of Interrupt Register 1 */
 #define ICC_SGI1R_EL1       "S3_0_C12_C11_5"   /* Software Generated Interrupt Group 1 Register */
+/* System Register Enable (must be set before using ICC_* at EL1) */
+#define ICC_SRE_EL1         "S3_0_C12_C12_5"
 
 /* Special interrupt numbers */
 #define GIC_SPURIOUS_INTERRUPT  1023
@@ -125,15 +127,42 @@ HalInitializeInterruptController(VOID)
 
     DPRINT("Initializing ARM64 Generic Interrupt Controller\n");
 
-    /* Get GIC base addresses from ACPI MADT or device tree
-     * For initial implementation, use common ARM64 addresses */
+    /* Prefer ACPI‑provided configuration if available */
+    if (HalAcpiIsAvailable())
+    {
+        ARM64_GIC_INFO AcpiCfg;
+        if (HalAcpiGetGicConfiguration(&AcpiCfg))
+        {
+            if (AcpiCfg.DistributorBase.QuadPart)
+            {
+                GicDistributorBase = MmMapIoSpace(AcpiCfg.DistributorBase, 0x10000, MmNonCached);
+            }
+            if (AcpiCfg.CpuInterfaceBase.QuadPart)
+            {
+                GicCpuInterfaceBase = MmMapIoSpace(AcpiCfg.CpuInterfaceBase, 0x10000, MmNonCached);
+            }
+            if (AcpiCfg.RedistributorBase.QuadPart)
+            {
+                GicRedistributorBase = (PVOID)(ULONG_PTR)AcpiCfg.RedistributorBase.QuadPart; /* optional */
+            }
+            if (AcpiCfg.Version)
+            {
+                GicVersion = AcpiCfg.Version;
+            }
+        }
+    }
 
-    /* Common GICv2 addresses - these should come from ACPI/DT */
-    GicPhysicalBase.QuadPart = 0x08000000;  /* Typical GIC distributor base */
-    GicDistributorBase = MmMapIoSpace(GicPhysicalBase, 0x10000, MmNonCached);
-
-    GicPhysicalBase.QuadPart = 0x08010000;  /* Typical GIC CPU interface base */
-    GicCpuInterfaceBase = MmMapIoSpace(GicPhysicalBase, 0x10000, MmNonCached);
+    /* Fallback to common QEMU "virt" GICv2 addresses if ACPI not available */
+    if (!GicDistributorBase)
+    {
+        GicPhysicalBase.QuadPart = 0x08000000;  /* Typical GIC distributor base */
+        GicDistributorBase = MmMapIoSpace(GicPhysicalBase, 0x10000, MmNonCached);
+    }
+    if (!GicCpuInterfaceBase)
+    {
+        GicPhysicalBase.QuadPart = 0x08010000;  /* Typical GIC CPU interface base */
+        GicCpuInterfaceBase = MmMapIoSpace(GicPhysicalBase, 0x10000, MmNonCached);
+    }
 
     if (!GicDistributorBase)
     {
@@ -141,8 +170,9 @@ HalInitializeInterruptController(VOID)
         return FALSE;
     }
 
-    /* Detect GIC version */
-    GicVersion = HalDetectGicVersion(GicDistributorBase);
+    /* Detect GIC version if not provided by ACPI */
+    if (GicVersion == 0)
+        GicVersion = HalDetectGicVersion(GicDistributorBase);
     if (GicVersion == 0)
     {
         DPRINT1("Failed to detect GIC version\n");
@@ -341,8 +371,21 @@ NTAPI
 HalInitializeGicv3CpuInterface(VOID)
 {
     ULONG64 IccCtlrEl1, IccPmrEl1, EnableValue;
+    ULONG64 IccSreEl1;
 
     DPRINT("Initializing GICv3 CPU Interface\n");
+
+    /* Enable GIC system register interface at EL1: set SRE|DFB|DIB */
+    __asm__ __volatile__ (
+        "mrs %0, " ICC_SRE_EL1 "\n"
+        : "=r"(IccSreEl1)
+    );
+    IccSreEl1 |= 0x7ULL; /* SRE=1, DFB=1, DIB=1 */
+    __asm__ __volatile__ (
+        "msr " ICC_SRE_EL1 ", %0\n"
+        "isb\n"
+        :: "r"(IccSreEl1)
+    );
 
     /* Enable System Register interface for GICv3 */
     __asm__ __volatile__ (

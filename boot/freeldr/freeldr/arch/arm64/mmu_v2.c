@@ -192,12 +192,17 @@ static BOOLEAN page_tables_initialized = FALSE;
 #define ARM64_KSEG0_L0_INDEX      (((ULONGLONG)ARM64_KSEG0_BASE >> 39) & 0x1FFULL)
 #define ARM64_KERNEL_L1_TABLES    4U
 #define ARM64_USER_L1_TABLES      4U
+#define ARM64_KUSER_SHARED_L0_INDEX (((ULONGLONG)KI_USER_SHARED_DATA >> 39) & 0x1FFULL)
 
 /* Page tables - aligned to 4K boundaries */
 static UINT64 arm64_l0_page_table[512] __attribute__((aligned(4096)));
 static UINT64 arm64_l1_page_tables[ARM64_USER_L1_TABLES][512] __attribute__((aligned(4096)));
 static UINT64 arm64_kernel_l0_table[512] __attribute__((aligned(4096)));
 static UINT64 arm64_kernel_l1_tables[ARM64_KERNEL_L1_TABLES][512] __attribute__((aligned(4096)));
+
+static UINT64 arm64_kuser_l1_table[512] __attribute__((aligned(4096)));
+static UINT64 arm64_kuser_l2_table[512] __attribute__((aligned(4096)));
+static UINT64 arm64_kuser_l3_table[512] __attribute__((aligned(4096)));
 
 /* Additional L2 and L3 tables */
 #define ARM64_L2_TABLES_PER_L1     4U
@@ -695,8 +700,11 @@ static VOID setup_pgtables(VOID)
     RtlZeroMemory(arm64_l1_page_tables, sizeof(arm64_l1_page_tables));
     RtlZeroMemory(arm64_kernel_l0_table, sizeof(arm64_kernel_l0_table));
     RtlZeroMemory(arm64_kernel_l1_tables, sizeof(arm64_kernel_l1_tables));
+    RtlZeroMemory(arm64_kuser_l1_table, sizeof(arm64_kuser_l1_table));
     RtlZeroMemory(arm64_kernel_l2_tables, sizeof(arm64_kernel_l2_tables));
     RtlZeroMemory(arm64_kernel_l3_tables, sizeof(arm64_kernel_l3_tables));
+    RtlZeroMemory(arm64_kuser_l2_table, sizeof(arm64_kuser_l2_table));
+    RtlZeroMemory(arm64_kuser_l3_table, sizeof(arm64_kuser_l3_table));
     RtlZeroMemory(arm64_user_l2_tables, sizeof(arm64_user_l2_tables));
     RtlZeroMemory(arm64_user_l3_tables, sizeof(arm64_user_l3_tables));
     RtlZeroMemory(arm64_l2_next_index, sizeof(arm64_l2_next_index));
@@ -1355,6 +1363,66 @@ BOOLEAN Arm64MapVirtualMemory(ULONGLONG VirtualAddress,
     TLBI_VMALLE1IS();
     ARM64_DSB_ISH();
     ARM64_ISB();
+    return TRUE;
+}
+
+BOOLEAN
+Arm64MapUserSharedDataPage(ULONGLONG VirtualAddress,
+                             ULONGLONG PhysicalAddress,
+                             ULONG Attributes)
+{
+    ULONGLONG l0_idx = (VirtualAddress >> 39) & 0x1FFULL;
+    ULONGLONG l1_idx = (VirtualAddress >> 30) & 0x1FFULL;
+    ULONGLONG l2_idx = (VirtualAddress >> 21) & 0x1FFULL;
+    ULONGLONG l3_idx = (VirtualAddress >> 12) & 0x1FFULL;
+    UINT64 attrs = PTE_BLOCK_MEMTYPE(ARM64_MEM_ATTR_NORMAL_WB) |
+                   PTE_BLOCK_INNER_SHARE |
+                   PTE_BLOCK_AF |
+                   PTE_BLOCK_PXN |
+                   PTE_BLOCK_UXN;
+
+    UNREFERENCED_PARAMETER(Attributes);
+
+    if (l0_idx != ARM64_KUSER_SHARED_L0_INDEX)
+    {
+        TRACE("ARM64: Arm64MapUserSharedDataPage invalid L0 index %llu\n",
+              (unsigned long long)l0_idx);
+        return FALSE;
+    }
+
+    if (!DESC_VALID(arm64_kernel_l0_table[l0_idx]))
+    {
+        pte_write(&arm64_kernel_l0_table[l0_idx],
+                  (VA_TO_PA(arm64_kuser_l1_table) | PTE_TYPE_VALID | PTE_TYPE_TABLE));
+    }
+
+    if (!DESC_VALID(arm64_kuser_l1_table[l1_idx]))
+    {
+        pte_write(&arm64_kuser_l1_table[l1_idx],
+                  (VA_TO_PA(arm64_kuser_l2_table) | PTE_TYPE_VALID | PTE_TYPE_TABLE));
+    }
+
+    if (!DESC_VALID(arm64_kuser_l2_table[l2_idx]))
+    {
+        pte_write(&arm64_kuser_l2_table[l2_idx],
+                  (VA_TO_PA(arm64_kuser_l3_table) | PTE_TYPE_VALID | PTE_TYPE_TABLE));
+    }
+
+    UINT64 desc = (PhysicalAddress & ~0xFFFULL) |
+                  PTE_TYPE_VALID |
+                  PTE_TYPE_PAGE |
+                  attrs;
+
+    pte_replace_break_before_make(&arm64_kuser_l3_table[l3_idx], desc);
+
+    TLBI_VMALLE1IS();
+    ARM64_DSB_ISH();
+    ARM64_ISB();
+
+    TRACE("ARM64: KUSER shared page mapped VA=0x%llx -> PA=0x%llx\n",
+          (unsigned long long)VirtualAddress,
+          (unsigned long long)PhysicalAddress);
+
     return TRUE;
 }
 
