@@ -449,7 +449,11 @@ CompositeMonikerImpl_Reduce(IMoniker* iface, IBindCtx* pbc, DWORD dwReduceHowFar
         IEnumMoniker_Next(enumMoniker,1,&rightMostMk,NULL);
         IEnumMoniker_Release(enumMoniker);
 
-        CreateAntiMoniker(&antiMk);
+        res = CreateAntiMoniker(&antiMk);
+        if (FAILED(res)) {
+            WARN("CreateAntiMoniker failed: %08x\n", res);
+            goto end;
+        }
         IMoniker_ComposeWith(iface,antiMk,0,&tempMk);
         IMoniker_Release(antiMk);
 
@@ -470,7 +474,11 @@ CompositeMonikerImpl_Reduce(IMoniker* iface, IBindCtx* pbc, DWORD dwReduceHowFar
         IEnumMoniker_Next(enumMoniker,1,&rightMostMk,NULL);
         IEnumMoniker_Release(enumMoniker);
 
-        CreateAntiMoniker(&antiMk);
+        res = CreateAntiMoniker(&antiMk);
+        if (FAILED(res)) {
+            WARN("CreateAntiMoniker failed: %08x\n", res);
+            goto end;
+        }
         IMoniker_ComposeWith(iface,antiMk,0,&tempMk);
         IMoniker_Release(antiMk);
 
@@ -495,6 +503,10 @@ CompositeMonikerImpl_Reduce(IMoniker* iface, IBindCtx* pbc, DWORD dwReduceHowFar
             return MK_S_REDUCED_TO_SELF;
         }
     }
+
+end:
+    IMoniker_Release(rightMostMk);
+    return res;
 }
 
 /******************************************************************************
@@ -641,7 +653,11 @@ CompositeMonikerImpl_IsRunning(IMoniker* iface, IBindCtx* pbc,
     /* If pmkToLeft is non-NULL, this method composes pmkToLeft with this moniker and calls IsRunning on the result.*/
     if (pmkToLeft!=NULL){
 
-        CreateGenericComposite(pmkToLeft,iface,&tempMk);
+        res = CreateGenericComposite(pmkToLeft,iface,&tempMk);
+        if (FAILED(res)) {
+            WARN("CreateGenericComposite failed: %08x\n", res);
+            return res;
+        }
 
         res = IMoniker_IsRunning(tempMk,pbc,NULL,pmkNewlyRunning);
 
@@ -826,7 +842,7 @@ CompositeMonikerImpl_CommonPrefixWith(IMoniker* iface, IMoniker* pmkOther,
                IMoniker** ppmkPrefix)
 {
     DWORD mkSys;
-    HRESULT res1,res2;
+    HRESULT res1,res2,res;
     IMoniker *tempMk1,*tempMk2,*mostLeftMk1,*mostLeftMk2;
     IEnumMoniker *enumMoniker1,*enumMoniker2;
     ULONG i,nbCommonMk=0;
@@ -903,7 +919,13 @@ CompositeMonikerImpl_CommonPrefixWith(IMoniker* iface, IMoniker* pmkOther,
 
             /* initialize the common prefix moniker with the composite of two first moniker (from the left)*/
             IEnumMoniker_Next(enumMoniker1,1,&tempMk2,NULL);
-            CreateGenericComposite(tempMk1,tempMk2,ppmkPrefix);
+            res = CreateGenericComposite(tempMk1,tempMk2,ppmkPrefix);
+            if (FAILED(res)) {
+                WARN("CreateGenericComposite failed: %08x\n", res);
+                IMoniker_Release(tempMk1);
+                IMoniker_Release(tempMk2);
+                goto end;
+            }
             IMoniker_Release(tempMk1);
             IMoniker_Release(tempMk2);
 
@@ -912,7 +934,13 @@ CompositeMonikerImpl_CommonPrefixWith(IMoniker* iface, IMoniker* pmkOther,
 
                 IEnumMoniker_Next(enumMoniker1,1,&tempMk1,NULL);
 
-                CreateGenericComposite(*ppmkPrefix,tempMk1,&tempMk2);
+                res = CreateGenericComposite(*ppmkPrefix,tempMk1,&tempMk2);
+                if (FAILED(res)) {
+                    WARN("CreateGenericComposite failed: %08x\n", res);
+                    IMoniker_Release(*ppmkPrefix);
+                    IMoniker_Release(tempMk1);
+                    goto end;
+                }
 
                 IMoniker_Release(*ppmkPrefix);
 
@@ -946,6 +974,10 @@ CompositeMonikerImpl_CommonPrefixWith(IMoniker* iface, IMoniker* pmkOther,
         else
             return MK_E_NOPREFIX;
     }
+
+end:
+    IEnumMoniker_Release(enumMoniker1);
+    return res;
 }
 
 /***************************************************************************************************
@@ -958,7 +990,7 @@ static VOID GetAfterCommonPrefix(IMoniker* pGenMk,IMoniker* commonMk,IMoniker** 
     IEnumMoniker *enumMoniker1,*enumMoniker2,*enumMoniker3;
     ULONG nbRestMk=0;
     DWORD mkSys;
-    HRESULT res1,res2;
+    HRESULT res1,res2,res;
 
     *restMk=0;
 
@@ -1019,7 +1051,13 @@ static VOID GetAfterCommonPrefix(IMoniker* pGenMk,IMoniker* commonMk,IMoniker** 
 
         IEnumMoniker_Next(enumMoniker1,1,&tempMk2,NULL);
 
-        CreateGenericComposite(tempMk1,tempMk2,restMk);
+        res = CreateGenericComposite(tempMk1,tempMk2,restMk);
+        if (FAILED(res)) {
+            WARN("CreateGenericComposite failed: %08x\n", res);
+            IMoniker_Release(tempMk1);
+            IMoniker_Release(tempMk2);
+            return;
+        }
 
         IMoniker_Release(tempMk1);
 
@@ -1027,7 +1065,13 @@ static VOID GetAfterCommonPrefix(IMoniker* pGenMk,IMoniker* commonMk,IMoniker** 
 
         while(IEnumMoniker_Next(enumMoniker1,1,&tempMk1,NULL)==S_OK){
 
-            CreateGenericComposite(*restMk,tempMk1,&tempMk2);
+            res = CreateGenericComposite(*restMk,tempMk1,&tempMk2);
+            if (FAILED(res)) {
+                WARN("CreateGenericComposite failed: %08x\n", res);
+                IMoniker_Release(tempMk1);
+                IMoniker_Release(*restMk);
+                break;
+            }
 
             IMoniker_Release(tempMk1);
 
@@ -1093,7 +1137,13 @@ CompositeMonikerImpl_RelativePathTo(IMoniker* iface,IMoniker* pmkOther,
 
         IMoniker_Inverse(restThisMk,&invRestThisMk);
         IMoniker_Release(restThisMk);
-        CreateGenericComposite(invRestThisMk,restOtherMk,ppmkRelPath);
+        res = CreateGenericComposite(invRestThisMk,restOtherMk,ppmkRelPath);
+        if (FAILED(res)) {
+            WARN("CreateGenericComposite failed: %08x\n", res);
+            IMoniker_Release(invRestThisMk);
+            IMoniker_Release(restOtherMk);
+            return res;
+        }
         IMoniker_Release(invRestThisMk);
         IMoniker_Release(restOtherMk);
     }
@@ -1170,7 +1220,11 @@ CompositeMonikerImpl_ParseDisplayName(IMoniker* iface, IBindCtx* pbc,
     IEnumMoniker_Release(enumMoniker);
 
     /* get the left moniker */
-    CreateAntiMoniker(&antiMk);
+    if (FAILED(CreateAntiMoniker(&antiMk)))
+    {
+        IMoniker_Release(rightMostMk);
+        return E_OUTOFMEMORY;
+    }
     IMoniker_ComposeWith(iface,antiMk,0,&tempMk);
     IMoniker_Release(antiMk);
 

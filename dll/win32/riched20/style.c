@@ -447,7 +447,10 @@ void ME_DestroyStyle(ME_Style *s)
     release_font_cache( s->font_cache );
     s->font_cache = NULL;
   }
-  ScriptFreeCache( &s->script_cache );
+  HRESULT hr = ScriptFreeCache( &s->script_cache );
+  if (FAILED(hr)) {
+      WARN("ScriptFreeCache failed: %08x\n", hr);
+  }
   free(s);
 }
 
@@ -534,7 +537,10 @@ void ME_SetDefaultCharFormat(ME_TextEditor *editor, CHARFORMAT2W *mod)
         release_font_cache( def->font_cache );
         def->font_cache = NULL;
     }
-    ScriptFreeCache( &def->script_cache );
+    HRESULT hr = ScriptFreeCache( &def->script_cache );
+    if (FAILED(hr)) {
+        WARN("ScriptFreeCache failed: %08x\n", hr);
+    }
     ME_ReleaseStyle( style );
     editor_mark_rewrap_all( editor );
 }

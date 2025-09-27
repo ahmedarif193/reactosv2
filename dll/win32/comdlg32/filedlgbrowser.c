@@ -211,8 +211,11 @@ IShellBrowser * IShellBrowserImpl_Construct(HWND hwndOwner)
     sb->IShellBrowser_iface.lpVtbl = &IShellBrowserImpl_Vtbl;
     sb->ICommDlgBrowser_iface.lpVtbl = &IShellBrowserImpl_ICommDlgBrowser_Vtbl;
     sb->IServiceProvider_iface.lpVtbl = &IShellBrowserImpl_IServiceProvider_Vtbl;
-    SHGetSpecialFolderLocation(hwndOwner, CSIDL_DESKTOP,
-                               &fodInfos->ShellInfos.pidlAbsCurrent);
+    if (FAILED(SHGetSpecialFolderLocation(hwndOwner, CSIDL_DESKTOP,
+                               &fodInfos->ShellInfos.pidlAbsCurrent)))
+    {
+        fodInfos->ShellInfos.pidlAbsCurrent = NULL;
+    }
 
     TRACE("%p\n", sb);
 

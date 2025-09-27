@@ -279,8 +279,11 @@ static HRESULT WINAPI dict_enum_Next(IEnumVARIANT *iface, ULONG count, VARIANT *
         return S_OK;
 
     while (This->cur && i < count) {
+        HRESULT hr;
         pair = LIST_ENTRY(This->cur, struct keyitem_pair, entry);
-        VariantCopy(&keys[i], &pair->key);
+        hr = VariantCopy(&keys[i], &pair->key);
+        if (FAILED(hr))
+            return hr;
         This->cur = list_next(&This->dict->pairs, This->cur);
         i++;
     }
@@ -528,8 +531,11 @@ static HRESULT WINAPI dictionary_get_Item(IDictionary *iface, VARIANT *key, VARI
 
     TRACE("(%p)->(%s %p)\n", This, debugstr_variant(key), item);
 
-    if ((pair = get_keyitem_pair(This, key)))
-        VariantCopy(item, &pair->item);
+    if ((pair = get_keyitem_pair(This, key))) {
+        HRESULT hr = VariantCopy(item, &pair->item);
+        if (FAILED(hr))
+            return hr;
+    }
     else {
         VariantInit(item);
         return IDictionary_Add(iface, key, item);
@@ -602,7 +608,12 @@ static HRESULT WINAPI dictionary_Items(IDictionary *iface, VARIANT *items)
 
     i = 0;
     LIST_FOR_EACH_ENTRY(pair, &This->pairs, struct keyitem_pair, entry) {
-        VariantCopy(&v[i], &pair->item);
+        hr = VariantCopy(&v[i], &pair->item);
+        if (FAILED(hr)) {
+            SafeArrayUnaccessData(sa);
+            SafeArrayDestroy(sa);
+            return hr;
+        }
         i++;
     }
     SafeArrayUnaccessData(sa);
@@ -665,7 +676,12 @@ static HRESULT WINAPI dictionary_Keys(IDictionary *iface, VARIANT *keys)
 
     i = 0;
     LIST_FOR_EACH_ENTRY(pair, &This->pairs, struct keyitem_pair, entry) {
-        VariantCopy(&v[i], &pair->key);
+        hr = VariantCopy(&v[i], &pair->key);
+        if (FAILED(hr)) {
+            SafeArrayUnaccessData(sa);
+            SafeArrayDestroy(sa);
+            return hr;
+        }
         i++;
     }
     SafeArrayUnaccessData(sa);

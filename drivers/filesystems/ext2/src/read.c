@@ -80,7 +80,7 @@ Ext2ReadVolume (IN PEXT2_IRP_CONTEXT IrpContext)
 
     BOOLEAN             PagingIo;
     BOOLEAN             Nocache;
-    BOOLEAN             SynchronousIo;
+    BOOLEAN             SynchronousIo = FALSE;
     BOOLEAN             MainResourceAcquired = FALSE;
 
     PUCHAR              Buffer = NULL;

@@ -248,8 +248,10 @@ static inline IMalloc *get_malloc(void)
     static IMalloc *malloc;
 
     if (!malloc)
+    {
         HRESULT hr = CoGetMalloc(1, &malloc);
         UNREFERENCED_PARAMETER(hr);
+    }
 
     return malloc;
 }

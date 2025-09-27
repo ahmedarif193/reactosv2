@@ -995,11 +995,12 @@ DWORD WINAPI SHHelpShortcuts_RunDLLW(DWORD dwArg1, DWORD dwArg2, DWORD dwArg3, D
 HRESULT WINAPI SHLoadInProc (REFCLSID rclsid)
 {
     void *ptr = NULL;
+    HRESULT hr;
 
     TRACE("%s\n", debugstr_guid(rclsid));
 
-    CoCreateInstance(rclsid, NULL, CLSCTX_INPROC_SERVER, &IID_IUnknown,&ptr);
-    if(ptr)
+    hr = CoCreateInstance(rclsid, NULL, CLSCTX_INPROC_SERVER, &IID_IUnknown,&ptr);
+    if(SUCCEEDED(hr) && ptr)
     {
         IUnknown * pUnk = ptr;
         IUnknown_Release(pUnk);

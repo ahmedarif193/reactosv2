@@ -374,11 +374,13 @@ static VOID DoInitAliasPIDLs(void)
         {
             ALIAS_PIDL *alias = &AliasPIDLs[i];
 
-            SHGetSpecialFolderLocation(NULL, alias->csidl1, &alias->pidl1);
-            SHGetPathFromIDListW(alias->pidl1, alias->szPath1);
+            HRESULT hr1 = SHGetSpecialFolderLocation(NULL, alias->csidl1, &alias->pidl1);
+            if (SUCCEEDED(hr1))
+                SHGetPathFromIDListW(alias->pidl1, alias->szPath1);
 
-            SHGetSpecialFolderLocation(NULL, alias->csidl2, &alias->pidl2);
-            SHGetPathFromIDListW(alias->pidl2, alias->szPath2);
+            HRESULT hr2 = SHGetSpecialFolderLocation(NULL, alias->csidl2, &alias->pidl2);
+            if (SUCCEEDED(hr2))
+                SHGetPathFromIDListW(alias->pidl2, alias->szPath2);
         }
         s_bInit = TRUE;
     }

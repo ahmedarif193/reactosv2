@@ -559,7 +559,10 @@ static BOOL is_float(parse_buffer* buf)
   buf->buffer += pos;
   buf->rem_bytes -= pos;
 
-  sscanf(tmp, "%f", &decimal);
+  if (sscanf(tmp, "%f", &decimal) != 1)
+  {
+    /* Ignore parse failure - decimal will be 0 */
+  }
 
   TRACE("Found float %s - %f\n", tmp, decimal);
 
@@ -588,7 +591,10 @@ static BOOL is_integer(parse_buffer* buf)
   buf->buffer += pos;
   buf->rem_bytes -= pos;
 
-  sscanf(tmp, "%d", &integer);
+  if (sscanf(tmp, "%d", &integer) != 1)
+  {
+    /* Ignore parse failure - integer will be 0 */
+  }
 
   TRACE("Found integer %s - %d\n", tmp, integer);
 

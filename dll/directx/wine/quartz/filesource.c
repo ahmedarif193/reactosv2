@@ -107,7 +107,12 @@ static HRESULT process_extensions(HKEY hkeyExtensions, LPCOLESTR pszFileName, GU
         size = sizeof(keying);
         l = RegQueryValueExW(hsub, mediatype_name, NULL, NULL, (LPBYTE)keying, &size);
         if (!l)
-            CLSIDFromString(keying, majorType);
+        {
+            if (CLSIDFromString(keying, majorType) != S_OK)
+            {
+                /* Ignore invalid GUID - majorType will remain unchanged */
+            }
+        }
     }
 
     if (minorType)
@@ -116,7 +121,12 @@ static HRESULT process_extensions(HKEY hkeyExtensions, LPCOLESTR pszFileName, GU
         if (!l)
             l = RegQueryValueExW(hsub, subtype_name, NULL, NULL, (LPBYTE)keying, &size);
         if (!l)
-            CLSIDFromString(keying, minorType);
+        {
+            if (CLSIDFromString(keying, minorType) != S_OK)
+            {
+                /* Ignore invalid GUID - minorType will remain unchanged */
+            }
+        }
     }
 
     if (sourceFilter)
@@ -125,7 +135,12 @@ static HRESULT process_extensions(HKEY hkeyExtensions, LPCOLESTR pszFileName, GU
         if (!l)
             l = RegQueryValueExW(hsub, source_filter_name, NULL, NULL, (LPBYTE)keying, &size);
         if (!l)
-            CLSIDFromString(keying, sourceFilter);
+        {
+            if (CLSIDFromString(keying, sourceFilter) != S_OK)
+            {
+                /* Ignore invalid GUID - sourceFilter will remain unchanged */
+            }
+        }
     }
 
     RegCloseKey(hsub);

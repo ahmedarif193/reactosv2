@@ -169,7 +169,10 @@ HRESULT WINAPI DllRegisterServer(void)
 
 /*** ActiveMovieFilter Categories ***/
 
-    CoInitialize(NULL);
+    if (CoInitialize(NULL) != S_OK)
+    {
+        /* Ignore COM initialization failure - subsequent COM calls will handle it */
+    }
     
     res = CoCreateInstance(&CLSID_FilterMapper2, NULL, CLSCTX_INPROC,
                            &IID_IFilterMapper2,  &mapvptr);

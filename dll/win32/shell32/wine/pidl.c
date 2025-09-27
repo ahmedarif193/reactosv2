@@ -446,13 +446,14 @@ HRESULT WINAPI SHILCreateFromPathAW (LPCVOID path, LPITEMIDLIST * ppidl, DWORD *
 LPITEMIDLIST WINAPI SHCloneSpecialIDList(HWND hwndOwner, int nFolder, BOOL fCreate)
 {
     LPITEMIDLIST ppidl;
+    HRESULT hr;
     TRACE_(shell)("(hwnd=%p,csidl=0x%x,%s).\n", hwndOwner, nFolder, fCreate ? "T" : "F");
 
     if (fCreate)
         nFolder |= CSIDL_FLAG_CREATE;
 
-    SHGetSpecialFolderLocation(hwndOwner, nFolder, &ppidl);
-    return ppidl;
+    hr = SHGetSpecialFolderLocation(hwndOwner, nFolder, &ppidl);
+    return SUCCEEDED(hr) ? ppidl : NULL;
 }
 
 /*************************************************************************

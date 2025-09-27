@@ -509,7 +509,7 @@ static HRESULT WINAPI component_GetProgressKeys(ICifComponent *iface, char *prog
                                                 char *cancel, DWORD cancel_size)
 {
     struct cifcomponent *This = impl_from_ICifComponent(iface);
-    HRESULT hr;
+    HRESULT hr = S_OK;
 
     TRACE("(%p)->(%p, %u, %p, %u): semi-stub\n", This, progress, progress_size, cancel, cancel_size);
 
@@ -1645,7 +1645,7 @@ error:
 
 static HRESULT process_section(struct ciffile *file, struct inf_section *section, const char *section_name)
 {
-    HRESULT hr;
+    HRESULT hr = E_NOTIMPL;
     char *type;
 
     if (!section_get_str(section, "SectionType", &type, "Component"))

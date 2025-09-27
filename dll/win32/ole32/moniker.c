@@ -208,7 +208,11 @@ static void rot_entry_delete(struct rot_entry *rot_entry)
             hr = create_stream_on_mip_ro(moniker, &stream);
             if (hr == S_OK)
             {
-                CoReleaseMarshalData(stream);
+                hr = CoReleaseMarshalData(stream);
+                if (FAILED(hr))
+                {
+                    WARN("Failed to release marshal data: 0x%08x\n", hr);
+                }
                 IStream_Release(stream);
             }
         }
@@ -221,7 +225,11 @@ static void rot_entry_delete(struct rot_entry *rot_entry)
         hr = create_stream_on_mip_ro(rot_entry->object, &stream);
         if (hr == S_OK)
         {
-            CoReleaseMarshalData(stream);
+            hr = CoReleaseMarshalData(stream);
+            if (FAILED(hr))
+            {
+                WARN("Failed to release marshal data: 0x%08x\n", hr);
+            }
             IStream_Release(stream);
         }
     }

@@ -1506,7 +1506,8 @@ CmBattQueryInformation(IN PCMBATT_DEVICE_EXTENSION FdoExtension,
             /* Convert it to Unicode */
             InfoString.Buffer = InfoBuffer;
             InfoString.MaximumLength = sizeof(InfoBuffer);
-            RtlAnsiStringToUnicodeString(&InfoString, &TempString, 0);
+            Status = RtlAnsiStringToUnicodeString(&InfoString, &TempString, 0);
+            if (!NT_SUCCESS(Status)) return Status;
 
             /* Setup a temporary string for concatenation */
             TempString2.Buffer = TempBuffer;
@@ -1527,7 +1528,8 @@ CmBattQueryInformation(IN PCMBATT_DEVICE_EXTENSION FdoExtension,
                 }
 
                 /* Convert it to Unicode and append it */
-                RtlAnsiStringToUnicodeString(&TempString2, &TempString, 0);
+                Status = RtlAnsiStringToUnicodeString(&TempString2, &TempString, 0);
+                if (!NT_SUCCESS(Status)) return Status;
                 RtlAppendUnicodeStringToString(&InfoString, &TempString2);
             }
 
@@ -1542,7 +1544,8 @@ CmBattQueryInformation(IN PCMBATT_DEVICE_EXTENSION FdoExtension,
             }
 
             /* Convert it to Unicode and append it */
-            RtlAnsiStringToUnicodeString(&TempString2, &TempString, 0);
+            Status = RtlAnsiStringToUnicodeString(&TempString2, &TempString, 0);
+            if (!NT_SUCCESS(Status)) return Status;
             RtlAppendUnicodeStringToString(&InfoString, &TempString2);
 
             /* Return the final appended string */

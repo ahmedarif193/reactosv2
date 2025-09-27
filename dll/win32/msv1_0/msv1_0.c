@@ -423,17 +423,21 @@ BuildTokenGroups(OUT PTOKEN_GROUPS *Groups,
         GroupCount++;
 
         /* Member of 'Users' alias */
-        RtlAllocateAndInitializeSid(&SystemAuthority,
-                                    2,
-                                    SECURITY_BUILTIN_DOMAIN_RID,
-                                    DOMAIN_ALIAS_RID_USERS,
-                                    SECURITY_NULL_RID,
-                                    SECURITY_NULL_RID,
-                                    SECURITY_NULL_RID,
-                                    SECURITY_NULL_RID,
-                                    SECURITY_NULL_RID,
-                                    SECURITY_NULL_RID,
-                                    &Sid);
+        Status = RtlAllocateAndInitializeSid(&SystemAuthority,
+                                             2,
+                                             SECURITY_BUILTIN_DOMAIN_RID,
+                                             DOMAIN_ALIAS_RID_USERS,
+                                             SECURITY_NULL_RID,
+                                             SECURITY_NULL_RID,
+                                             SECURITY_NULL_RID,
+                                             SECURITY_NULL_RID,
+                                             SECURITY_NULL_RID,
+                                             SECURITY_NULL_RID,
+                                             &Sid);
+        if (!NT_SUCCESS(Status))
+        {
+            goto done;
+        }
         TokenGroups->Groups[GroupCount].Sid = Sid;
         TokenGroups->Groups[GroupCount].Attributes =
             SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY;
@@ -455,17 +459,21 @@ BuildTokenGroups(OUT PTOKEN_GROUPS *Groups,
     }
 
     /* Member of 'Authenticated users' */
-    RtlAllocateAndInitializeSid(&SystemAuthority,
-                                1,
-                                SECURITY_AUTHENTICATED_USER_RID,
-                                SECURITY_NULL_RID,
-                                SECURITY_NULL_RID,
-                                SECURITY_NULL_RID,
-                                SECURITY_NULL_RID,
-                                SECURITY_NULL_RID,
-                                SECURITY_NULL_RID,
-                                SECURITY_NULL_RID,
-                                &Sid);
+    Status = RtlAllocateAndInitializeSid(&SystemAuthority,
+                                         1,
+                                         SECURITY_AUTHENTICATED_USER_RID,
+                                         SECURITY_NULL_RID,
+                                         SECURITY_NULL_RID,
+                                         SECURITY_NULL_RID,
+                                         SECURITY_NULL_RID,
+                                         SECURITY_NULL_RID,
+                                         SECURITY_NULL_RID,
+                                         SECURITY_NULL_RID,
+                                         &Sid);
+    if (!NT_SUCCESS(Status))
+    {
+        goto done;
+    }
     TokenGroups->Groups[GroupCount].Sid = Sid;
     TokenGroups->Groups[GroupCount].Attributes =
         SE_GROUP_ENABLED | SE_GROUP_ENABLED_BY_DEFAULT | SE_GROUP_MANDATORY;
@@ -476,6 +484,18 @@ BuildTokenGroups(OUT PTOKEN_GROUPS *Groups,
 
     *Groups = TokenGroups;
 
+    return Status;
+
+done:
+    if (TokenGroups != NULL)
+    {
+        for (DWORD i = 0; i < GroupCount; i++)
+        {
+            if (TokenGroups->Groups[i].Sid != NULL)
+                RtlFreeSid(TokenGroups->Groups[i].Sid);
+        }
+        DispatchTable.FreeLsaHeap(TokenGroups);
+    }
     return Status;
 }
 

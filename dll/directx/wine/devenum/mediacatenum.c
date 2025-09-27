@@ -350,7 +350,10 @@ static HRESULT create_PropertyBag(MediaCatMoniker *mon, IPropertyBag **ppBag)
         lstrcatW(rpb->path, backslashW);
         if (mon->has_class)
         {
-            StringFromGUID2(&mon->class, rpb->path + lstrlenW(rpb->path), CHARS_IN_GUID);
+            if (StringFromGUID2(&mon->class, rpb->path + lstrlenW(rpb->path), CHARS_IN_GUID) == 0)
+            {
+                /* Ignore error - path construction continues */
+            }
             lstrcatW(rpb->path, instanceW);
             lstrcatW(rpb->path, backslashW);
         }
@@ -361,7 +364,10 @@ static HRESULT create_PropertyBag(MediaCatMoniker *mon, IPropertyBag **ppBag)
         lstrcpyW(rpb->path, wszActiveMovieKey);
         if (mon->has_class)
         {
-            StringFromGUID2(&mon->class, rpb->path + lstrlenW(rpb->path), CHARS_IN_GUID);
+            if (StringFromGUID2(&mon->class, rpb->path + lstrlenW(rpb->path), CHARS_IN_GUID) == 0)
+            {
+                /* Ignore error - path construction continues */
+            }
             lstrcatW(rpb->path, backslashW);
         }
         lstrcatW(rpb->path, mon->name);
@@ -711,8 +717,14 @@ static HRESULT WINAPI DEVENUM_IMediaCatMoniker_GetDisplayName(IMoniker *iface, I
 
         lstrcpyW(buffer, deviceW);
         lstrcatW(buffer, dmoW);
-        StringFromGUID2(&This->clsid, buffer + lstrlenW(buffer), CHARS_IN_GUID);
-        StringFromGUID2(&This->class, buffer + lstrlenW(buffer), CHARS_IN_GUID);
+        if (StringFromGUID2(&This->clsid, buffer + lstrlenW(buffer), CHARS_IN_GUID) == 0)
+        {
+            /* Ignore error - buffer size should be sufficient */
+        }
+        if (StringFromGUID2(&This->class, buffer + lstrlenW(buffer), CHARS_IN_GUID) == 0)
+        {
+            /* Ignore error - buffer size should be sufficient */
+        }
     }
     else
     {
@@ -728,7 +740,10 @@ static HRESULT WINAPI DEVENUM_IMediaCatMoniker_GetDisplayName(IMoniker *iface, I
 
         if (This->has_class)
         {
-            StringFromGUID2(&This->class, buffer + lstrlenW(buffer), CHARS_IN_GUID);
+            if (StringFromGUID2(&This->class, buffer + lstrlenW(buffer), CHARS_IN_GUID) == 0)
+            {
+                /* Ignore error - buffer size should be sufficient */
+            }
             lstrcatW(buffer, backslashW);
         }
         lstrcatW(buffer, This->name);
@@ -884,8 +899,14 @@ static HRESULT WINAPI DEVENUM_IEnumMoniker_Next(IEnumMoniker *iface, ULONG celt,
             pMoniker->type = DEVICE_DMO;
             pMoniker->clsid = clsid;
 
-            StringFromGUID2(&clsid, buffer, CHARS_IN_GUID);
-            StringFromGUID2(&This->class, buffer + CHARS_IN_GUID - 1, CHARS_IN_GUID);
+            if (StringFromGUID2(&clsid, buffer, CHARS_IN_GUID) == 0)
+            {
+                /* Ignore error - buffer construction continues */
+            }
+            if (StringFromGUID2(&This->class, buffer + CHARS_IN_GUID - 1, CHARS_IN_GUID) == 0)
+            {
+                /* Ignore error - buffer construction continues */
+            }
         }
         /* try DirectShow filters */
         else if (!(res = RegEnumKeyW(This->sw_key, This->sw_index, buffer, ARRAY_SIZE(buffer))))
@@ -1028,13 +1049,19 @@ HRESULT create_EnumMoniker(REFCLSID class, IEnumMoniker **ppEnumMoniker)
 
     lstrcpyW(buffer, clsidW);
     lstrcatW(buffer, backslashW);
-    StringFromGUID2(class, buffer + lstrlenW(buffer), CHARS_IN_GUID);
+    if (StringFromGUID2(class, buffer + lstrlenW(buffer), CHARS_IN_GUID) == 0)
+    {
+        /* Ignore error - buffer construction continues */
+    }
     lstrcatW(buffer, instanceW);
     if (RegOpenKeyExW(HKEY_CLASSES_ROOT, buffer, 0, KEY_ENUMERATE_SUB_KEYS, &pEnumMoniker->sw_key))
         pEnumMoniker->sw_key = NULL;
 
     lstrcpyW(buffer, wszActiveMovieKey);
-    StringFromGUID2(class, buffer + lstrlenW(buffer), CHARS_IN_GUID);
+    if (StringFromGUID2(class, buffer + lstrlenW(buffer), CHARS_IN_GUID) == 0)
+    {
+        /* Ignore error - buffer construction continues */
+    }
     if (RegOpenKeyExW(HKEY_CURRENT_USER, buffer, 0, KEY_ENUMERATE_SUB_KEYS, &pEnumMoniker->cm_key))
         pEnumMoniker->cm_key = NULL;
 

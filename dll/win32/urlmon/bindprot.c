@@ -524,9 +524,12 @@ static HRESULT WINAPI BindProtocol_StartEx(IInternetProtocolEx *iface, IUri *pUr
             return hres;
     }
 
-    StringFromCLSID(&clsid, &clsid_str);
-    IInternetProtocolSink_ReportProgress(pOIProtSink, BINDSTATUS_PROTOCOLCLASSID, clsid_str);
-    CoTaskMemFree(clsid_str);
+    hres = StringFromCLSID(&clsid, &clsid_str);
+    if (SUCCEEDED(hres))
+    {
+        IInternetProtocolSink_ReportProgress(pOIProtSink, BINDSTATUS_PROTOCOLCLASSID, clsid_str);
+        CoTaskMemFree(clsid_str);
+    }
 
     This->protocol_unk = protocol_unk;
     This->protocol = protocol;

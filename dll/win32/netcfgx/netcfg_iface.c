@@ -453,7 +453,10 @@ EnumerateNetworkAdapter(NetCfgComponentItem ** pHead)
 
         ZeroMemory(pCurrent, sizeof(NetCfgComponentItem));
         CopyMemory(&pCurrent->ClassGUID, &GUID_DEVCLASS_NET, sizeof(GUID));
-        CLSIDFromString(szNetCfg, &pCurrent->InstanceId); //FIXME
+        if (FAILED(CLSIDFromString(szNetCfg, &pCurrent->InstanceId)))
+        {
+            ZeroMemory(&pCurrent->InstanceId, sizeof(GUID));
+        }
 
         /* set bind name */
         pCurrent->szBindName = CoTaskMemAlloc((wcslen(szNetCfg)+1) *sizeof(WCHAR));

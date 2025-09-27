@@ -180,7 +180,11 @@ unsigned char * WINAPI BSTR_UserUnmarshal(ULONG *pFlags, unsigned char *Buffer, 
         SysFreeString(*pstr);
         *pstr = NULL;
     }
-    else SysReAllocStringLen( pstr, (OLECHAR *)(header + 1), header->len );
+    else
+    {
+        int result = SysReAllocStringLen( pstr, (OLECHAR *)(header + 1), header->len );
+        UNREFERENCED_PARAMETER(result);
+    }
 
     if (*pstr) TRACE("string=%s\n", debugstr_w(*pstr));
     return Buffer + sizeof(*header) + sizeof(OLECHAR) * header->len;
@@ -1388,7 +1392,8 @@ HRESULT CALLBACK IDispatch_Invoke_Proxy(
       if (V_ISBYREF(arg)) {
 	rgVarRefIdx[cVarRef] = u;
 	VariantInit(&rgVarRef[cVarRef]);
-	VariantCopy(&rgVarRef[cVarRef], arg);
+	hr = VariantCopy(&rgVarRef[cVarRef], arg);
+	if (FAILED(hr)) goto cleanup;
 	VariantClear(arg);
 	cVarRef++;
       }
@@ -1413,11 +1418,13 @@ HRESULT CALLBACK IDispatch_Invoke_Proxy(
 				    cVarRef,
 				    rgVarRefIdx,
 				    rgVarRef);
+cleanup:
   if (cVarRef) {
     for (u=0; u<cVarRef; u++) {
       unsigned i = rgVarRefIdx[u];
-      VariantCopy(&pDispParams->rgvarg[i],
+      hr = VariantCopy(&pDispParams->rgvarg[i],
 		  &rgVarRef[u]);
+      if (FAILED(hr)) break;
       VariantClear(&rgVarRef[u]);
     }
     CoTaskMemFree(rgVarRef);
@@ -1478,7 +1485,8 @@ HRESULT __RPC_STUB IDispatch_Invoke_Stub(
     /* copy ref args to arg array */
     for (u=0; u<cVarRef; u++) {
       unsigned i = rgVarRefIdx[u];
-      VariantCopy(&arg[i], &rgVarRef[u]);
+      hr = VariantCopy(&arg[i], &rgVarRef[u]);
+      if (FAILED(hr)) break;
     }
 
     pDispParams->rgvarg = arg;
@@ -1496,7 +1504,8 @@ HRESULT __RPC_STUB IDispatch_Invoke_Stub(
     /* copy ref args from arg array */
     for (u=0; u<cVarRef; u++) {
       unsigned i = rgVarRefIdx[u];
-      VariantCopy(&rgVarRef[u], &arg[i]);
+      hr = VariantCopy(&rgVarRef[u], &arg[i]);
+      if (FAILED(hr)) break;
     }
   }
 

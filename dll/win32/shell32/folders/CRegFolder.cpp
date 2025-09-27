@@ -31,7 +31,8 @@ static HRESULT CRegItemContextMenu_CreateInstance(PCIDLIST_ABSOLUTE pidlFolder, 
 HRESULT FormatGUIDKey(LPWSTR KeyName, SIZE_T KeySize, LPCWSTR RegPath, const GUID* riid)
 {
     WCHAR xriid[CHARS_IN_GUID];
-    StringFromGUID2(*riid, xriid, _countof(xriid));
+    int result = StringFromGUID2(*riid, xriid, _countof(xriid));
+    UNREFERENCED_PARAMETER(result);
     return StringCchPrintfW(KeyName, KeySize, RegPath, xriid);
 }
 
@@ -40,7 +41,8 @@ static DWORD SHELL_QueryCLSIDValue(_In_ REFCLSID clsid, _In_opt_ LPCWSTR SubKey,
     const UINT cchGuid = CHARS_IN_GUID - 1, cchClsidSlash = sizeof("CLSID\\") - 1;
     WCHAR Path[200];
     wcscpy(Path, L"CLSID\\");
-    StringFromGUID2(clsid, Path + 6, CHARS_IN_GUID);
+    int result = StringFromGUID2(clsid, Path + 6, CHARS_IN_GUID);
+    UNREFERENCED_PARAMETER(result);
     if (SubKey)
     {
         *(Path + cchClsidSlash + cchGuid) = L'\\';
@@ -165,7 +167,8 @@ HRESULT CGuidItemExtractIcon_CreateInstance(LPCITEMIDLIST pidl, REFIID iid, LPVO
     if (_ILIsBitBucket(pidl))
     {
         CComPtr<IEnumIDList> EnumIDList;
-        CoInitialize(NULL);
+        HRESULT hrCom = CoInitialize(NULL);
+        UNREFERENCED_PARAMETER(hrCom);
 
         CComPtr<IShellFolder2> psfRecycleBin;
         CComPtr<IShellFolder> psfDesktop;

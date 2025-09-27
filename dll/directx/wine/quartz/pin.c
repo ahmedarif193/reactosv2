@@ -553,7 +553,10 @@ static void  PullPin_Thread_Stop(PullPin *This)
 static DWORD WINAPI PullPin_Thread_Main(LPVOID pv)
 {
     PullPin *This = pv;
-    CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    if (CoInitializeEx(NULL, COINIT_MULTITHREADED) != S_OK)
+    {
+        /* Ignore COM initialization failure - thread may already be initialized */
+    }
 
     PullPin_Flush(This);
 

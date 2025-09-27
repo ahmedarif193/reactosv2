@@ -1881,12 +1881,14 @@ IntPaintDesktop(HDC hDC)
         /*
          * Paint desktop background
          */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
         if (gspv.hbmWallpaper != NULL)
         {
             SIZE sz;
             int x, y;
-            int scaledWidth, scaledHeight;
-            int wallpaperX, wallpaperY, wallpaperWidth, wallpaperHeight;
+            int scaledWidth = gspv.cxWallpaper, scaledHeight = gspv.cyWallpaper;
+            int wallpaperX = 0, wallpaperY = 0, wallpaperWidth = gspv.cxWallpaper, wallpaperHeight = gspv.cyWallpaper;
             HDC hWallpaperDC;
 
             sz.cx = WndDesktop->rcWindow.right - WndDesktop->rcWindow.left;
@@ -2069,6 +2071,7 @@ IntPaintDesktop(HDC hDC)
                 NtGdiDeleteObjectApp(hWallpaperDC);
             }
         }
+#pragma GCC diagnostic pop
     }
     else
     {

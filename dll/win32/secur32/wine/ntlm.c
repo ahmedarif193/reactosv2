@@ -935,8 +935,10 @@ SECURITY_STATUS SEC_ENTRY ntlm_InitializeSecurityContextW(
         }
         else
         {
+            int scanned;
             TRACE("Negotiated %s\n", debugstr_a(buffer));
-            sscanf(buffer + 3, "%lx", &(helper->neg_flags));
+            scanned = sscanf(buffer + 3, "%lx", &(helper->neg_flags));
+            UNREFERENCED_PARAMETER(scanned);
             TRACE("Stored 0x%08x as flags\n", helper->neg_flags);
         }
 
@@ -1318,8 +1320,10 @@ SECURITY_STATUS SEC_ENTRY ntlm_AcceptSecurityContext(
         }
         else
         {
+            int scanned;
             TRACE("Negotiated %s\n", debugstr_a(buffer));
-            sscanf(buffer + 3, "%lx", &(helper->neg_flags));
+            scanned = sscanf(buffer + 3, "%lx", &(helper->neg_flags));
+            UNREFERENCED_PARAMETER(scanned);
             TRACE("Stored 0x%08x as flags\n", helper->neg_flags);
         }
 

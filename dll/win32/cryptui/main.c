@@ -2491,11 +2491,13 @@ static LRESULT CALLBACK user_notice_dlg_proc(HWND hwnd, UINT msg, WPARAM wp,
             IBindCtx *bctx = NULL;
             LPWSTR cps;
 
-            CreateBindCtx(0, &bctx);
-            cps = (LPWSTR)GetWindowLongPtrW(hwnd, DWLP_USER);
-            HlinkSimpleNavigateToString(cps, NULL, NULL, NULL, bctx, NULL,
-             HLNF_OPENINNEWWINDOW, 0);
-            IBindCtx_Release(bctx);
+            if (SUCCEEDED(CreateBindCtx(0, &bctx)))
+            {
+                cps = (LPWSTR)GetWindowLongPtrW(hwnd, DWLP_USER);
+                HlinkSimpleNavigateToString(cps, NULL, NULL, NULL, bctx, NULL,
+                 HLNF_OPENINNEWWINDOW, 0);
+                IBindCtx_Release(bctx);
+            }
             break;
         }
         }
@@ -2546,10 +2548,12 @@ static LRESULT CALLBACK general_dlg_proc(HWND hwnd, UINT msg, WPARAM wp,
                 {
                     IBindCtx *bctx = NULL;
 
-                    CreateBindCtx(0, &bctx);
-                    HlinkSimpleNavigateToString(issuerStatement->cps, NULL,
-                     NULL, NULL, bctx, NULL, HLNF_OPENINNEWWINDOW, 0);
-                    IBindCtx_Release(bctx);
+                    if (SUCCEEDED(CreateBindCtx(0, &bctx)))
+                    {
+                        HlinkSimpleNavigateToString(issuerStatement->cps, NULL,
+                         NULL, NULL, bctx, NULL, HLNF_OPENINNEWWINDOW, 0);
+                        IBindCtx_Release(bctx);
+                    }
                 }
             }
             break;

@@ -265,7 +265,11 @@ static void layout_row( ME_Run *start, ME_Run *last )
         i++;
     }
 
-    ScriptLayout( num_runs, levels, vis_to_log, log_to_vis );
+    HRESULT hr = ScriptLayout( num_runs, levels, vis_to_log, log_to_vis );
+    if (FAILED(hr)) {
+        WARN("ScriptLayout failed: %08x\n", hr);
+        return;
+    }
 
     pos[0] = run->para->pt.x;
     for (i = 1; i < num_runs; i++)

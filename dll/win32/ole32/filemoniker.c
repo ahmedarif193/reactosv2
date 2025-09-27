@@ -683,7 +683,10 @@ FileMonikerImpl_ComposeWith(IMoniker* iface, IMoniker* pmkRight,
     /* check if we have two FileMonikers to compose or not */
     if(mkSys==MKSYS_FILEMONIKER){
 
-        CreateBindCtx(0,&bind);
+        if (FAILED(CreateBindCtx(0,&bind)))
+        {
+            return MK_E_CANTOPENFILE;
+        }
 
         IMoniker_GetDisplayName(iface,bind,NULL,&str1);
         IMoniker_GetDisplayName(pmkRight,bind,NULL,&str2);

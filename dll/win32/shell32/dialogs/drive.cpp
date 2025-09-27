@@ -137,7 +137,11 @@ CreateTipText(FORMAT_DRIVE_CONTEXT &Ctx)
     szBuf[0] = UNICODE_NULL;
     if (pie.PartitionStyle == PARTITION_STYLE_GPT)
     {
-        StringFromGUID2(pie.Gpt.PartitionId, szGuid, _countof(szGuid));
+        INT result = StringFromGUID2(pie.Gpt.PartitionId, szGuid, _countof(szGuid));
+        if (result == 0)
+        {
+            StringCchCopyW(szGuid, _countof(szGuid), L"{Invalid GUID}");
+        }
         StringCchPrintfW(szBuf, _countof(szBuf), L"GPT %s %s", szGuid, pie.Gpt.Name);
     }
     if (pie.PartitionStyle == PARTITION_STYLE_MBR)

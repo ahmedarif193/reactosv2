@@ -129,7 +129,7 @@ static void release_np_event(RpcConnection_np *connection, HANDLE event)
 static DWORD rpcrt4_create_pipe_security(PSECURITY_DESCRIPTOR *SecDesc)
 {
     DWORD ErrCode;
-    PACL Dacl;
+    PACL Dacl = NULL;
     ULONG DaclSize, RelSDSize = 0;
     PSID EveryoneSid = NULL, AnonymousSid = NULL, AdminsSid = NULL;
     PSECURITY_DESCRIPTOR AbsSD = NULL, RelSD = NULL;
@@ -326,7 +326,7 @@ static RPC_STATUS rpcrt4_conn_create_pipe(RpcConnection *conn)
 #ifdef __REACTOS__
     DWORD ErrCode;
     SECURITY_ATTRIBUTES SecurityAttributes;
-    PSECURITY_DESCRIPTOR PipeSecDesc;
+    PSECURITY_DESCRIPTOR PipeSecDesc = NULL;
 #endif
 
     TRACE("listening on %s\n", connection->listen_pipe);
@@ -1263,7 +1263,8 @@ static size_t rpcrt4_ip_tcp_get_top_of_tower(unsigned char *tower_data,
     if (!wsa_inited)
     {
         WSADATA wsadata;
-        WSAStartup(MAKEWORD(2, 2), &wsadata);
+        int wsaResult = WSAStartup(MAKEWORD(2, 2), &wsadata);
+        UNREFERENCED_PARAMETER(wsaResult);
         /* Note: WSAStartup can be called more than once so we don't bother with
          * making accesses to wsa_inited thread-safe */
         wsa_inited = TRUE;
@@ -1382,7 +1383,8 @@ static BOOL rpcrt4_sock_wait_init(RpcConnection_tcp *tcpc)
   if (!wsa_inited)
   {
     WSADATA wsadata;
-    WSAStartup(MAKEWORD(2, 2), &wsadata);
+    int wsaResult = WSAStartup(MAKEWORD(2, 2), &wsadata);
+    UNREFERENCED_PARAMETER(wsaResult);
     /* Note: WSAStartup can be called more than once so we don't bother with
      * making accesses to wsa_inited thread-safe */
     wsa_inited = TRUE;
@@ -1840,7 +1842,8 @@ static RpcServerProtseq *rpcrt4_protseq_sock_alloc(void)
         if (!wsa_inited)
         {
             WSADATA wsadata;
-            WSAStartup(MAKEWORD(2, 2), &wsadata);
+            int wsaResult = WSAStartup(MAKEWORD(2, 2), &wsadata);
+            UNREFERENCED_PARAMETER(wsaResult);
             /* Note: WSAStartup can be called more than once so we don't bother with
              * making accesses to wsa_inited thread-safe */
             wsa_inited = TRUE;

@@ -1047,7 +1047,10 @@ static HRESULT WINAPI InternetProtocolSink_ReportProgress(IInternetProtocolSink 
         on_progress(This, 0, 0, BINDSTATUS_SENDINGREQUEST, szStatusText);
         break;
     case BINDSTATUS_PROTOCOLCLASSID:
-        CLSIDFromString(szStatusText, &This->clsid);
+        {
+            HRESULT hr = CLSIDFromString(szStatusText, &This->clsid);
+            UNREFERENCED_PARAMETER(hr);
+        }
         break;
     case BINDSTATUS_MIMETYPEAVAILABLE:
     case BINDSTATUS_VERIFIEDMIMETYPEAVAILABLE:

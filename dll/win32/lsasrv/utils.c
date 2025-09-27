@@ -168,17 +168,20 @@ LsapAppendRidToSid(
     Rids[RidCount] = Rid;
     RidCount++;
 
-    RtlAllocateAndInitializeSid(RtlIdentifierAuthoritySid(SrcSid),
-                                RidCount,
-                                Rids[0],
-                                Rids[1],
-                                Rids[2],
-                                Rids[3],
-                                Rids[4],
-                                Rids[5],
-                                Rids[6],
-                                Rids[7],
-                                &DstSid);
+    if (!NT_SUCCESS(RtlAllocateAndInitializeSid(RtlIdentifierAuthoritySid(SrcSid),
+                                                RidCount,
+                                                Rids[0],
+                                                Rids[1],
+                                                Rids[2],
+                                                Rids[3],
+                                                Rids[4],
+                                                Rids[5],
+                                                Rids[6],
+                                                Rids[7],
+                                                &DstSid)))
+    {
+        return NULL;
+    }
 
     return DstSid;
 }

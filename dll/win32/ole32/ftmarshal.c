@@ -165,7 +165,8 @@ FTMarshalImpl_GetMarshalSizeMax (LPMARSHAL iface, REFIID riid, void *pv, DWORD d
     }
 
     /* use the standard marshaller to handle all other cases */
-    CoGetStandardMarshal (riid, pv, dwDestContext, pvDestContext, mshlflags, &pMarshal);
+    hres = CoGetStandardMarshal (riid, pv, dwDestContext, pvDestContext, mshlflags, &pMarshal);
+    if (FAILED(hres)) return hres;
     hres = IMarshal_GetMarshalSizeMax (pMarshal, riid, pv, dwDestContext, pvDestContext, mshlflags, pSize);
     IMarshal_Release (pMarshal);
     return hres;
@@ -216,7 +217,8 @@ FTMarshalImpl_MarshalInterface (LPMARSHAL iface, IStream * pStm, REFIID riid, vo
     }
 
     /* use the standard marshaler to handle all other cases */
-    CoGetStandardMarshal (riid, pv, dwDestContext, pvDestContext, mshlflags, &pMarshal);
+    hres = CoGetStandardMarshal (riid, pv, dwDestContext, pvDestContext, mshlflags, &pMarshal);
+    if (FAILED(hres)) return hres;
     hres = IMarshal_MarshalInterface (pMarshal, pStm, riid, pv, dwDestContext, pvDestContext, mshlflags);
     IMarshal_Release (pMarshal);
     return hres;

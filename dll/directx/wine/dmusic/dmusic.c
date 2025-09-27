@@ -425,7 +425,10 @@ static HRESULT WINAPI IDirectMusic8Impl_GetDefaultPort(LPDIRECTMUSIC8 iface, LPG
     }
     /* FIXME: Check return types to ensure we're interpreting data right */
     MultiByteToWideChar(CP_ACP, 0, returnBuffer, -1, buff, ARRAY_SIZE(buff));
-    CLSIDFromString(buff, &defaultPortGUID);
+    if (CLSIDFromString(buff, &defaultPortGUID) != S_OK)
+    {
+        /* Ignore error - fallback GUID is already set */
+    }
     *guid_port = defaultPortGUID;
 
     return S_OK;

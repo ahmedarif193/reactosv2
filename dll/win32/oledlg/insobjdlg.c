@@ -363,7 +363,8 @@ static BOOL UIINSERTOBJECTDLG_PopulateObjectTypes(InsertObjectDlgInfo* pdlgInfo)
     if (ERROR_SUCCESS == RegQueryValueW(hkey, szNotInsertable, keyname, &len))
         continue;
 
-    CLSIDFromString(szclsid, &clsid);
+    if (FAILED(CLSIDFromString(szclsid, &clsid)))
+        continue;
 
     for (i = 0; i < pdlgInfo->lpOleUIInsertObject->cClsidExclude; i++)
       if (IsEqualGUID(&pdlgInfo->lpOleUIInsertObject->lpClsidExclude[i], &clsid))

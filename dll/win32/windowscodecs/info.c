@@ -1838,7 +1838,8 @@ static void read_metadata_patterns(MetadataReaderInfo *info, GUID *container_gui
     res = RegOpenKeyExW(info->classkey, L"Containers", 0, KEY_READ, &containers_key);
     if (res != ERROR_SUCCESS) return;
 
-    StringFromGUID2(container_guid, guidkeyname, 39);
+    int result = StringFromGUID2(container_guid, guidkeyname, 39);
+    if (result == 0) return;
     res = RegOpenKeyExW(containers_key, guidkeyname, 0, KEY_READ, &guid_key);
     RegCloseKey(containers_key);
     if (res != ERROR_SUCCESS) return;
@@ -2061,14 +2062,16 @@ HRESULT CreateComponentInfo(REFCLSID clsid, IWICComponentInfo **ppIInfo)
 
     for (category=categories; category->type; category++)
     {
-        StringFromGUID2(category->catid, guidstring, 39);
+        int result = StringFromGUID2(category->catid, guidstring, 39);
+        if (result == 0) continue;
         res = RegOpenKeyExW(clsidkey, guidstring, 0, KEY_READ, &catidkey);
         if (res == ERROR_SUCCESS)
         {
             res = RegOpenKeyExW(catidkey, L"Instance", 0, KEY_READ, &instancekey);
             if (res == ERROR_SUCCESS)
             {
-                StringFromGUID2(clsid, guidstring, 39);
+                int result = StringFromGUID2(clsid, guidstring, 39);
+                if (result == 0) continue;
                 res = RegOpenKeyExW(instancekey, guidstring, 0, KEY_READ, &classkey);
                 if (res == ERROR_SUCCESS)
                 {
@@ -2374,7 +2377,8 @@ HRESULT CreateComponentEnumerator(DWORD componentTypes, DWORD options, IEnumUnkn
     for (category=categories; category->type && hr == S_OK; category++)
     {
         if ((category->type & componentTypes) == 0) continue;
-        StringFromGUID2(category->catid, guidstring, 39);
+        int result = StringFromGUID2(category->catid, guidstring, 39);
+        if (result == 0) continue;
         res = RegOpenKeyExW(clsidkey, guidstring, 0, KEY_READ, &catidkey);
         if (res == ERROR_SUCCESS)
         {
@@ -2458,8 +2462,9 @@ HRESULT WINAPI WICConvertBitmapSource(REFWICPixelFormatGUID dstFormat, IWICBitma
         return S_OK;
     }
 
-    StringFromGUID2(&srcFormat, srcformatstr, 39);
-    StringFromGUID2(dstFormat, dstformatstr, 39);
+    int result1 = StringFromGUID2(&srcFormat, srcformatstr, 39);
+    int result2 = StringFromGUID2(dstFormat, dstformatstr, 39);
+    if (result1 == 0 || result2 == 0) return E_FAIL;
 
     res = CreateComponentEnumerator(WICPixelFormatConverter, 0, &enumconverters);
     if (FAILED(res)) return res;

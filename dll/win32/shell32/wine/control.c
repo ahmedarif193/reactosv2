@@ -847,19 +847,22 @@ Control_ShowAppletInTaskbar(CPlApplet* applet, UINT index)
     ShowWindow(applet->hWnd, SW_SHOWMINNOACTIVE);
 
     /* Activate the corresponding button in the taskbar */
-    CoInitialize(NULL);
-    if (CoCreateInstance(&CLSID_TaskbarList,
-                         NULL, CLSCTX_INPROC_SERVER,
-                         &IID_ITaskbarList,
-                         (LPVOID*)&pTaskbar) == S_OK)
+    HRESULT hrInit = CoInitialize(NULL);
+    if (SUCCEEDED(hrInit))
     {
-        if (ITaskbarList_HrInit(pTaskbar) == S_OK)
+        if (CoCreateInstance(&CLSID_TaskbarList,
+                             NULL, CLSCTX_INPROC_SERVER,
+                             &IID_ITaskbarList,
+                             (LPVOID*)&pTaskbar) == S_OK)
         {
-            ITaskbarList_ActivateTab(pTaskbar, applet->hWnd);
+            if (ITaskbarList_HrInit(pTaskbar) == S_OK)
+            {
+                ITaskbarList_ActivateTab(pTaskbar, applet->hWnd);
+            }
+            ITaskbarList_Release(pTaskbar);
         }
-        ITaskbarList_Release(pTaskbar);
+        CoUninitialize();
     }
-    CoUninitialize();
 }
 
 #endif /* __REACTOS__ */

@@ -250,7 +250,8 @@ static INT EDIT_WordBreakProc(EDITSTATE *es, LPWSTR s, INT index, INT count, INT
         psa.eScript = SCRIPT_UNDEFINED;
 
         es->logAttr = heap_alloc(sizeof(SCRIPT_LOGATTR) * get_text_length(es));
-        ScriptBreak(es->text, get_text_length(es), &psa, es->logAttr);
+        HRESULT hr = ScriptBreak(es->text, get_text_length(es), &psa, es->logAttr);
+        UNREFERENCED_PARAMETER(hr);
     }
 
     switch (action) {
@@ -308,7 +309,8 @@ static inline void EDIT_InvalidateUniscribeData_linedef(LINEDEF *line_def)
 {
 	if (line_def->ssa)
 	{
-		ScriptStringFree(&line_def->ssa);
+		HRESULT hr = ScriptStringFree(&line_def->ssa);
+		UNREFERENCED_PARAMETER(hr);
 		line_def->ssa = NULL;
 	}
 }
@@ -323,7 +325,8 @@ static inline void EDIT_InvalidateUniscribeData(EDITSTATE *es)
 	}
 	if (es->ssa)
 	{
-		ScriptStringFree(&es->ssa);
+		HRESULT hr = ScriptStringFree(&es->ssa);
+		UNREFERENCED_PARAMETER(hr);
 		es->ssa = NULL;
 	}
 }
@@ -387,10 +390,13 @@ static SCRIPT_STRING_ANALYSIS EDIT_UpdateUniscribeData(EDITSTATE *es, HDC dc, IN
 			if (es->font)
 				old_font = SelectObject(udc, es->font);
 
-			if (es->style & ES_PASSWORD)
-				ScriptStringAnalyse(udc, &es->password_char, length, (1.5*length+16), -1, SSA_LINK|SSA_FALLBACK|SSA_GLYPHS|SSA_PASSWORD, -1, NULL, NULL, NULL, NULL, NULL, &es->ssa);
-			else
-				ScriptStringAnalyse(udc, es->text, length, (1.5*length+16), -1, SSA_LINK|SSA_FALLBACK|SSA_GLYPHS, -1, NULL, NULL, NULL, NULL, NULL, &es->ssa);
+			if (es->style & ES_PASSWORD) {
+				HRESULT hr = ScriptStringAnalyse(udc, &es->password_char, length, (1.5*length+16), -1, SSA_LINK|SSA_FALLBACK|SSA_GLYPHS|SSA_PASSWORD, -1, NULL, NULL, NULL, NULL, NULL, &es->ssa);
+				UNREFERENCED_PARAMETER(hr);
+			} else {
+				HRESULT hr = ScriptStringAnalyse(udc, es->text, length, (1.5*length+16), -1, SSA_LINK|SSA_FALLBACK|SSA_GLYPHS, -1, NULL, NULL, NULL, NULL, NULL, &es->ssa);
+				UNREFERENCED_PARAMETER(hr);
+			}
 
 			if (es->font)
 				SelectObject(udc, old_font);
@@ -815,7 +821,8 @@ static INT EDIT_CharFromPos(EDITSTATE *es, INT x, INT y, LPBOOL after_wrap)
 			return line_index;
 		}
 
-		ScriptStringXtoCP(line_def->ssa, x , &index, &trailing);
+		HRESULT hr = ScriptStringXtoCP(line_def->ssa, x , &index, &trailing);
+		UNREFERENCED_PARAMETER(hr);
 		if (trailing) index++;
 		index += line_index;
 		if (after_wrap)
@@ -850,7 +857,8 @@ static INT EDIT_CharFromPos(EDITSTATE *es, INT x, INT y, LPBOOL after_wrap)
 					size = ScriptString_pSize(es->ssa);
 					xoff = size->cx;
 				}
-				ScriptStringCPtoX(es->ssa, es->x_offset, FALSE, &xoff);
+				HRESULT hr = ScriptStringCPtoX(es->ssa, es->x_offset, FALSE, &xoff);
+				UNREFERENCED_PARAMETER(hr);
 			}
 			else
 				xoff = 0;
@@ -859,7 +867,8 @@ static INT EDIT_CharFromPos(EDITSTATE *es, INT x, INT y, LPBOOL after_wrap)
 		{
 			if (x + xoff > 0 || !es->ssa)
 			{
-				ScriptStringXtoCP(es->ssa, x+xoff, &index, &trailing);
+				HRESULT hr = ScriptStringXtoCP(es->ssa, x+xoff, &index, &trailing);
+				UNREFERENCED_PARAMETER(hr);
 				if (trailing) index++;
 			}
 			else
@@ -878,7 +887,8 @@ static INT EDIT_CharFromPos(EDITSTATE *es, INT x, INT y, LPBOOL after_wrap)
 					index = get_text_length(es);
 				else if (es->ssa)
 				{
-					ScriptStringXtoCP(es->ssa, x+xoff, &index, &trailing);
+					HRESULT hr = ScriptStringXtoCP(es->ssa, x+xoff, &index, &trailing);
+					UNREFERENCED_PARAMETER(hr);
 					if (trailing) index++;
 				}
 				else
@@ -1053,12 +1063,14 @@ static LRESULT EDIT_EM_PosFromChar(EDITSTATE *es, INT index, BOOL after_wrap)
 		if (line_def->ssa)
 #ifdef __REACTOS__ /* CORE-19731 & match win32ss/user/user32/controls/edit.c */
 		{
-			ScriptStringCPtoX(line_def->ssa, (index - 1) - li, TRUE, &x);
+			HRESULT hr = ScriptStringCPtoX(line_def->ssa, (index - 1) - li, TRUE, &x);
+			UNREFERENCED_PARAMETER(hr);
 			x -= es->x_offset;
 		}
 		else
 #else
-			ScriptStringCPtoX(line_def->ssa, (index - 1) - li, TRUE, &x);
+			HRESULT hr = ScriptStringCPtoX(line_def->ssa, (index - 1) - li, TRUE, &x);
+			UNREFERENCED_PARAMETER(hr);
 #endif
 #ifdef __REACTOS__ /* CORE-15780 */
 		x = (lw > 0 ? es->x_offset : x - es->x_offset);
@@ -1091,8 +1103,10 @@ static LRESULT EDIT_EM_PosFromChar(EDITSTATE *es, INT index, BOOL after_wrap)
 						xoff = 0;
 					xoff += es->char_width * leftover;
 				}
-				else
-					ScriptStringCPtoX(es->ssa, es->x_offset, FALSE, &xoff);
+				else {
+					HRESULT hr = ScriptStringCPtoX(es->ssa, es->x_offset, FALSE, &xoff);
+					UNREFERENCED_PARAMETER(hr);
+				}
 			}
 			else
 				xoff = 0;
@@ -1110,8 +1124,10 @@ static LRESULT EDIT_EM_PosFromChar(EDITSTATE *es, INT index, BOOL after_wrap)
 				else
 					xi = 0;
 			}
-			else if (es->ssa)
-				ScriptStringCPtoX(es->ssa, index, FALSE, &xi);
+			else if (es->ssa) {
+				HRESULT hr = ScriptStringCPtoX(es->ssa, index, FALSE, &xi);
+				UNREFERENCED_PARAMETER(hr);
+			}
 			else
 				xi = 0;
 		}
@@ -2240,8 +2256,10 @@ static void EDIT_PaintLine(EDITSTATE *es, HDC dc, INT line, BOOL rev)
 		e = min(li + ll, max(li, e));
 	}
 
-	if (ssa)
-		ScriptStringOut(ssa, x, y, 0, &es->format_rect, s - li, e - li, FALSE);
+	if (ssa) {
+		HRESULT hr = ScriptStringOut(ssa, x, y, 0, &es->format_rect, s - li, e - li, FALSE);
+		UNREFERENCED_PARAMETER(hr);
+	}
 	else if (rev && (s != e) &&
 			((es->flags & EF_FOCUSED) || (es->style & ES_NOHIDESEL))) {
 		x += EDIT_PaintText(es, dc, x, y, line, 0, s - li, FALSE);

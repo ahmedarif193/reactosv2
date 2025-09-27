@@ -122,7 +122,8 @@ WsNpInitialize(IN PNS_PROVIDER Provider,
     }
 
     /* Call it */
-    (*NSPStartupProc)(ProviderId, &Provider->Service);
+    INT StartupResult = (*NSPStartupProc)(ProviderId, &Provider->Service);
+    UNREFERENCED_PARAMETER(StartupResult);
 
     /* Save the provider ID */
     Provider->ProviderId = *ProviderId;

@@ -179,7 +179,8 @@ static BOOL find_typelib_key( REFGUID guid, WORD *wMaj, WORD *wMin )
     HKEY hkey;
 
     memcpy( buffer, typelibW, sizeof(typelibW) );
-    StringFromGUID2( guid, buffer + lstrlenW(buffer), 40 );
+    int nResult = StringFromGUID2( guid, buffer + lstrlenW(buffer), 40 );
+    UNREFERENCED_PARAMETER(nResult);
 
     if (RegOpenKeyExW( HKEY_CLASSES_ROOT, buffer, 0, KEY_READ, &hkey ) != ERROR_SUCCESS)
         return FALSE;
@@ -243,7 +244,8 @@ static WCHAR *get_typelib_key( REFGUID guid, WORD wMaj, WORD wMin, WCHAR *buffer
     static const WCHAR VersionFormatW[] = {'\\','%','x','.','%','x',0};
 
     memcpy( buffer, TypelibW, sizeof(TypelibW) );
-    StringFromGUID2( guid, buffer + lstrlenW(buffer), 40 );
+    int nResult = StringFromGUID2( guid, buffer + lstrlenW(buffer), 40 );
+    UNREFERENCED_PARAMETER(nResult);
     swprintf( buffer + lstrlenW(buffer), VersionFormatW, wMaj, wMin );
     return buffer;
 }
@@ -255,7 +257,8 @@ static WCHAR *get_interface_key( REFGUID guid, WCHAR *buffer )
     static const WCHAR InterfaceW[] = {'I','n','t','e','r','f','a','c','e','\\',0};
 
     memcpy( buffer, InterfaceW, sizeof(InterfaceW) );
-    StringFromGUID2( guid, buffer + lstrlenW(buffer), 40 );
+    int nResult = StringFromGUID2( guid, buffer + lstrlenW(buffer), 40 );
+    UNREFERENCED_PARAMETER(nResult);
     return buffer;
 }
 
@@ -628,7 +631,8 @@ static void TLB_register_interface(TLIBATTR *libattr, LPOLESTR name, TYPEATTR *t
             static const WCHAR fmtver[] = {'%','x','.','%','x',0 };
             static const WCHAR VersionW[] = {'V','e','r','s','i','o','n',0};
 
-            StringFromGUID2(&libattr->guid, buffer, 40);
+            int nResult = StringFromGUID2(&libattr->guid, buffer, 40);
+            UNREFERENCED_PARAMETER(nResult);
             RegSetValueExW(subKey, NULL, 0, REG_SZ,
                            (BYTE *)buffer, (lstrlenW(buffer)+1) * sizeof(WCHAR));
             swprintf(buffer, fmtver, libattr->wMajorVerNum, libattr->wMinorVerNum);
@@ -5265,7 +5269,8 @@ static HRESULT WINAPI ITypeLib2_fnGetCustData(
         return TYPE_E_ELEMENTNOTFOUND;
 
     VariantInit(pVarVal);
-    VariantCopy(pVarVal, &pCData->data);
+    HRESULT hr = VariantCopy(pVarVal, &pCData->data);
+    if (FAILED(hr)) return hr;
 
     return S_OK;
 }
@@ -5374,7 +5379,8 @@ static HRESULT TLB_copy_all_custdata(struct list *custdata_list, CUSTDATA *pCust
     cdi = pCustData->prgCustData;
     LIST_FOR_EACH_ENTRY(pCData, custdata_list, TLBCustData, entry){
         cdi->guid = *TLB_get_guid_null(pCData->guid);
-        VariantCopy(&cdi->varValue, &pCData->data);
+        HRESULT hr = VariantCopy(&cdi->varValue, &pCData->data);
+        if (FAILED(hr)) return hr;
         ++cdi;
     }
 
@@ -7456,7 +7462,10 @@ static HRESULT WINAPI ITypeInfo_fnInvoke(
                     if(rgvt[i]!=V_VT(src_arg))
                     {
                         if (rgvt[i] == VT_VARIANT)
+                        {
                             hres = VariantCopy(&rgvarg[i], src_arg);
+                            if (FAILED(hres)) goto func_fail;
+                        }
                         else if (rgvt[i] == (VT_VARIANT | VT_BYREF))
                         {
                             if (rgvt[i] == V_VT(src_arg))
@@ -7465,7 +7474,10 @@ static HRESULT WINAPI ITypeInfo_fnInvoke(
                             {
                                 VARIANTARG *missing_arg = INVBUF_GET_MISSING_ARG_ARRAY(buffer, func_desc->cParams);
                                 if (wParamFlags & PARAMFLAG_FIN)
+                                {
                                     hres = VariantCopy(&missing_arg[i], src_arg);
+                                    if (FAILED(hres)) goto func_fail;
+                                }
                                 V_VARIANTREF(&rgvarg[i]) = &missing_arg[i];
                             }
                             V_VT(&rgvarg[i]) = rgvt[i];
@@ -7491,7 +7503,16 @@ static HRESULT WINAPI ITypeInfo_fnInvoke(
                                 break;
                             }
                             for (j = 0; j < bound.cElements; j++)
-                                VariantCopy(&v[j], &pDispParams->rgvarg[pDispParams->cArgs - 1 - i - j]);
+                            {
+                                HRESULT hrCopy = VariantCopy(&v[j], &pDispParams->rgvarg[pDispParams->cArgs - 1 - i - j]);
+                                if (FAILED(hrCopy))
+                                {
+                                    SafeArrayUnaccessData(a);
+                                    SafeArrayDestroy(a);
+                                    hres = hrCopy;
+                                    goto func_fail;
+                                }
+                            }
                             hres = SafeArrayUnaccessData(a);
                             if (hres != S_OK)
                             {
@@ -8443,7 +8464,10 @@ static HRESULT WINAPI ITypeInfo2_fnGetCustData(
 
     VariantInit( pVarVal);
     if (pCData)
-        VariantCopy( pVarVal, &pCData->data);
+    {
+        HRESULT hr = VariantCopy( pVarVal, &pCData->data);
+        if (FAILED(hr)) return hr;
+    }
     else
         VariantClear( pVarVal );
     return S_OK;
@@ -8473,7 +8497,8 @@ static HRESULT WINAPI ITypeInfo2_fnGetFuncCustData(
         return TYPE_E_ELEMENTNOTFOUND;
 
     VariantInit(pVarVal);
-    VariantCopy(pVarVal, &pCData->data);
+    HRESULT hr = VariantCopy(pVarVal, &pCData->data);
+    if (FAILED(hr)) return hr;
 
     return S_OK;
 }
@@ -8507,7 +8532,8 @@ static HRESULT WINAPI ITypeInfo2_fnGetParamCustData(
         return TYPE_E_ELEMENTNOTFOUND;
 
     VariantInit(pVarVal);
-    VariantCopy(pVarVal, &pCData->data);
+    HRESULT hr = VariantCopy(pVarVal, &pCData->data);
+    if (FAILED(hr)) return hr;
 
     return S_OK;
 }
@@ -8536,7 +8562,8 @@ static HRESULT WINAPI ITypeInfo2_fnGetVarCustData(
         return TYPE_E_ELEMENTNOTFOUND;
 
     VariantInit(pVarVal);
-    VariantCopy(pVarVal, &pCData->data);
+    HRESULT hr = VariantCopy(pVarVal, &pCData->data);
+    if (FAILED(hr)) return hr;
 
     return S_OK;
 }
@@ -8565,7 +8592,8 @@ static HRESULT WINAPI ITypeInfo2_fnGetImplTypeCustData(
         return TYPE_E_ELEMENTNOTFOUND;
 
     VariantInit(pVarVal);
-    VariantCopy(pVarVal, &pCData->data);
+    HRESULT hr = VariantCopy(pVarVal, &pCData->data);
+    if (FAILED(hr)) return hr;
 
     return S_OK;
 }

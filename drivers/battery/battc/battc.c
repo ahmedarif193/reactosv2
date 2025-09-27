@@ -33,7 +33,9 @@ BatteryClassUnload(PVOID ClassData)
     BattClass = ClassData;
     if (BattClass->InterfaceName.Length != 0)
     {
-        IoSetDeviceInterfaceState(&BattClass->InterfaceName, FALSE);
+        NTSTATUS Status;
+        Status = IoSetDeviceInterfaceState(&BattClass->InterfaceName, FALSE);
+        UNREFERENCED_PARAMETER(Status);
         RtlFreeUnicodeString(&BattClass->InterfaceName);
     }
 
@@ -315,7 +317,8 @@ BatteryClassIoctl(PVOID ClassData,
                 BattClass->Waiting = FALSE;
                 ExReleaseFastMutex(&BattClass->Mutex);
 
-                BattClass->MiniportInfo.DisableStatusNotify(BattClass->MiniportInfo.Context);
+                Status = BattClass->MiniportInfo.DisableStatusNotify(BattClass->MiniportInfo.Context);
+                UNREFERENCED_PARAMETER(Status);
             }
 
             /* Zero the output buffer to prevent leakage of kernel data */
