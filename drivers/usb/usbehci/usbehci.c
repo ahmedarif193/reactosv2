@@ -7,6 +7,9 @@
 
 #include "usbehci.h"
 
+#define NDEBUG
+#define NDEBUG_EHCI_TRACE
+#define NDEBUG_EHCI_ROOT_HUB
 #include <debug.h>
 
 #include "dbg_ehci.h"

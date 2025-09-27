@@ -7,6 +7,12 @@
 
 #include "usbhub.h"
 
+#define NDEBUG
+#define NDEBUG_USBHUB_IOCTL
+#define NDEBUG_USBHUB_POWER
+#define NDEBUG_USBHUB_PNP
+#define NDEBUG_USBHUB_SCE
+#define NDEBUG_USBHUB_ENUM
 #include <debug.h>
 
 #include "dbg_uhub.h"
@@ -76,10 +82,6 @@ NTAPI
 USBH_PassIrp(IN PDEVICE_OBJECT DeviceObject,
              IN PIRP Irp)
 {
-    DPRINT_PNP("USBH_PassIrp: DeviceObject - %p, Irp - %p\n",
-               DeviceObject,
-               Irp);
-
     IoSkipCurrentIrpStackLocation(Irp);
     return IoCallDriver(DeviceObject, Irp);
 }

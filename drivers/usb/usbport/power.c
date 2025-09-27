@@ -102,7 +102,6 @@ VOID
 NTAPI
 USBPORT_DoSetPowerD0(IN PDEVICE_OBJECT FdoDevice)
 {
-    DPRINT("USBPORT_DoSetPowerD0: FIXME!\n");
     return;
 }
 

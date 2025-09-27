@@ -7,6 +7,12 @@
 
 #include "usbhub.h"
 
+#define NDEBUG
+#define NDEBUG_USBHUB_IOCTL
+#define NDEBUG_USBHUB_POWER
+#define NDEBUG_USBHUB_PNP
+#define NDEBUG_USBHUB_SCE
+#define NDEBUG_USBHUB_ENUM
 #include <debug.h>
 
 #include "dbg_uhub.h"
