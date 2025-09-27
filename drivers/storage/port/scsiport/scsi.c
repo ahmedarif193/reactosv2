@@ -1443,7 +1443,8 @@ TryAgain:
         KeAcquireSpinLockAtDpcLevel(&DeviceExtension->SpinLock);
 
         /* Request an interrupt */
-        DeviceExtension->HwInterrupt(DeviceExtension->MiniPortDeviceExtension);
+        BOOLEAN result = DeviceExtension->HwInterrupt(DeviceExtension->MiniPortDeviceExtension);
+        UNREFERENCED_PARAMETER(result);
 
         ASSERT(DeviceExtension->Flags & SCSI_PORT_DISABLE_INT_REQUESET);
 

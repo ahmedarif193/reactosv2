@@ -299,7 +299,10 @@ static INT EDIT_WordBreakProc(EDITSTATE *es, LPWSTR s, INT index, INT count, INT
         psa.eScript = SCRIPT_UNDEFINED;
 
         es->logAttr = HeapAlloc(GetProcessHeap(), 0, sizeof(SCRIPT_LOGATTR) * get_text_length(es));
-        ScriptBreak(es->text, get_text_length(es), &psa, es->logAttr);
+        {
+            HRESULT hr = ScriptBreak(es->text, get_text_length(es), &psa, es->logAttr);
+            UNREFERENCED_PARAMETER(hr);
+        }
     }
 
     switch (action) {
@@ -384,7 +387,10 @@ static inline void EDIT_InvalidateUniscribeData_linedef(LINEDEF *line_def)
 {
 	if (line_def->ssa)
 	{
-		ScriptStringFree(&line_def->ssa);
+		{
+			HRESULT hr = ScriptStringFree(&line_def->ssa);
+			UNREFERENCED_PARAMETER(hr);
+		}
 		line_def->ssa = NULL;
 	}
 }
@@ -399,7 +405,10 @@ static inline void EDIT_InvalidateUniscribeData(EDITSTATE *es)
 	}
 	if (es->ssa)
 	{
-		ScriptStringFree(&es->ssa);
+		{
+			HRESULT hr = ScriptStringFree(&es->ssa);
+			UNREFERENCED_PARAMETER(hr);
+		}
 		es->ssa = NULL;
 	}
 }
@@ -471,14 +480,20 @@ static SCRIPT_STRING_ANALYSIS EDIT_UpdateUniscribeData(EDITSTATE *es, HDC dc, IN
 			if (es->style & ES_PASSWORD)
 #ifdef __REACTOS__
 				/* ReactOS r57677 */
-				(void)ScriptStringAnalyse(udc, &es->password_char, length, (3*length/2+16), -1, SSA_LINK|SSA_FALLBACK|SSA_GLYPHS|SSA_PASSWORD, -1, NULL, NULL, NULL, NULL, NULL, &es->ssa);
+				{
+					HRESULT hr = ScriptStringAnalyse(udc, &es->password_char, length, (3*length/2+16), -1, SSA_LINK|SSA_FALLBACK|SSA_GLYPHS|SSA_PASSWORD, -1, NULL, NULL, NULL, NULL, NULL, &es->ssa);
+					UNREFERENCED_PARAMETER(hr);
+				}
 #else
 				(void)ScriptStringAnalyse(udc, &es->password_char, length, (1.5*length+16), -1, SSA_LINK|SSA_FALLBACK|SSA_GLYPHS|SSA_PASSWORD, -1, NULL, NULL, NULL, NULL, NULL, &es->ssa);
 #endif
 			else
 #ifdef __REACTOS__
 				/* ReactOS r57677 */
-				(void)ScriptStringAnalyse(udc, es->text, length, (3*length/2+16), -1, SSA_LINK|SSA_FALLBACK|SSA_GLYPHS, -1, NULL, NULL, NULL, NULL, NULL, &es->ssa);
+				{
+					HRESULT hr = ScriptStringAnalyse(udc, es->text, length, (3*length/2+16), -1, SSA_LINK|SSA_FALLBACK|SSA_GLYPHS, -1, NULL, NULL, NULL, NULL, NULL, &es->ssa);
+					UNREFERENCED_PARAMETER(hr);
+				}
 #else
 				(void)ScriptStringAnalyse(udc, es->text, length, (1.5*length+16), -1, SSA_LINK|SSA_FALLBACK|SSA_GLYPHS, -1, NULL, NULL, NULL, NULL, NULL, &es->ssa);
 #endif
@@ -694,7 +709,10 @@ static void EDIT_BuildLineDefs_ML(EDITSTATE *es, INT istart, INT iend, INT delta
 				{
 					count = ScriptString_pcOutChars(current_line->ssa);
 					piDx = HeapAlloc(GetProcessHeap(),0,sizeof(INT) * (*count));
-					(void)ScriptStringGetLogicalWidths(current_line->ssa,piDx);
+					{
+						HRESULT hr = ScriptStringGetLogicalWidths(current_line->ssa,piDx);
+						UNREFERENCED_PARAMETER(hr);
+					}
 
 					prev = current_line->net_length-1;
 					do {
@@ -910,7 +928,10 @@ static INT EDIT_CharFromPos(EDITSTATE *es, INT x, INT y, LPBOOL after_wrap)
 			return line_index;
 		}
 
-		ScriptStringXtoCP(line_def->ssa, x , &index, &trailing);
+		{
+			HRESULT hr = ScriptStringXtoCP(line_def->ssa, x , &index, &trailing);
+			UNREFERENCED_PARAMETER(hr);
+		}
 		if (trailing) index++;
 		index += line_index;
 		if (after_wrap)
@@ -945,7 +966,10 @@ static INT EDIT_CharFromPos(EDITSTATE *es, INT x, INT y, LPBOOL after_wrap)
 					size = ScriptString_pSize(es->ssa);
 					xoff = size->cx;
 				}
-				ScriptStringCPtoX(es->ssa, es->x_offset, FALSE, &xoff);
+				{
+					HRESULT hr = ScriptStringCPtoX(es->ssa, es->x_offset, FALSE, &xoff);
+					UNREFERENCED_PARAMETER(hr);
+				}
 			}
 			else
 				xoff = 0;
@@ -954,7 +978,10 @@ static INT EDIT_CharFromPos(EDITSTATE *es, INT x, INT y, LPBOOL after_wrap)
 		{
 			if (x + xoff > 0 || !es->ssa)
 			{
-				ScriptStringXtoCP(es->ssa, x+xoff, &index, &trailing);
+				{
+					HRESULT hr = ScriptStringXtoCP(es->ssa, x+xoff, &index, &trailing);
+					UNREFERENCED_PARAMETER(hr);
+				}
 				if (trailing) index++;
 			}
 			else
@@ -973,7 +1000,10 @@ static INT EDIT_CharFromPos(EDITSTATE *es, INT x, INT y, LPBOOL after_wrap)
 					index = get_text_length(es);
 				else if (es->ssa)
 				{
-					ScriptStringXtoCP(es->ssa, x+xoff, &index, &trailing);
+					{
+						HRESULT hr = ScriptStringXtoCP(es->ssa, x+xoff, &index, &trailing);
+						UNREFERENCED_PARAMETER(hr);
+					}
 					if (trailing) index++;
 				}
 				else
@@ -1147,7 +1177,10 @@ static LRESULT EDIT_EM_PosFromChar(EDITSTATE *es, INT index, BOOL after_wrap)
 		w = es->format_rect.right - es->format_rect.left;
 		if (line_def->ssa)
 		{
-			ScriptStringCPtoX(line_def->ssa, (index - 1) - li, TRUE, &x);
+			{
+				HRESULT hr = ScriptStringCPtoX(line_def->ssa, (index - 1) - li, TRUE, &x);
+				UNREFERENCED_PARAMETER(hr);
+			}
 			x -= es->x_offset;
 		}
 		else
@@ -1183,7 +1216,10 @@ static LRESULT EDIT_EM_PosFromChar(EDITSTATE *es, INT index, BOOL after_wrap)
 					xoff += es->char_width * leftover;
 				}
 				else
-					ScriptStringCPtoX(es->ssa, es->x_offset, FALSE, &xoff);
+				{
+					HRESULT hr = ScriptStringCPtoX(es->ssa, es->x_offset, FALSE, &xoff);
+					UNREFERENCED_PARAMETER(hr);
+				}
 			}
 			else
 				xoff = 0;
@@ -1202,7 +1238,10 @@ static LRESULT EDIT_EM_PosFromChar(EDITSTATE *es, INT index, BOOL after_wrap)
 					xi = 0;
 			}
 			else if (es->ssa)
-				ScriptStringCPtoX(es->ssa, index, FALSE, &xi);
+			{
+				HRESULT hr = ScriptStringCPtoX(es->ssa, index, FALSE, &xi);
+				UNREFERENCED_PARAMETER(hr);
+			}
 			else
 				xi = 0;
 		}
@@ -1279,7 +1318,10 @@ static void EDIT_GetLineRect(EDITSTATE *es, INT line, INT scol, INT ecol, LPRECT
 	pt2 = (ecol == -1) ? es->format_rect.right : (short)LOWORD(EDIT_EM_PosFromChar(es, line_index + ecol, TRUE));
 	if (ssa)
 	{
-		ScriptStringCPtoX(ssa, scol, FALSE, &pt3);
+		{
+			HRESULT hr = ScriptStringCPtoX(ssa, scol, FALSE, &pt3);
+			UNREFERENCED_PARAMETER(hr);
+		}
 		pt3+=es->format_rect.left;
 	}
 	else pt3 = pt1;
@@ -2392,7 +2434,10 @@ static void EDIT_PaintLine(EDITSTATE *es, HDC dc, INT line, BOOL rev)
 	}
 
 	if (ssa)
-		(void)ScriptStringOut(ssa, x, y, 0, &es->format_rect, s - li, e - li, FALSE);
+	{
+		HRESULT hr = ScriptStringOut(ssa, x, y, 0, &es->format_rect, s - li, e - li, FALSE);
+		UNREFERENCED_PARAMETER(hr);
+	}
 	else if (rev && (s != e) &&
 			((es->flags & EF_FOCUSED) || (es->style & ES_NOHIDESEL))) {
 		x += EDIT_PaintText(es, dc, x, y, line, 0, s - li, FALSE);

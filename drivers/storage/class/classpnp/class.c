@@ -10336,7 +10336,10 @@ ClassRemoveDevice(
      *  then delete it now.
      */
     if (commonExtension->MountedDeviceInterfaceName.Buffer){
-        (VOID)IoSetDeviceInterfaceState(&commonExtension->MountedDeviceInterfaceName, FALSE);
+        {
+            NTSTATUS status = IoSetDeviceInterfaceState(&commonExtension->MountedDeviceInterfaceName, FALSE);
+            UNREFERENCED_PARAMETER(status);
+        }
         RtlFreeUnicodeString(&commonExtension->MountedDeviceInterfaceName);
         RtlInitUnicodeString(&commonExtension->MountedDeviceInterfaceName, NULL);
     }

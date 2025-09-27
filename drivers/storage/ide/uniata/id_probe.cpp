@@ -31,7 +31,7 @@ Notes:
 Revision History:
 
     Some parts of hardware-specific code were taken from FreeBSD 4.3-6.1 ATA driver by
-         Søren Schmidt, Copyright (c) 1998-2007
+         Sï¿½ren Schmidt, Copyright (c) 1998-2007
 
     Some parts of device detection code were taken from from standard ATAPI.SYS from NT4 DDK by
          Mike Glass (MGlass)
@@ -2261,7 +2261,7 @@ AtapiFindIsaController(
     UCHAR                statusByte, statusByte2;
     BOOLEAN              preConfig = FALSE;
     //
-    PIDE_REGISTERS_1 BaseIoAddress1;
+    PIDE_REGISTERS_1 BaseIoAddress1 = NULL;
     PIDE_REGISTERS_2 BaseIoAddress2 = NULL;
 
     // The following table specifies the ports to be checked when searching for

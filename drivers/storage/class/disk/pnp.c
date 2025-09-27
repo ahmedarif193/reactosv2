@@ -381,7 +381,7 @@ Return Value:
     // attempt to determine the BIOS reported geometry.
     //
 
-    (VOID)ClassReadDriveCapacity(Fdo);
+    {NTSTATUS status = ClassReadDriveCapacity(Fdo); UNREFERENCED_PARAMETER(status);}
 
     //
     // Set up sector size fields.

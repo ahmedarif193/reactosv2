@@ -99,7 +99,8 @@ struct ShellPropSheetDialog
                 DWORD index;
                 // Pump COM messages until the thread can create its own IDataObject (for CORE-19933).
                 // SHOpenPropSheetW is modal and we cannot wait for it to complete.
-                CoWaitForMultipleHandles(COWAIT_DEFAULT, INFINITE, 1, &hEvent, &index);
+                HRESULT hr = CoWaitForMultipleHandles(COWAIT_DEFAULT, INFINITE, 1, &hEvent, &index);
+                UNREFERENCED_PARAMETER(hr);
                 CloseHandle(hEvent);
             }
         }
@@ -115,7 +116,10 @@ struct ShellPropSheetDialog
         DATA *pData = (DATA*)Param;
         CComPtr<IDataObject> pDO, pLocalDO;
         if (pData->pObjStream)
-            CoGetInterfaceAndReleaseStream(pData->pObjStream, IID_PPV_ARG(IDataObject, &pDO));
+        {
+            HRESULT hr = CoGetInterfaceAndReleaseStream(pData->pObjStream, IID_PPV_ARG(IDataObject, &pDO));
+            UNREFERENCED_PARAMETER(hr);
+        }
         if (pDO && SUCCEEDED(SHELL_CloneDataObject(pDO, &pLocalDO)))
             pDO = pLocalDO;
         if (pData->hEvent)
@@ -191,7 +195,8 @@ HRESULT
 SHELL32_ShowShellExtensionProperties(const CLSID *pClsid, IDataObject *pDO)
 {
     WCHAR ClassBuf[6 + 38 + 1] = L"CLSID\\";
-    StringFromGUID2(*pClsid, ClassBuf + 6, 38 + 1);
+    INT result = StringFromGUID2(*pClsid, ClassBuf + 6, 38 + 1);
+    UNREFERENCED_PARAMETER(result);
     return ShellPropSheetDialog().ShowAsync(NULL, pDO, ClassPropDialogInitCallback, ClassBuf);
 }
 

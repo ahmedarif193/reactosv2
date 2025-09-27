@@ -1605,7 +1605,8 @@ RamdiskRemoveBusDevice(IN PDEVICE_OBJECT DeviceObject,
     if (DeviceExtension->DriveDeviceName.Buffer)
     {
         /* Inform it's going to be disabled and free the drive name */
-        IoSetDeviceInterfaceState(&DeviceExtension->DriveDeviceName, FALSE);
+        NTSTATUS status = IoSetDeviceInterfaceState(&DeviceExtension->DriveDeviceName, FALSE);
+        UNREFERENCED_PARAMETER(status);
         RtlFreeUnicodeString(&DeviceExtension->DriveDeviceName);
     }
 
@@ -2382,7 +2383,8 @@ RamdiskAddDevice(IN PDRIVER_OBJECT DriverObject,
         if (!AttachedDevice)
         {
             /* Fail */
-            IoSetDeviceInterfaceState(&DeviceExtension->BusDeviceName, 0);
+            NTSTATUS interfaceStatus = IoSetDeviceInterfaceState(&DeviceExtension->BusDeviceName, 0);
+            UNREFERENCED_PARAMETER(interfaceStatus);
             RtlFreeUnicodeString(&DeviceExtension->BusDeviceName);
             IoDeleteDevice(DeviceObject);
             return STATUS_NO_SUCH_DEVICE;

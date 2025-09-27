@@ -37,6 +37,7 @@ UDFEjectReqWaiter(
     OSSTATUS WRC;
     LARGE_INTEGER delay;
     LARGE_INTEGER time;
+    time.QuadPart = 0;
     BOOLEAN UseEvent = TRUE;
     uint32 d;
     BOOLEAN FlushWCache = FALSE;

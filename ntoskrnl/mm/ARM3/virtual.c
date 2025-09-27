@@ -4003,6 +4003,7 @@ NtFlushVirtualMemory(IN HANDLE ProcessHandle,
     PVOID CapturedBaseAddress;
     SIZE_T CapturedBytesToFlush;
     IO_STATUS_BLOCK LocalStatusBlock;
+    RtlZeroMemory(&LocalStatusBlock, sizeof(LocalStatusBlock));
     PAGED_CODE();
 
     //

@@ -347,7 +347,8 @@ SHBindToObjectEx(
 
     if (!pShellFolder)
     {
-        SHGetDesktopFolder(&psfDesktop);
+        HRESULT hr = SHGetDesktopFolder(&psfDesktop);
+        UNREFERENCED_PARAMETER(hr);
         if (!psfDesktop)
             return E_FAIL;
 

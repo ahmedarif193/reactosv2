@@ -1881,8 +1881,6 @@ IntPaintDesktop(HDC hDC)
         /*
          * Paint desktop background
          */
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wmaybe-uninitialized"
         if (gspv.hbmWallpaper != NULL)
         {
             SIZE sz;
@@ -2071,7 +2069,6 @@ IntPaintDesktop(HDC hDC)
                 NtGdiDeleteObjectApp(hWallpaperDC);
             }
         }
-#pragma GCC diagnostic pop
     }
     else
     {

@@ -409,7 +409,7 @@ UDFCleanUpFcbChain(
     PUDF_FILE_INFO ParentFI;
     UDFNTRequiredFCB* NtReqFcb;
     ULONG CleanCode;
-    LONG RefCount, ComRefCount;
+    LONG RefCount = 0, ComRefCount = 0;
     BOOLEAN Delete = FALSE;
     ULONG          ret_val = 0;
 
@@ -476,6 +476,10 @@ UDFCleanUpFcbChain(
                 ASSERT(NtReqFcb->CommonRefCount);
                 RefCount = UDFInterlockedDecrement((PLONG)&(Fcb->ReferenceCount));
                 ComRefCount = UDFInterlockedDecrement((PLONG)&(NtReqFcb->CommonRefCount));
+            } else {
+                // When TreeLength is 0, use current reference counts without decrementing
+                RefCount = Fcb->ReferenceCount;
+                ComRefCount = NtReqFcb->CommonRefCount;
             }
         } else {
             BrutePoint();
@@ -488,6 +492,10 @@ UDFCleanUpFcbChain(
             RefCount = UDFInterlockedDecrement((PLONG)&(Fcb->ReferenceCount));
             ComRefCount = UDFInterlockedDecrement((PLONG)&(NtReqFcb->CommonRefCount));
             TreeLength--;
+        } else {
+            // When TreeLength is 0, use current reference counts without decrementing
+            RefCount = Fcb->ReferenceCount;
+            ComRefCount = NtReqFcb->CommonRefCount;
         }
 #endif
 

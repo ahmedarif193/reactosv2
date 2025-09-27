@@ -233,7 +233,7 @@ CDrvDefExt::PaintStaticControls(HWND hwndDlg, LPDRAWITEMSTRUCT pDrawItem)
         {
             double cos_val = (x - xCenter) * 2.0f / cx;
             INT y = yCenter + (INT)(sin(acos(cos_val)) * cy / 2) - 1;
-            HPEN hCenterPen;
+            HPEN hCenterPen = NULL;
 
             if (m_FreeSpacePerc < 50 && x == xRadial)
                 SelectObject(pDrawItem->hDC, hDarkBluePen);
@@ -415,7 +415,7 @@ CDrvDefExt::InitGeneralPage(HWND hwndDlg)
     /* Set drive type and icon */
     // TODO: Call SHGetFileInfo to get this info
     UINT DriveType = GetDriveTypeW(m_wszDrive);
-    UINT IconId, TypeStrId;
+    UINT IconId, TypeStrId = 0;
     switch (DriveType)
     {
         case DRIVE_REMOVABLE:

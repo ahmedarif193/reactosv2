@@ -6502,7 +6502,9 @@ DWORD WINAPI SHGetObjectCompatFlags(IUnknown *pUnk, const CLSID *clsid)
         return 0;
     }
 
-    StringFromCLSID(clsid, &clsid_str);
+    HRESULT hr = StringFromCLSID(clsid, &clsid_str);
+    if (FAILED(hr))
+        return 0;
     sprintfW(strW, compatpathW, clsid_str);
     CoTaskMemFree(clsid_str);
 

@@ -522,7 +522,8 @@ HRESULT WINAPI CFSDropTarget::Drop(IDataObject *pDataObject,
             // Need to maintain this class in case the window is closed or the class exists temporarily (when dropping onto a folder).
             pDataObject->AddRef();
             pAsyncOperation->StartOperation(NULL);
-            CoMarshalInterThreadInterfaceInStream(IID_IDataObject, pDataObject, &data->pStream);
+            HRESULT hr = CoMarshalInterThreadInterfaceInStream(IID_IDataObject, pDataObject, &data->pStream);
+            UNREFERENCED_PARAMETER(hr);
             this->AddRef();
             data->dwKeyState = dwKeyState;
             data->pt = pt;

@@ -243,7 +243,7 @@ VTUTF8ChannelConsumeEscapeSequence(IN PSAC_CHANNEL Channel,
                                    IN PWCHAR String)
 {
     ULONG Number, Number2, Number3, i, Action, Result;
-    PWCHAR Sequence;
+    PWCHAR Sequence = NULL;
     PSAC_VTUTF8_SCREEN Screen;
     ASSERT(String[0] == VT_ANSI_ESCAPE);
 
@@ -262,6 +262,7 @@ VTUTF8ChannelConsumeEscapeSequence(IN PSAC_CHANNEL Channel,
             Action = SacStaticEscapeStrings[i].Action;
             Result = SacStaticEscapeStrings[i].Size + 1;
             Number = Number2 = Number3 = 1;
+            Sequence = String + SacStaticEscapeStrings[i].Size;
             goto ProcessString;
         }
     }

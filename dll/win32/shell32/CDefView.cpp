@@ -3320,7 +3320,10 @@ HRESULT CDefView::GetDefaultViewStream(DWORD Stgm, IStream **ppStream)
     {
         WCHAR path[MAX_PATH], name[39];
         wsprintfW(path, L"%s\\%s", REGSTR_PATH_EXPLORER, L"Streams\\Default");
-        StringFromGUID2(clsid, name, 39);
+        {
+            INT result = StringFromGUID2(clsid, name, 39);
+            UNREFERENCED_PARAMETER(result);
+        }
         *ppStream = SHOpenRegStream2W(HKEY_CURRENT_USER, path, name, Stgm);
         hr = *ppStream ? S_OK : E_FAIL;
     }

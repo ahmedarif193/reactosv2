@@ -2627,7 +2627,10 @@ IntLoadFontsInRegistry(VOID)
 
         if (NT_SUCCESS(Status))
         {
-            RtlCreateUnicodeString(&FileNameW, szPath);
+            {
+                BOOLEAN success = RtlCreateUnicodeString(&FileNameW, szPath);
+                UNREFERENCED_PARAMETER(success);
+            }
             nFontCount += IntGdiAddFontResourceEx(&FileNameW, 1, 0, dwFlags);
             RtlFreeUnicodeString(&FileNameW);
         }
@@ -5289,6 +5292,7 @@ ftGdiGetTextCharsetInfo(
     TT_OS2 *pOS2;
     FT_Face Face;
     CHARSETINFO csi;
+    RtlZeroMemory(&csi, sizeof(csi));
     DWORD cp, fs0;
     USHORT usACP, usOEM;
 
@@ -6978,7 +6982,7 @@ IntExtTextOutW(
     INT glyph_index, i;
     FT_Face face;
     FT_BitmapGlyph realglyph;
-    LONGLONG X64, Y64, RealXStart64, RealYStart64, DeltaX64, DeltaY64;
+    LONGLONG X64, Y64, RealXStart64, RealYStart64, DeltaX64 = 0, DeltaY64 = 0;
     ULONG previous;
     RECTL DestRect, MaskRect;
     HBITMAP hbmGlyph;

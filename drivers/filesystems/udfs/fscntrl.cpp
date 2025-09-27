@@ -329,7 +329,7 @@ UDFMountVolume(
     IO_STATUS_BLOCK         Iosb;
     ULONG                   MediaChangeCount = 0;
     ULONG                   Characteristics;
-    DEVICE_TYPE             FsDeviceType;
+    DEVICE_TYPE             FsDeviceType = FILE_DEVICE_UNKNOWN;
     BOOLEAN                 RestoreDoVerify = FALSE;
     BOOLEAN                 WrongMedia = FALSE;
     BOOLEAN                 RemovableMedia = TRUE;

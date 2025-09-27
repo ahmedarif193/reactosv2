@@ -900,7 +900,7 @@ UDFReTagDirectory(
     uint32 l;
     uint32 Offset;
     int8* Buf;
-    OSSTATUS status;
+    OSSTATUS status = STATUS_SUCCESS;
     SIZE_T ReadBytes;
     PUDF_FILE_INFO curFileInfo;
     PDIR_INDEX_ITEM DirNdx;

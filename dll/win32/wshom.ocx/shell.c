@@ -1365,7 +1365,8 @@ static HRESULT WINAPI WshShell3_Popup(IWshShell3 *iface, BSTR text, VARIANT *sec
 #ifdef __REACTOS__
     else
     {
-        VariantChangeType(&timeout, &timeout, 0, VT_I4);
+        HRESULT hr1 = VariantChangeType(&timeout, &timeout, 0, VT_I4);
+        UNREFERENCED_PARAMETER(hr1);
     }
 #endif
 
@@ -1379,7 +1380,8 @@ static HRESULT WINAPI WshShell3_Popup(IWshShell3 *iface, BSTR text, VARIANT *sec
 #ifdef __REACTOS__
     else
     {
-        VariantChangeType(&param.type, &param.type, 0, VT_I4);
+        HRESULT hr2 = VariantChangeType(&param.type, &param.type, 0, VT_I4);
+        UNREFERENCED_PARAMETER(hr2);
     }
 #endif
 

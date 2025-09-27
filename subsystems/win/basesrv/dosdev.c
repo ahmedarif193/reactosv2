@@ -486,7 +486,7 @@ CSR_API(BaseSrvDefineDosDevice)
     PSID WorldSid;
     PWSTR lpBuffer;
     WCHAR Letter;
-    SHORT AbsLetter;
+    SHORT AbsLetter = -1;
     BOOLEAN DriveLetter = FALSE;
     BOOLEAN RemoveDefinition;
     BOOLEAN HandleTarget;
@@ -512,7 +512,7 @@ CSR_API(BaseSrvDefineDosDevice)
     WCHAR CurrentChar;
     PWSTR OrigPtr;
     PWSTR InterPtr;
-    BOOLEAN RemoveFound;
+    BOOLEAN RemoveFound = FALSE;
 
     if (!CsrValidateMessageBuffer(ApiMessage,
                                   (PVOID*)&DefineDosDeviceRequest->DeviceName.Buffer,

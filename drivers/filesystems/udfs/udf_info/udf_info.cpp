@@ -3868,7 +3868,7 @@ UDFFlushFE(
     )
 {
     int8* NewAllocDescs;
-    OSSTATUS status;
+    OSSTATUS status = STATUS_SUCCESS;
     SIZE_T WrittenBytes;
     uint16 AllocMode;
     uint32 lba;
