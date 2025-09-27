@@ -35,6 +35,11 @@ DWORD __cdecl __acrt_GetModuleFileNameA(
         filename_buffer,
         __acrt_get_utf8_acp_compatibility_codepage()
         );
+    (void)cvt;
+
+    if (cvt != 0) {
+        return 0;
+    }
 
     return static_cast<DWORD>(filename_buffer.size());
 }

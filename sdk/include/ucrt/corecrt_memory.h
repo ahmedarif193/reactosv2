@@ -98,20 +98,6 @@ _ACRTIMP int __cdecl _memicmp_l(
 
 
 
-#if defined __cplusplus
-
-    extern "C++" _Check_return_
-    inline void* __CRTDECL memchr(
-        _In_reads_bytes_opt_(_N) void*  _Pv,
-        _In_                     int    _C,
-        _In_                     size_t _N
-        )
-    {
-        void const* const _Pvc = _Pv;
-        return const_cast<void*>(memchr(_Pvc, _C, _N));
-    }
-
-#endif
 
 
 

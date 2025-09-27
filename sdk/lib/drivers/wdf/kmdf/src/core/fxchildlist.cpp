@@ -2366,9 +2366,10 @@ FxChildList::CreateDevice(
                 // It is not really the status of DeleteDeviceFromFailedCreate
                 // operation, which is why we don't check it.
                 //
-                (void) init.CreatedDevice->DeleteDeviceFromFailedCreate(
+                NTSTATUS deleteStatus = init.CreatedDevice->DeleteDeviceFromFailedCreate(
                                                                 status,
                                                                 TRUE);
+                UNREFERENCED_PARAMETER(deleteStatus);
 
                 init.CreatedDevice = NULL;
             }

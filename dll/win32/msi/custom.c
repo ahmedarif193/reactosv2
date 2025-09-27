@@ -699,7 +699,14 @@ static DWORD WINAPI custom_client_thread(void *arg)
     DWORD size;
     DWORD rc;
 
-    CoInitializeEx(NULL, COINIT_MULTITHREADED); /* needed to marshal streams */
+    /* Initialize COM for marshaling streams. Ignore RPC_E_CHANGED_MODE as it may already be initialized */
+    HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
+    if (FAILED(hr) && hr != RPC_E_CHANGED_MODE)
+    {
+        ERR("CoInitializeEx failed: %08lx\n", hr);
+        rc = ERROR_FUNCTION_FAILED;
+        goto end;
+    }
 
     if (info->arch == SCS_32BIT_BINARY)
     {
@@ -740,6 +747,7 @@ static DWORD WINAPI custom_client_thread(void *arg)
     else
         rc = GetLastError();
 
+end:
     CoUninitialize();
     return rc;
 }
@@ -806,7 +814,11 @@ static custom_action_info *do_msidbCustomActionTypeDll(
     info->target = wcsdup( target );
     info->source = wcsdup( source );
     info->action = wcsdup( action );
-    CoCreateGuid( &info->guid );
+    if (CoCreateGuid( &info->guid ) != S_OK)
+    {
+        free_custom_action_data( info );
+        return NULL;
+    }
 
     EnterCriticalSection( &custom_action_cs );
     list_add_tail( &pending_custom_actions, &info->entry );
@@ -1277,7 +1289,11 @@ static custom_action_info *do_msidbCustomActionTypeScript(
     info->target = wcsdup( function );
     info->source = wcsdup( script );
     info->action = wcsdup( action );
-    CoCreateGuid( &info->guid );
+    if (CoCreateGuid( &info->guid ) != S_OK)
+    {
+        free_custom_action_data( info );
+        return NULL;
+    }
 
     EnterCriticalSection( &custom_action_cs );
     list_add_tail( &pending_custom_actions, &info->entry );

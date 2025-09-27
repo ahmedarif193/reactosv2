@@ -107,7 +107,13 @@ Bus_PDO_PnP (
 
         /* Failure to register an interface is not a fatal failure so don't return a failure status */
         if (NT_SUCCESS(status) && DeviceData->InterfaceName.Length != 0)
-            IoSetDeviceInterfaceState(&DeviceData->InterfaceName, TRUE);
+        {
+            NTSTATUS InterfaceStatus = IoSetDeviceInterfaceState(&DeviceData->InterfaceName, TRUE);
+            if (!NT_SUCCESS(InterfaceStatus))
+            {
+                DPRINT1("Failed to enable device interface: 0x%lx\n", InterfaceStatus);
+            }
+        }
 
         state.DeviceState = PowerDeviceD0;
         PoSetPowerState(DeviceData->Common.Self, DevicePowerState, state);
@@ -119,7 +125,13 @@ Bus_PDO_PnP (
     case IRP_MN_STOP_DEVICE:
 
         if (DeviceData->InterfaceName.Length != 0)
-            IoSetDeviceInterfaceState(&DeviceData->InterfaceName, FALSE);
+        {
+            NTSTATUS InterfaceStatus = IoSetDeviceInterfaceState(&DeviceData->InterfaceName, FALSE);
+            if (!NT_SUCCESS(InterfaceStatus))
+            {
+                DPRINT1("Failed to disable device interface: 0x%lx\n", InterfaceStatus);
+            }
+        }
 
         //
         // Here we shut down the device and give up and unmap any resources
@@ -186,7 +198,13 @@ Bus_PDO_PnP (
         // so we have to retain the PDO after stopping and removing power from it.
         //
         if (DeviceData->InterfaceName.Length != 0)
-            IoSetDeviceInterfaceState(&DeviceData->InterfaceName, FALSE);
+        {
+            NTSTATUS InterfaceStatus = IoSetDeviceInterfaceState(&DeviceData->InterfaceName, FALSE);
+            if (!NT_SUCCESS(InterfaceStatus))
+            {
+                DPRINT1("Failed to disable device interface: 0x%lx\n", InterfaceStatus);
+            }
+        }
 
         if (DeviceData->AcpiHandle && acpi_bus_power_manageable(DeviceData->AcpiHandle) &&
             !ACPI_SUCCESS(acpi_bus_set_power(DeviceData->AcpiHandle, ACPI_STATE_D3)))

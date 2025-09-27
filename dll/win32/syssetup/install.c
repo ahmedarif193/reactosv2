@@ -252,7 +252,8 @@ CreateShortcuts(
     WCHAR szFolderSection[MAX_PATH];
     INT csidl;
 
-    CoInitialize(NULL);
+    HRESULT hr = CoInitialize(NULL);
+    UNREFERENCED_PARAMETER(hr);
 
     if (!SetupFindFirstLine(hinf, szSection, NULL, &Context))
         return FALSE;

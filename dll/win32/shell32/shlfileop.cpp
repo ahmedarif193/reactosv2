@@ -985,7 +985,7 @@ int WINAPI SHCreateDirectory(HWND hWnd, LPCWSTR path)
 int WINAPI SHCreateDirectoryExA(HWND hWnd, LPCSTR path, LPSECURITY_ATTRIBUTES sec)
 {
     LPWSTR wPath;
-    DWORD retCode;
+    DWORD retCode = 0;
 
     TRACE("(%s, %p)\n", debugstr_a(path), sec);
 
@@ -1159,7 +1159,7 @@ static DWORD _ConvertAtoW(PCSTR strSrc, PCWSTR* pStrDest, BOOL isList)
  */
 int WINAPI SHFileOperationA(LPSHFILEOPSTRUCTA lpFileOp)
 {
-    int errCode, retCode;
+    int errCode, retCode = 0;
     SHFILEOPSTRUCTW nFileOp = { 0 };
 
     // Convert A information to W

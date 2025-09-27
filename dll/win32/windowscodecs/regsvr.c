@@ -188,11 +188,13 @@ static HRESULT register_decoders(struct regsvr_decoder const *list)
     WCHAR buf[39];
     HKEY decoders_key;
     HKEY instance_key;
+    int chars_written;
 
     res = RegCreateKeyExW(HKEY_CLASSES_ROOT, clsid_keyname, 0, NULL, 0,
 			  KEY_READ | KEY_WRITE, NULL, &coclass_key, NULL);
     if (res == ERROR_SUCCESS)  {
-        StringFromGUID2(&CATID_WICBitmapDecoders, buf, 39);
+        chars_written = StringFromGUID2(&CATID_WICBitmapDecoders, buf, 39);
+        UNREFERENCED_PARAMETER(chars_written);
         res = RegCreateKeyExW(coclass_key, buf, 0, NULL, 0,
 			      KEY_READ | KEY_WRITE, NULL, &decoders_key, NULL);
         if (res == ERROR_SUCCESS)
@@ -210,12 +212,14 @@ static HRESULT register_decoders(struct regsvr_decoder const *list)
 	HKEY clsid_key;
 	HKEY instance_clsid_key;
 
-	StringFromGUID2(list->clsid, buf, 39);
+	chars_written = StringFromGUID2(list->clsid, buf, 39);
+	UNREFERENCED_PARAMETER(chars_written);
 	res = RegCreateKeyExW(coclass_key, buf, 0, NULL, 0,
 			      KEY_READ | KEY_WRITE, NULL, &clsid_key, NULL);
 	if (res != ERROR_SUCCESS) goto error_close_coclass_key;
 
-	StringFromGUID2(list->clsid, buf, 39);
+	chars_written = StringFromGUID2(list->clsid, buf, 39);
+	UNREFERENCED_PARAMETER(chars_written);
 	res = RegCreateKeyExW(instance_key, buf, 0, NULL, 0,
 			      KEY_READ | KEY_WRITE, NULL, &instance_clsid_key, NULL);
 	if (res == ERROR_SUCCESS) {
@@ -240,14 +244,16 @@ static HRESULT register_decoders(struct regsvr_decoder const *list)
         }
 
         if (list->vendor) {
-            StringFromGUID2(list->vendor, buf, 39);
+            chars_written = StringFromGUID2(list->vendor, buf, 39);
+	    UNREFERENCED_PARAMETER(chars_written);
 	    res = RegSetValueExW(clsid_key, vendor_valuename, 0, REG_SZ,
                                  (const BYTE*)buf, 78);
 	    if (res != ERROR_SUCCESS) goto error_close_clsid_key;
         }
 
         if (list->container_format) {
-            StringFromGUID2(list->container_format, buf, 39);
+            chars_written = StringFromGUID2(list->container_format, buf, 39);
+	    UNREFERENCED_PARAMETER(chars_written);
 	    res = RegSetValueExW(clsid_key, containerformat_valuename, 0, REG_SZ,
                                  (const BYTE*)buf, 78);
 	    if (res != ERROR_SUCCESS) goto error_close_clsid_key;
@@ -284,7 +290,8 @@ static HRESULT register_decoders(struct regsvr_decoder const *list)
             for (format=list->formats; *format; ++format)
             {
                 HKEY format_key;
-                StringFromGUID2(*format, buf, 39);
+                chars_written = StringFromGUID2(*format, buf, 39);
+                UNREFERENCED_PARAMETER(chars_written);
                 res = RegCreateKeyExW(formats_key, buf, 0, NULL, 0,
                                       KEY_READ | KEY_WRITE, NULL, &format_key, NULL);
                 if (res != ERROR_SUCCESS) break;
@@ -352,13 +359,15 @@ static HRESULT unregister_decoders(struct regsvr_decoder const *list)
     WCHAR buf[39];
     HKEY decoders_key;
     HKEY instance_key;
+    int chars_written;
 
     res = RegOpenKeyExW(HKEY_CLASSES_ROOT, clsid_keyname, 0,
 			KEY_READ | KEY_WRITE, &coclass_key);
     if (res == ERROR_FILE_NOT_FOUND) return S_OK;
 
     if (res == ERROR_SUCCESS)  {
-        StringFromGUID2(&CATID_WICBitmapDecoders, buf, 39);
+        chars_written = StringFromGUID2(&CATID_WICBitmapDecoders, buf, 39);
+        UNREFERENCED_PARAMETER(chars_written);
         res = RegCreateKeyExW(coclass_key, buf, 0, NULL, 0,
 			      KEY_READ | KEY_WRITE, NULL, &decoders_key, NULL);
         if (res == ERROR_SUCCESS)
@@ -373,7 +382,8 @@ static HRESULT unregister_decoders(struct regsvr_decoder const *list)
     if (res != ERROR_SUCCESS) goto error_return;
 
     for (; res == ERROR_SUCCESS && list->clsid; ++list) {
-	StringFromGUID2(list->clsid, buf, 39);
+	chars_written = StringFromGUID2(list->clsid, buf, 39);
+	UNREFERENCED_PARAMETER(chars_written);
 
 	res = RegDeleteTreeW(coclass_key, buf);
 	if (res == ERROR_FILE_NOT_FOUND) res = ERROR_SUCCESS;
@@ -402,11 +412,13 @@ static HRESULT register_encoders(struct regsvr_encoder const *list)
     WCHAR buf[39];
     HKEY encoders_key;
     HKEY instance_key;
+    int chars_written;
 
     res = RegCreateKeyExW(HKEY_CLASSES_ROOT, clsid_keyname, 0, NULL, 0,
 			  KEY_READ | KEY_WRITE, NULL, &coclass_key, NULL);
     if (res == ERROR_SUCCESS)  {
-        StringFromGUID2(&CATID_WICBitmapEncoders, buf, 39);
+        chars_written = StringFromGUID2(&CATID_WICBitmapEncoders, buf, 39);
+        UNREFERENCED_PARAMETER(chars_written);
         res = RegCreateKeyExW(coclass_key, buf, 0, NULL, 0,
 			      KEY_READ | KEY_WRITE, NULL, &encoders_key, NULL);
         if (res == ERROR_SUCCESS)
@@ -424,12 +436,14 @@ static HRESULT register_encoders(struct regsvr_encoder const *list)
 	HKEY clsid_key;
 	HKEY instance_clsid_key;
 
-	StringFromGUID2(list->clsid, buf, 39);
+	chars_written = StringFromGUID2(list->clsid, buf, 39);
+	UNREFERENCED_PARAMETER(chars_written);
 	res = RegCreateKeyExW(coclass_key, buf, 0, NULL, 0,
 			      KEY_READ | KEY_WRITE, NULL, &clsid_key, NULL);
 	if (res != ERROR_SUCCESS) goto error_close_coclass_key;
 
-	StringFromGUID2(list->clsid, buf, 39);
+	chars_written = StringFromGUID2(list->clsid, buf, 39);
+	UNREFERENCED_PARAMETER(chars_written);
 	res = RegCreateKeyExW(instance_key, buf, 0, NULL, 0,
 			      KEY_READ | KEY_WRITE, NULL, &instance_clsid_key, NULL);
 	if (res == ERROR_SUCCESS) {
@@ -454,14 +468,16 @@ static HRESULT register_encoders(struct regsvr_encoder const *list)
         }
 
         if (list->vendor) {
-            StringFromGUID2(list->vendor, buf, 39);
+            chars_written = StringFromGUID2(list->vendor, buf, 39);
+	    UNREFERENCED_PARAMETER(chars_written);
 	    res = RegSetValueExW(clsid_key, vendor_valuename, 0, REG_SZ,
                                  (const BYTE*)buf, 78);
 	    if (res != ERROR_SUCCESS) goto error_close_clsid_key;
         }
 
         if (list->container_format) {
-            StringFromGUID2(list->container_format, buf, 39);
+            chars_written = StringFromGUID2(list->container_format, buf, 39);
+	    UNREFERENCED_PARAMETER(chars_written);
 	    res = RegSetValueExW(clsid_key, containerformat_valuename, 0, REG_SZ,
                                  (const BYTE*)buf, 78);
 	    if (res != ERROR_SUCCESS) goto error_close_clsid_key;
@@ -498,7 +514,8 @@ static HRESULT register_encoders(struct regsvr_encoder const *list)
             for (format=list->formats; *format; ++format)
             {
                 HKEY format_key;
-                StringFromGUID2(*format, buf, 39);
+                chars_written = StringFromGUID2(*format, buf, 39);
+                UNREFERENCED_PARAMETER(chars_written);
                 res = RegCreateKeyExW(formats_key, buf, 0, NULL, 0,
                                       KEY_READ | KEY_WRITE, NULL, &format_key, NULL);
                 if (res != ERROR_SUCCESS) break;
@@ -530,13 +547,15 @@ static HRESULT unregister_encoders(struct regsvr_encoder const *list)
     WCHAR buf[39];
     HKEY encoders_key;
     HKEY instance_key;
+    int chars_written;
 
     res = RegOpenKeyExW(HKEY_CLASSES_ROOT, clsid_keyname, 0,
 			KEY_READ | KEY_WRITE, &coclass_key);
     if (res == ERROR_FILE_NOT_FOUND) return S_OK;
 
     if (res == ERROR_SUCCESS)  {
-        StringFromGUID2(&CATID_WICBitmapEncoders, buf, 39);
+        chars_written = StringFromGUID2(&CATID_WICBitmapEncoders, buf, 39);
+        UNREFERENCED_PARAMETER(chars_written);
         res = RegCreateKeyExW(coclass_key, buf, 0, NULL, 0,
 			      KEY_READ | KEY_WRITE, NULL, &encoders_key, NULL);
         if (res == ERROR_SUCCESS)
@@ -551,7 +570,8 @@ static HRESULT unregister_encoders(struct regsvr_encoder const *list)
     if (res != ERROR_SUCCESS) goto error_return;
 
     for (; res == ERROR_SUCCESS && list->clsid; ++list) {
-	StringFromGUID2(list->clsid, buf, 39);
+	chars_written = StringFromGUID2(list->clsid, buf, 39);
+	UNREFERENCED_PARAMETER(chars_written);
 
 	res = RegDeleteTreeW(coclass_key, buf);
 	if (res == ERROR_FILE_NOT_FOUND) res = ERROR_SUCCESS;
@@ -580,11 +600,13 @@ static HRESULT register_converters(struct regsvr_converter const *list)
     WCHAR buf[39];
     HKEY converters_key;
     HKEY instance_key;
+    int chars_written;
 
     res = RegCreateKeyExW(HKEY_CLASSES_ROOT, clsid_keyname, 0, NULL, 0,
 			  KEY_READ | KEY_WRITE, NULL, &coclass_key, NULL);
     if (res == ERROR_SUCCESS)  {
-        StringFromGUID2(&CATID_WICFormatConverters, buf, 39);
+        chars_written = StringFromGUID2(&CATID_WICFormatConverters, buf, 39);
+        UNREFERENCED_PARAMETER(chars_written);
         res = RegCreateKeyExW(coclass_key, buf, 0, NULL, 0,
 			      KEY_READ | KEY_WRITE, NULL, &converters_key, NULL);
         if (res == ERROR_SUCCESS)
@@ -602,12 +624,14 @@ static HRESULT register_converters(struct regsvr_converter const *list)
 	HKEY clsid_key;
 	HKEY instance_clsid_key;
 
-	StringFromGUID2(list->clsid, buf, 39);
+	chars_written = StringFromGUID2(list->clsid, buf, 39);
+	UNREFERENCED_PARAMETER(chars_written);
 	res = RegCreateKeyExW(coclass_key, buf, 0, NULL, 0,
 			      KEY_READ | KEY_WRITE, NULL, &clsid_key, NULL);
 	if (res != ERROR_SUCCESS) goto error_close_coclass_key;
 
-	StringFromGUID2(list->clsid, buf, 39);
+	chars_written = StringFromGUID2(list->clsid, buf, 39);
+	UNREFERENCED_PARAMETER(chars_written);
 	res = RegCreateKeyExW(instance_key, buf, 0, NULL, 0,
 			      KEY_READ | KEY_WRITE, NULL, &instance_clsid_key, NULL);
 	if (res == ERROR_SUCCESS) {
@@ -632,7 +656,8 @@ static HRESULT register_converters(struct regsvr_converter const *list)
         }
 
         if (list->vendor) {
-            StringFromGUID2(list->vendor, buf, 39);
+            chars_written = StringFromGUID2(list->vendor, buf, 39);
+	    UNREFERENCED_PARAMETER(chars_written);
 	    res = RegSetValueExW(clsid_key, vendor_valuename, 0, REG_SZ,
                                  (const BYTE*)buf, 78);
 	    if (res != ERROR_SUCCESS) goto error_close_clsid_key;
@@ -655,7 +680,8 @@ static HRESULT register_converters(struct regsvr_converter const *list)
             for (format=list->formats; *format; ++format)
             {
                 HKEY format_key;
-                StringFromGUID2(*format, buf, 39);
+                chars_written = StringFromGUID2(*format, buf, 39);
+                UNREFERENCED_PARAMETER(chars_written);
                 res = RegCreateKeyExW(formats_key, buf, 0, NULL, 0,
                                       KEY_READ | KEY_WRITE, NULL, &format_key, NULL);
                 if (res != ERROR_SUCCESS) break;
@@ -687,13 +713,15 @@ static HRESULT unregister_converters(struct regsvr_converter const *list)
     WCHAR buf[39];
     HKEY converters_key;
     HKEY instance_key;
+    int chars_written;
 
     res = RegOpenKeyExW(HKEY_CLASSES_ROOT, clsid_keyname, 0,
 			KEY_READ | KEY_WRITE, &coclass_key);
     if (res == ERROR_FILE_NOT_FOUND) return S_OK;
 
     if (res == ERROR_SUCCESS)  {
-        StringFromGUID2(&CATID_WICFormatConverters, buf, 39);
+        chars_written = StringFromGUID2(&CATID_WICFormatConverters, buf, 39);
+        UNREFERENCED_PARAMETER(chars_written);
         res = RegCreateKeyExW(coclass_key, buf, 0, NULL, 0,
 			      KEY_READ | KEY_WRITE, NULL, &converters_key, NULL);
         if (res == ERROR_SUCCESS)
@@ -708,7 +736,8 @@ static HRESULT unregister_converters(struct regsvr_converter const *list)
     if (res != ERROR_SUCCESS) goto error_return;
 
     for (; res == ERROR_SUCCESS && list->clsid; ++list) {
-	StringFromGUID2(list->clsid, buf, 39);
+	chars_written = StringFromGUID2(list->clsid, buf, 39);
+	UNREFERENCED_PARAMETER(chars_written);
 
 	res = RegDeleteTreeW(coclass_key, buf);
 	if (res == ERROR_FILE_NOT_FOUND) res = ERROR_SUCCESS;
@@ -737,11 +766,13 @@ static HRESULT register_metadatareaders(struct regsvr_metadatareader const *list
     WCHAR buf[39];
     HKEY readers_key;
     HKEY instance_key;
+    int chars_written;
 
     res = RegCreateKeyExW(HKEY_CLASSES_ROOT, clsid_keyname, 0, NULL, 0,
 			  KEY_READ | KEY_WRITE, NULL, &coclass_key, NULL);
     if (res == ERROR_SUCCESS)  {
-        StringFromGUID2(&CATID_WICMetadataReader, buf, 39);
+        chars_written = StringFromGUID2(&CATID_WICMetadataReader, buf, 39);
+        UNREFERENCED_PARAMETER(chars_written);
         res = RegCreateKeyExW(coclass_key, buf, 0, NULL, 0,
 			      KEY_READ | KEY_WRITE, NULL, &readers_key, NULL);
         if (res == ERROR_SUCCESS)
@@ -759,12 +790,14 @@ static HRESULT register_metadatareaders(struct regsvr_metadatareader const *list
 	HKEY clsid_key;
 	HKEY instance_clsid_key;
 
-	StringFromGUID2(list->clsid, buf, 39);
+	chars_written = StringFromGUID2(list->clsid, buf, 39);
+	UNREFERENCED_PARAMETER(chars_written);
 	res = RegCreateKeyExW(coclass_key, buf, 0, NULL, 0,
 			      KEY_READ | KEY_WRITE, NULL, &clsid_key, NULL);
 	if (res != ERROR_SUCCESS) goto error_close_coclass_key;
 
-	StringFromGUID2(list->clsid, buf, 39);
+	chars_written = StringFromGUID2(list->clsid, buf, 39);
+	UNREFERENCED_PARAMETER(chars_written);
 	res = RegCreateKeyExW(instance_key, buf, 0, NULL, 0,
 			      KEY_READ | KEY_WRITE, NULL, &instance_clsid_key, NULL);
 	if (res == ERROR_SUCCESS) {
@@ -789,14 +822,16 @@ static HRESULT register_metadatareaders(struct regsvr_metadatareader const *list
         }
 
         if (list->vendor) {
-            StringFromGUID2(list->vendor, buf, 39);
+            chars_written = StringFromGUID2(list->vendor, buf, 39);
+	    UNREFERENCED_PARAMETER(chars_written);
 	    res = RegSetValueExW(clsid_key, vendor_valuename, 0, REG_SZ,
                                  (const BYTE*)buf, 78);
 	    if (res != ERROR_SUCCESS) goto error_close_clsid_key;
         }
 
         if (list->metadata_format) {
-            StringFromGUID2(list->metadata_format, buf, 39);
+            chars_written = StringFromGUID2(list->metadata_format, buf, 39);
+	    UNREFERENCED_PARAMETER(chars_written);
 	    res = RegSetValueExW(clsid_key, metadataformat_valuename, 0, REG_SZ,
                                  (const BYTE*)buf, 78);
 	    if (res != ERROR_SUCCESS) goto error_close_clsid_key;
@@ -841,7 +876,8 @@ static HRESULT register_metadatareaders(struct regsvr_metadatareader const *list
             {
                 HKEY format_key;
                 int i;
-                StringFromGUID2(container->format, buf, 39);
+                chars_written = StringFromGUID2(container->format, buf, 39);
+                UNREFERENCED_PARAMETER(chars_written);
                 res = RegCreateKeyExW(containers_key, buf, 0, NULL, 0,
                                       KEY_READ | KEY_WRITE, NULL, &format_key, NULL);
                 if (res != ERROR_SUCCESS) break;
@@ -896,13 +932,15 @@ static HRESULT unregister_metadatareaders(struct regsvr_metadatareader const *li
     WCHAR buf[39];
     HKEY readers_key;
     HKEY instance_key;
+    int chars_written;
 
     res = RegOpenKeyExW(HKEY_CLASSES_ROOT, clsid_keyname, 0,
 			KEY_READ | KEY_WRITE, &coclass_key);
     if (res == ERROR_FILE_NOT_FOUND) return S_OK;
 
     if (res == ERROR_SUCCESS)  {
-        StringFromGUID2(&CATID_WICMetadataReader, buf, 39);
+        chars_written = StringFromGUID2(&CATID_WICMetadataReader, buf, 39);
+        UNREFERENCED_PARAMETER(chars_written);
         res = RegCreateKeyExW(coclass_key, buf, 0, NULL, 0,
 			      KEY_READ | KEY_WRITE, NULL, &readers_key, NULL);
         if (res == ERROR_SUCCESS)
@@ -917,7 +955,8 @@ static HRESULT unregister_metadatareaders(struct regsvr_metadatareader const *li
     if (res != ERROR_SUCCESS) goto error_return;
 
     for (; res == ERROR_SUCCESS && list->clsid; ++list) {
-	StringFromGUID2(list->clsid, buf, 39);
+	chars_written = StringFromGUID2(list->clsid, buf, 39);
+	UNREFERENCED_PARAMETER(chars_written);
 
 	res = RegDeleteTreeW(coclass_key, buf);
 	if (res == ERROR_FILE_NOT_FOUND) res = ERROR_SUCCESS;
@@ -946,11 +985,13 @@ static HRESULT register_pixelformats(struct regsvr_pixelformat const *list)
     WCHAR buf[39];
     HKEY formats_key;
     HKEY instance_key;
+    int chars_written;
 
     res = RegCreateKeyExW(HKEY_CLASSES_ROOT, clsid_keyname, 0, NULL, 0,
                           KEY_READ | KEY_WRITE, NULL, &coclass_key, NULL);
     if (res == ERROR_SUCCESS)  {
-        StringFromGUID2(&CATID_WICPixelFormats, buf, 39);
+        chars_written = StringFromGUID2(&CATID_WICPixelFormats, buf, 39);
+        UNREFERENCED_PARAMETER(chars_written);
         res = RegCreateKeyExW(coclass_key, buf, 0, NULL, 0,
                               KEY_READ | KEY_WRITE, NULL, &formats_key, NULL);
         if (res == ERROR_SUCCESS)
@@ -968,12 +1009,14 @@ static HRESULT register_pixelformats(struct regsvr_pixelformat const *list)
         HKEY clsid_key;
         HKEY instance_clsid_key;
 
-        StringFromGUID2(list->clsid, buf, 39);
+        chars_written = StringFromGUID2(list->clsid, buf, 39);
+	UNREFERENCED_PARAMETER(chars_written);
         res = RegCreateKeyExW(coclass_key, buf, 0, NULL, 0,
                               KEY_READ | KEY_WRITE, NULL, &clsid_key, NULL);
         if (res != ERROR_SUCCESS) goto error_close_coclass_key;
 
-        StringFromGUID2(list->clsid, buf, 39);
+        chars_written = StringFromGUID2(list->clsid, buf, 39);
+	UNREFERENCED_PARAMETER(chars_written);
         res = RegCreateKeyExW(instance_key, buf, 0, NULL, 0,
                               KEY_READ | KEY_WRITE, NULL, &instance_clsid_key, NULL);
         if (res == ERROR_SUCCESS) {
@@ -998,7 +1041,8 @@ static HRESULT register_pixelformats(struct regsvr_pixelformat const *list)
         }
 
         if (list->vendor) {
-            StringFromGUID2(list->vendor, buf, 39);
+            chars_written = StringFromGUID2(list->vendor, buf, 39);
+	    UNREFERENCED_PARAMETER(chars_written);
             res = RegSetValueExW(clsid_key, vendor_valuename, 0, REG_SZ,
                                  (const BYTE*)buf, 78);
             if (res != ERROR_SUCCESS) goto error_close_clsid_key;
@@ -1070,13 +1114,15 @@ static HRESULT unregister_pixelformats(struct regsvr_pixelformat const *list)
     WCHAR buf[39];
     HKEY formats_key;
     HKEY instance_key;
+    int chars_written;
 
     res = RegOpenKeyExW(HKEY_CLASSES_ROOT, clsid_keyname, 0,
                         KEY_READ | KEY_WRITE, &coclass_key);
     if (res == ERROR_FILE_NOT_FOUND) return S_OK;
 
     if (res == ERROR_SUCCESS)  {
-        StringFromGUID2(&CATID_WICPixelFormats, buf, 39);
+        chars_written = StringFromGUID2(&CATID_WICPixelFormats, buf, 39);
+        UNREFERENCED_PARAMETER(chars_written);
         res = RegCreateKeyExW(coclass_key, buf, 0, NULL, 0,
                               KEY_READ | KEY_WRITE, NULL, &formats_key, NULL);
         if (res == ERROR_SUCCESS)
@@ -1091,7 +1137,8 @@ static HRESULT unregister_pixelformats(struct regsvr_pixelformat const *list)
     if (res != ERROR_SUCCESS) goto error_return;
 
     for (; res == ERROR_SUCCESS && list->clsid; ++list) {
-        StringFromGUID2(list->clsid, buf, 39);
+        chars_written = StringFromGUID2(list->clsid, buf, 39);
+	UNREFERENCED_PARAMETER(chars_written);
 
         res = RegDeleteTreeW(coclass_key, buf);
         if (res == ERROR_FILE_NOT_FOUND) res = ERROR_SUCCESS;
@@ -2246,7 +2293,9 @@ static HRESULT register_categories(const struct regsvr_category *list)
                           KEY_READ | KEY_WRITE, NULL, &coclass_key, NULL);
     if (res != ERROR_SUCCESS) return HRESULT_FROM_WIN32(res);
 
-    StringFromGUID2(&CLSID_WICImagingCategories, buf, 39);
+    int chars_written = chars_written = StringFromGUID2(&CLSID_WICImagingCategories, buf, 39);
+    UNREFERENCED_PARAMETER(chars_written);
+    UNREFERENCED_PARAMETER(chars_written);
     res = RegCreateKeyExW(coclass_key, buf, 0, NULL, 0,
                           KEY_READ | KEY_WRITE, NULL, &categories_key, NULL);
     if (res != ERROR_SUCCESS)
@@ -2262,7 +2311,8 @@ static HRESULT register_categories(const struct regsvr_category *list)
     {
         HKEY instance_clsid_key;
 
-        StringFromGUID2(list->clsid, buf, 39);
+        chars_written = StringFromGUID2(list->clsid, buf, 39);
+        UNREFERENCED_PARAMETER(chars_written);
         res = RegCreateKeyExW(instance_key, buf, 0, NULL, 0,
                               KEY_READ | KEY_WRITE, NULL, &instance_clsid_key, NULL);
         if (res == ERROR_SUCCESS)
@@ -2285,12 +2335,14 @@ static HRESULT unregister_categories(const struct regsvr_category *list)
     LONG res;
     WCHAR buf[39];
     HKEY coclass_key, categories_key, instance_key;
+    int chars_written;
 
     res = RegOpenKeyExW(HKEY_CLASSES_ROOT, clsid_keyname, 0,
                         KEY_READ | KEY_WRITE, &coclass_key);
     if (res != ERROR_SUCCESS) return HRESULT_FROM_WIN32(res);
 
-    StringFromGUID2(&CLSID_WICImagingCategories, buf, 39);
+    chars_written = StringFromGUID2(&CLSID_WICImagingCategories, buf, 39);
+    UNREFERENCED_PARAMETER(chars_written);
     res = RegOpenKeyExW(coclass_key, buf, 0,
                         KEY_READ | KEY_WRITE, &categories_key);
     if (res != ERROR_SUCCESS)
@@ -2305,14 +2357,16 @@ static HRESULT unregister_categories(const struct regsvr_category *list)
 
     for (; res == ERROR_SUCCESS && list->clsid; list++)
     {
-        StringFromGUID2(list->clsid, buf, 39);
+        chars_written = StringFromGUID2(list->clsid, buf, 39);
+	UNREFERENCED_PARAMETER(chars_written);
         res = RegDeleteTreeW(instance_key, buf);
     }
 
     RegCloseKey(instance_key);
     RegCloseKey(categories_key);
 
-    StringFromGUID2(&CLSID_WICImagingCategories, buf, 39);
+    chars_written = StringFromGUID2(&CLSID_WICImagingCategories, buf, 39);
+    UNREFERENCED_PARAMETER(chars_written);
     res = RegDeleteTreeW(coclass_key, buf);
 
     RegCloseKey(coclass_key);

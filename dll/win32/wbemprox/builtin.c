@@ -4160,7 +4160,8 @@ static QUERY_SERVICE_CONFIGW *query_service_config( SC_HANDLE manager, const WCH
     DWORD size;
 
     if (!(service = OpenServiceW( manager, name, SERVICE_QUERY_CONFIG ))) return NULL;
-    QueryServiceConfigW( service, NULL, 0, &size );
+    BOOL ret = QueryServiceConfigW( service, NULL, 0, &size );
+    UNREFERENCED_PARAMETER(ret);
     if (GetLastError() != ERROR_INSUFFICIENT_BUFFER) goto done;
     if (!(config = heap_alloc( size ))) goto done;
     if (QueryServiceConfigW( service, config, size, &size )) goto done;

@@ -38,7 +38,7 @@ static TimeType __cdecl common_mktime(
     TimeType tmptm1, tmptm2, tmptm3;
 
     // First, make sure tm_year is reasonably close to being in range.
-    if ((tmptm1 = tb->tm_year) < _BASE_YEAR - 1 || tmptm1 > time_traits::max_year + 1)
+    if ((tmptm1 = tb->tm_year) < _BASE_YEAR - 1 || tmptm1 > static_cast<decltype(tmptm1)>(time_traits::max_year + 1))
         return (errno = EINVAL), invalid_time;
 
     // Adjust month value so it is in the range 0 - 11.  This is because
@@ -55,7 +55,7 @@ static TimeType __cdecl common_mktime(
         }
 
         // Make sure year count is still in range.
-        if (tmptm1 < _BASE_YEAR - 1 || tmptm1 > time_traits::max_year + 1)
+        if (tmptm1 < _BASE_YEAR - 1 || tmptm1 > static_cast<decltype(tmptm1)>(time_traits::max_year + 1))
             return (errno = EINVAL), invalid_time;
     }
 

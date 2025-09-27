@@ -89,11 +89,15 @@ static void LPK_DrawUnderscore(HDC hdc, int x, int y, LPCWSTR str, int count, in
 
     if (hr == S_OK)
     {
-        ScriptStringCPtoX(ssa, offset, FALSE, &pos);
-        prefix_x = x + pos;
-        ScriptStringCPtoX(ssa, offset, TRUE, &pos);
-        prefix_end = x + pos;
-        ScriptStringFree(&ssa);
+        if (ScriptStringCPtoX(ssa, offset, FALSE, &pos) == S_OK)
+            prefix_x = x + pos;
+        else
+            prefix_x = x;
+        if (ScriptStringCPtoX(ssa, offset, TRUE, &pos) == S_OK)
+            prefix_end = x + pos;
+        else
+            prefix_end = x;
+        hr = ScriptStringFree(&ssa);
     }
     else
     {
@@ -342,7 +346,7 @@ LpkGetCharacterPlacement(
                 if (ScriptStringCPtoX(ssa, i, FALSE, &pos) == S_OK)
                     lpResults->lpCaretPos[i] = pos;
             }
-            ScriptStringFree(&ssa);
+            hr = ScriptStringFree(&ssa);
         }
         else
         {
@@ -464,14 +468,19 @@ LpkGetTextExtentExPoint(
     Dx = HeapAlloc(GetProcessHeap(), 0, cString * sizeof(INT));
     if (!Dx)
     {
-        ScriptStringFree(&ssa);
+        hr = ScriptStringFree(&ssa);
         goto fallback;
     }
 
     if (lpnFit)
         *lpnFit = 0;
 
-    ScriptStringGetLogicalWidths(ssa, Dx);
+    if (ScriptStringGetLogicalWidths(ssa, Dx) != S_OK)
+    {
+        HeapFree(GetProcessHeap(), 0, Dx);
+        hr = ScriptStringFree(&ssa);
+        goto fallback;
+    }
 
     for (i = 0, extent = 0; i < cString; i++)
     {
@@ -485,7 +494,7 @@ LpkGetTextExtentExPoint(
     }
 
     HeapFree(GetProcessHeap(), 0, Dx);
-    ScriptStringFree(&ssa);
+    hr = ScriptStringFree(&ssa);
 
     if (!GetTextMetricsW(hdc, &tm))
         return GetTextExtentExPointWPri(hdc, lpString, cString, 0, NULL, NULL, lpSize);

@@ -223,8 +223,8 @@ ConCfgReadUserSettings(
         if (!wcsncmp(szValueName, L"ColorTable", wcslen(L"ColorTable")))
         {
             dwColorIndex = 0;
-            swscanf(szValueName, L"ColorTable%2d", &dwColorIndex);
-            if (dwColorIndex < ARRAYSIZE(ConsoleInfo->ColorTable))
+            if (swscanf(szValueName, L"ColorTable%2d", &dwColorIndex) == 1 &&
+                dwColorIndex < ARRAYSIZE(ConsoleInfo->ColorTable))
             {
                 ConsoleInfo->ColorTable[dwColorIndex] = Value;
                 Success = TRUE;

@@ -4661,7 +4661,7 @@ PopupMenuWndProc(
    LPARAM lParam,
    LRESULT *lResult)
 {
-  PPOPUPMENU pPopupMenu;
+  PPOPUPMENU pPopupMenu = NULL;
 
   *lResult = 0;
 
@@ -4728,7 +4728,10 @@ PopupMenuWndProc(
 
     case WM_PRINTCLIENT:
       {
-         MENU_DrawPopupMenu( Wnd, (HDC)wParam, pPopupMenu->spmenu);
+         if (pPopupMenu)
+         {
+             MENU_DrawPopupMenu( Wnd, (HDC)wParam, pPopupMenu->spmenu);
+         }
          break;
       }
 

@@ -462,7 +462,8 @@ RestoreAllConnections(PWLSESSION Session)
     if (!lpRes)
     {
         ERR("Failed to allocate memory\n");
-        WNetCloseEnum(hEnum);
+        DWORD dwResult = WNetCloseEnum(hEnum);
+        UNREFERENCED_PARAMETER(dwResult);
         goto quit;
     }
 
@@ -478,14 +479,16 @@ RestoreAllConnections(PWLSESSION Session)
             lpCur = lpRes;
             for (; dCount; dCount--)
             {
-                WNetAddConnection(lpCur->lpRemoteName, NULL, lpCur->lpLocalName);
+                DWORD dwResult = WNetAddConnection(lpCur->lpRemoteName, NULL, lpCur->lpLocalName);
+                UNREFERENCED_PARAMETER(dwResult);
                 lpCur++;
             }
         }
     } while (dRet != WN_NO_MORE_ENTRIES);
 
     HeapFree(GetProcessHeap(), 0, lpRes);
-    WNetCloseEnum(hEnum);
+    DWORD dwResult = WNetCloseEnum(hEnum);
+    UNREFERENCED_PARAMETER(dwResult);
 
 quit:
     RevertToSelf();

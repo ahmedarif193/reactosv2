@@ -3552,7 +3552,8 @@ static UINT ITERATE_RegisterTypeLibraries(MSIRECORD *row, LPVOID param)
     {
         LPCWSTR guid;
         guid = MSI_RecordGetString(row,1);
-        CLSIDFromString( guid, &tl_struct.clsid);
+        HRESULT hr = CLSIDFromString( guid, &tl_struct.clsid);
+        UNREFERENCED_PARAMETER(hr);
         tl_struct.source = wcsdup( file->TargetPath );
         tl_struct.path = NULL;
 
@@ -3639,7 +3640,8 @@ static UINT ITERATE_UnregisterTypeLibraries( MSIRECORD *row, LPVOID param )
     MSI_ProcessMessage(package, INSTALLMESSAGE_ACTIONDATA, row);
 
     guid = MSI_RecordGetString( row, 1 );
-    CLSIDFromString( guid, &libid );
+    hr = CLSIDFromString( guid, &libid );
+    UNREFERENCED_PARAMETER(hr);
     version = MSI_RecordGetInteger( row, 4 );
     language = MSI_RecordGetInteger( row, 2 );
 
@@ -4785,7 +4787,8 @@ static UINT ACTION_PublishFeatures(MSIPACKAGE *package)
             if (component->ComponentId)
             {
                 TRACE("From %s\n",debugstr_w(component->ComponentId));
-                CLSIDFromString(component->ComponentId, &clsid);
+                HRESULT hr = CLSIDFromString(component->ComponentId, &clsid);
+                UNREFERENCED_PARAMETER(hr);
                 encode_base85_guid(&clsid,buf);
                 TRACE("to %s\n",debugstr_w(buf));
                 lstrcatW(data,buf);
@@ -5512,12 +5515,14 @@ WCHAR *msi_create_component_advertise_string( MSIPACKAGE *package, MSICOMPONENT 
 
     productid_85[0] = 0;
     component_85[0] = 0;
-    CLSIDFromString( package->ProductCode, &clsid );
+    HRESULT hr = CLSIDFromString( package->ProductCode, &clsid );
+    UNREFERENCED_PARAMETER(hr);
 
     encode_base85_guid( &clsid, productid_85 );
     if (component)
     {
-        CLSIDFromString( component->ComponentId, &clsid );
+        hr = CLSIDFromString( component->ComponentId, &clsid );
+        UNREFERENCED_PARAMETER(hr);
         encode_base85_guid( &clsid, component_85 );
     }
 
@@ -5948,7 +5953,10 @@ static UINT ITERATE_StartService(MSIRECORD *rec, LPVOID param)
         GetLastError() == ERROR_INSUFFICIENT_BUFFER)
     {
         if ((display_name = malloc(++len * sizeof(WCHAR))))
-            GetServiceDisplayNameW( scm, name, display_name, &len );
+        {
+            BOOL bResult = GetServiceDisplayNameW( scm, name, display_name, &len );
+            UNREFERENCED_PARAMETER(bResult);
+        }
     }
 
     service = OpenServiceW(scm, name, SERVICE_START|SERVICE_QUERY_STATUS);
@@ -6154,7 +6162,10 @@ static UINT ITERATE_StopService( MSIRECORD *rec, LPVOID param )
         GetLastError() == ERROR_INSUFFICIENT_BUFFER)
     {
         if ((display_name = malloc( ++len * sizeof(WCHAR ))))
-            GetServiceDisplayNameW( scm, name, display_name, &len );
+        {
+            BOOL bResult = GetServiceDisplayNameW( scm, name, display_name, &len );
+            UNREFERENCED_PARAMETER(bResult);
+        }
     }
     CloseServiceHandle( scm );
 
@@ -6227,7 +6238,10 @@ static UINT ITERATE_DeleteService( MSIRECORD *rec, LPVOID param )
         GetLastError() == ERROR_INSUFFICIENT_BUFFER)
     {
         if ((display_name = malloc( ++len * sizeof(WCHAR ))))
-            GetServiceDisplayNameW( scm, name, display_name, &len );
+        {
+            BOOL bResult = GetServiceDisplayNameW( scm, name, display_name, &len );
+            UNREFERENCED_PARAMETER(bResult);
+        }
     }
 
     service = OpenServiceW( scm, name, DELETE );

@@ -31,7 +31,8 @@ EnumerateConnections(LPCWSTR Local)
     lpRes = HeapAlloc(GetProcessHeap(), 0, dSize);
     if (!lpRes)
     {
-        WNetCloseEnum(hEnum);
+        DWORD dwResult = WNetCloseEnum(hEnum);
+        UNREFERENCED_PARAMETER(dwResult);
         return 1;
     }
 
@@ -58,7 +59,8 @@ EnumerateConnections(LPCWSTR Local)
     } while (dRet != WN_NO_MORE_ENTRIES);
 
     HeapFree(GetProcessHeap(), 0, lpRes);
-    WNetCloseEnum(hEnum);
+    DWORD dwResult = WNetCloseEnum(hEnum);
+    UNREFERENCED_PARAMETER(dwResult);
 
     return 0;
 }

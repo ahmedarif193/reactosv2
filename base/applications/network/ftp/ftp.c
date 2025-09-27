@@ -910,7 +910,8 @@ null();//		oldintp = signal(SIGPIPE, SIG_IGN);
 //			if ((d = write(fileno(fout), buf, c)) != c)
 //				break;
 		while ((c = recv(din, buf, bufsize, 0)) > 0) {
-			write(fileno(fout), buf, c);
+			int written = write(fileno(fout), buf, c);
+			(void)written;
 			bytes += c;
 			if (hash) {
 				while (bytes >= hashbytes) {

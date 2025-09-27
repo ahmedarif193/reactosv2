@@ -463,6 +463,7 @@ Returns:
 --*/
 {
     KIRQL irql;
+    NTSTATUS status;
 
     if (IsCommitted() == FALSE)  {
         //
@@ -480,7 +481,8 @@ Returns:
     // we allow the driver to have an outstanding purge request while the delete
     // is in progress.
     //
-    (VOID) QueuePurge(TRUE, TRUE, NULL, NULL);
+    status = QueuePurge(TRUE, TRUE, NULL, NULL);
+    UNREFERENCED_PARAMETER(status);
 
     Lock(&irql);
 
@@ -2319,7 +2321,8 @@ FxIoQueue::QueueRequest(
                         "Queuing WDFREQUEST 0x%p on WDFQUEUE 0x%p",
                         pRequest->GetHandle(),GetObjectHandle());
 
-    (VOID)pRequest->GetIrp(&pIrp);
+    NTSTATUS getIrpStatus = pRequest->GetIrp(&pIrp);
+    UNREFERENCED_PARAMETER(getIrpStatus);
 
     pFxIrp = pRequest->GetFxIrp();
 
@@ -4486,7 +4489,8 @@ FX_VF_METHOD(FxIoQueue, VerifyValidateCompletedRequest)(
 
     Request->Lock(&irql);
 
-    (VOID) Request->VerifyRequestIsDriverOwned(FxDriverGlobals);
+    NTSTATUS status = Request->VerifyRequestIsDriverOwned(FxDriverGlobals);
+    UNREFERENCED_PARAMETER(status);
     Request->ClearVerifierFlagsLocked(FXREQUEST_FLAG_DRIVER_OWNED);
 
     Request->Unlock(irql);
@@ -5882,7 +5886,7 @@ Return Value:
 
     switch (Action) {
     case FxIoStopProcessingForPowerPurgeNonManaged:
-
+    {
         //
         // If power managed, leave it alone
         //
@@ -5905,7 +5909,8 @@ Return Value:
         SetStateForShutdown();
         Unlock(irql);
 
-        QueuePurge(TRUE, TRUE, NULL, NULL);
+        NTSTATUS purgeStatus = QueuePurge(TRUE, TRUE, NULL, NULL);
+        UNREFERENCED_PARAMETER(purgeStatus);
 
         Lock(&irql);
         //
@@ -5916,9 +5921,10 @@ Return Value:
         m_PowerState = FxIoQueuePowerPurge;
 
         break;
+    }
 
     case FxIoStopProcessingForPowerPurgeManaged:
-
+    {
         //
         // If not power managed, leave it alone
         //
@@ -5940,15 +5946,18 @@ Return Value:
         SetStateForShutdown();
         Unlock(irql);
 
-        QueuePurge(TRUE, TRUE, NULL, NULL);
+        NTSTATUS purgeStatus = QueuePurge(TRUE, TRUE, NULL, NULL);
+        UNREFERENCED_PARAMETER(purgeStatus);
 
         Lock(&irql);
 
         m_PowerState = FxIoQueuePowerPurge;
 
         break;
+    }
 
     case FxIoStopProcessingForPowerHold:
+    {
         //
         // If not power managed, leave it alone
         //
@@ -5962,6 +5971,7 @@ Return Value:
         m_PowerState = FxIoQueuePowerStopping;
 
         break;
+    }
 
     default:
         ASSERT(FALSE);

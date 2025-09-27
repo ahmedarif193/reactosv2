@@ -354,7 +354,8 @@ int wmain(int argc, WCHAR *argv[])
         TRACE(" %s", wine_dbgstr_w(argv[i]));
     TRACE("\n");
 
-    CoInitialize(NULL);
+    HRESULT hr = CoInitialize(NULL);
+    UNREFERENCED_PARAMETER(hr);
 
     if (argc < 2)
         FIXME("Print current tasks state\n");

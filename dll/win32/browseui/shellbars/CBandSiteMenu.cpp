@@ -1,7 +1,7 @@
 /*
  *  Band site menu
  *
- *  Copyright 2007  Hervé Poussineua
+ *  Copyright 2007  Herv Poussineua
  *  Copyright 2009  Andrew Hill
  *
  * This library is free software; you can redistribute it and/or
@@ -177,7 +177,7 @@ LPITEMIDLIST CBandSiteMenu::_GetQLaunchPidl(BOOL refresh)
 
 HRESULT CBandSiteMenu::_CreateBuiltInISFBand(UINT uID, REFIID riid, void** ppv)
 {
-    LPITEMIDLIST pidl;
+    LPITEMIDLIST pidl = NULL;
     HRESULT hr;
 
     switch (uID)

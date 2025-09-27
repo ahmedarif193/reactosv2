@@ -1538,7 +1538,7 @@ ImmSetConversionStatus(
 {
     HKL hKL;
     LPINPUTCONTEXT pIC;
-    DWORD dwOldConversion, dwOldSentence;
+    DWORD dwOldConversion = 0, dwOldSentence = 0;
     BOOL fOpen = FALSE, fConversionChange = FALSE, fSentenceChange = FALSE, fUseCicero = FALSE;
     HWND hWnd;
 
@@ -1555,16 +1555,17 @@ ImmSetConversionStatus(
     if (IS_NULL_UNEXPECTEDLY(pIC))
         return FALSE;
 
+    dwOldConversion = pIC->fdwConversion;
+    dwOldSentence = pIC->fdwSentence;
+
     if (pIC->fdwConversion != fdwConversion)
     {
-        dwOldConversion = pIC->fdwConversion;
         pIC->fdwConversion = fdwConversion;
         fConversionChange = TRUE;
     }
 
     if (pIC->fdwSentence != fdwSentence)
     {
-        dwOldSentence = pIC->fdwSentence;
         pIC->fdwSentence = fdwSentence;
         fSentenceChange = TRUE;
     }

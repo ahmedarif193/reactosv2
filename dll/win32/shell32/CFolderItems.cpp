@@ -260,7 +260,10 @@ HRESULT STDMETHODCALLTYPE CFolderItems::Item(VARIANT var, FolderItem **ppid)
         return hr;
 
     if (V_VT(&index) == VT_I2)
-        VariantChangeType(&index, &index, 0, VT_I4);
+    {
+        HRESULT hr = VariantChangeType(&index, &index, 0, VT_I4);
+        UNREFERENCED_PARAMETER(hr);
+    }
 
     if (V_VT(&index) == VT_I4)
     {

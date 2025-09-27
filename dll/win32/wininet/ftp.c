@@ -3715,7 +3715,8 @@ static BOOL FTP_ParseNextFile(INT nSocket, LPCWSTR lpszSearchFile, LPFILEPROPERT
             int mon, mday, year, hour, min;
             lpfp->permissions = 0xFFFF; /* No idea, put full permission :-) */
 
-            sscanf(pszToken, "%d-%d-%d", &mon, &mday, &year);
+            int result1 = sscanf(pszToken, "%d-%d-%d", &mon, &mday, &year);
+            UNREFERENCED_PARAMETER(result1);
             lpfp->tmLastModified.wDay   = mday;
             lpfp->tmLastModified.wMonth = mon;
             lpfp->tmLastModified.wYear  = year;
@@ -3725,7 +3726,8 @@ static BOOL FTP_ParseNextFile(INT nSocket, LPCWSTR lpszSearchFile, LPFILEPROPERT
 
             pszToken = strtok(NULL, szSpace);
             if(!pszToken) continue;
-            sscanf(pszToken, "%d:%d", &hour, &min);
+            int result2 = sscanf(pszToken, "%d:%d", &hour, &min);
+            UNREFERENCED_PARAMETER(result2);
             lpfp->tmLastModified.wHour   = hour;
             lpfp->tmLastModified.wMinute = min;
             if((pszToken[5] == 'P') && (pszToken[6] == 'M')) {

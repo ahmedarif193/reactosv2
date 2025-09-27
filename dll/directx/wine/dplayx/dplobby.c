@@ -783,7 +783,10 @@ static HRESULT WINAPI IDirectPlayLobby3AImpl_EnumAddressTypes( IDirectPlayLobby3
 
       /* FIXME: Check return types to ensure we're interpreting data right */
       MultiByteToWideChar( CP_ACP, 0, returnBuffer, -1, buff, ARRAY_SIZE( buff ));
-      CLSIDFromString( buff, &serviceProviderGUID );
+      if (CLSIDFromString( buff, &serviceProviderGUID ) != S_OK)
+      {
+        /* Ignore invalid GUID - comparison will handle default GUID */
+      }
       /* FIXME: Have I got a memory leak on the serviceProviderGUID? */
 
       /* Determine if this is the Service Provider that the user asked for */
@@ -810,7 +813,10 @@ static HRESULT WINAPI IDirectPlayLobby3AImpl_EnumAddressTypes( IDirectPlayLobby3
 
         /* FIXME: Check return types to ensure we're interpreting data right */
         MultiByteToWideChar( CP_ACP, 0, atSubKey, -1, buff, ARRAY_SIZE( buff ));
-        CLSIDFromString( buff, &serviceProviderGUID );
+        if (CLSIDFromString( buff, &serviceProviderGUID ) != S_OK)
+        {
+          /* Ignore invalid GUID - callback will handle default GUID */
+        }
         /* FIXME: Have I got a memory leak on the serviceProviderGUID? */
 
         /* The enumeration will return FALSE if we are not to continue */
@@ -951,7 +957,10 @@ static HRESULT WINAPI IDirectPlayLobby3AImpl_EnumLocalApplications( IDirectPlayL
 
     /* FIXME: Check return types to ensure we're interpreting data right */
     MultiByteToWideChar( CP_ACP, 0, returnBuffer, -1, buff, ARRAY_SIZE( buff ));
-    CLSIDFromString( buff, &serviceProviderGUID );
+    if (CLSIDFromString( buff, &serviceProviderGUID ) != S_OK)
+    {
+      /* Ignore invalid GUID - application info will use default GUID */
+    }
     /* FIXME: Have I got a memory leak on the serviceProviderGUID? */
 
     dplAppInfo.dwSize               = sizeof( dplAppInfo );

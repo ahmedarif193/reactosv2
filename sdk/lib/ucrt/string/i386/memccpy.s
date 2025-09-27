@@ -59,10 +59,10 @@ page
 
         public  __memccpy
 .PROC __memccpy
-        // dest:ptr byte, \
-        // src:ptr byte, \
-        // _c:byte, \
-        // count:DWORD
+        # dest:ptr byte
+        # src:ptr byte
+        # _c:byte
+        # count:DWORD
 
         //OPTION PROLOGUE:NONE, EPILOGUE:NONE
 

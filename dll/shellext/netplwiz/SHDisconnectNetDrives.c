@@ -81,7 +81,8 @@ VOID EnumerateConnectedDrives(HWND hDlg)
     lpRes = HeapAlloc(GetProcessHeap(), 0, dwSize);
     if (!lpRes)
     {
-        WNetCloseEnum(hEnum);
+        DWORD result = WNetCloseEnum(hEnum);
+    UNREFERENCED_PARAMETER(result);
         return;
     }
 
@@ -107,7 +108,8 @@ VOID EnumerateConnectedDrives(HWND hDlg)
     } while (dRet != WN_NO_MORE_ENTRIES);
 
     HeapFree(GetProcessHeap(), 0, lpRes);
-    WNetCloseEnum(hEnum);
+    DWORD result = WNetCloseEnum(hEnum);
+    UNREFERENCED_PARAMETER(result);
 }
 
 

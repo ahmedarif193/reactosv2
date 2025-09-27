@@ -149,7 +149,8 @@ public:
         VOID
         )
     {
-        (void) ProcessEvent(SelfManagedIoEventFlush);
+        NTSTATUS status = ProcessEvent(SelfManagedIoEventFlush);
+        UNREFERENCED_PARAMETER(status);
     }
 
     VOID
@@ -157,7 +158,8 @@ public:
         VOID
         )
     {
-        (void) ProcessEvent(SelfManagedIoEventCleanup);
+        NTSTATUS status = ProcessEvent(SelfManagedIoEventCleanup);
+        UNREFERENCED_PARAMETER(status);
     }
 
 protected:

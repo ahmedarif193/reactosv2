@@ -40,7 +40,8 @@ MxPagedLock::MxPagedLock(
     // so that we don't have to churn all of the KMDF code
     //
 #ifndef MERGE_COMPLETE
-    (VOID) MxPagedLock::Initialize();
+    NTSTATUS status = MxPagedLock::Initialize();
+    UNREFERENCED_PARAMETER(status);
 #endif
 }
 

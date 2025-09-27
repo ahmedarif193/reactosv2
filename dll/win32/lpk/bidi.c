@@ -275,6 +275,7 @@ static void BidiLines(int baselevel, LPWSTR pszOutLine, LPCWSTR pszLine, const W
     int cchLine = 0;
     int done = 0;
     int *run;
+    HRESULT res;
 
     run = HeapAlloc(GetProcessHeap(), 0, cchPara * sizeof(int));
     if (!run)
@@ -295,7 +296,8 @@ static void BidiLines(int baselevel, LPWSTR pszOutLine, LPCWSTR pszLine, const W
         {
             int i;
             /* reorder each line in place */
-            ScriptLayout(cchLine, plevelLine, NULL, run);
+            res = ScriptLayout(cchLine, plevelLine, NULL, run);
+            UNREFERENCED_PARAMETER(res);
             for (i = 0; i < cchLine; i++)
                 pszOutLine[done+run[i]] = pszLine[i];
         }
@@ -597,7 +599,7 @@ BOOL BIDI_Reorder(
             for (j = 0; j < nItems; j++)
                 runOrder[j] = pItems[j].a.s.uBidiLevel;
 
-            ScriptLayout(nItems, runOrder, visOrder, NULL);
+            res = ScriptLayout(nItems, runOrder, visOrder, NULL);
 
             for (j = 0; j < nItems; j++)
             {
@@ -623,7 +625,7 @@ BOOL BIDI_Reorder(
                         HeapFree(GetProcessHeap(), 0, psva);
                         HeapFree(GetProcessHeap(), 0, pwLogClust);
                         HeapFree(GetProcessHeap(), 0, *lpGlyphs);
-                        ScriptFreeCache(&psc);
+                        res = ScriptFreeCache(&psc);
                         *lpGlyphs = NULL;
                         return FALSE;
                     }
@@ -666,6 +668,6 @@ BOOL BIDI_Reorder(
     HeapFree(GetProcessHeap(), 0, run_glyphs);
     HeapFree(GetProcessHeap(), 0, pwLogClust);
     HeapFree(GetProcessHeap(), 0, psva);
-    ScriptFreeCache(&psc);
+    res = ScriptFreeCache(&psc);
     return TRUE;
 }

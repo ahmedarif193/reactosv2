@@ -826,7 +826,7 @@ GetServiceMainFunctions (
     DWORD dwError, cbDllLength, cbData, dwType;
     PSVCHOST_DLL pDll;
     ACTCTXW actCtx;
-    LPCWSTR pszDllPath;
+    LPCWSTR pszDllPath = NULL;
     HKEY hKey;
     HANDLE hActCtx;
     LPWSTR lpData;

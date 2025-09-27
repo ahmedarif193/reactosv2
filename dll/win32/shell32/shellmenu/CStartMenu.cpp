@@ -372,7 +372,9 @@ private:
         TRACE("csidl: 0x%X\n", csidl);
 
         CComHeapPtr<ITEMIDLIST> pidl;
-        SHGetSpecialFolderLocation(NULL, csidl, &pidl);
+        HRESULT hrFolder = SHGetSpecialFolderLocation(NULL, csidl, &pidl);
+        if (FAILED(hrFolder))
+            return hrFolder;
 
         CComPtr<IShellFolder> pSF;
         LPCITEMIDLIST pidlChild = NULL;

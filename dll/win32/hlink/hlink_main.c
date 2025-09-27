@@ -440,7 +440,8 @@ HRESULT WINAPI HlinkResolveMonikerForData(LPMONIKER pimkReference, DWORD reserve
         WARN("sysmk = %x\n", mksys);
 
     /* FIXME: What is it for? */
-    CreateBindCtx(0, &bctx);
+    HRESULT hr = CreateBindCtx(0, &bctx);
+    UNREFERENCED_PARAMETER(hr);
     hres = IMoniker_GetDisplayName(pimkReference, bctx, NULL, &name);
     IBindCtx_Release(bctx);
     if(SUCCEEDED(hres)) {

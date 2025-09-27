@@ -127,7 +127,10 @@ static HRESULT register_codec(const GUID *class, const WCHAR *name,
     }
 
     lstrcpyW(buffer, deviceW);
-    StringFromGUID2(class, buffer + lstrlenW(buffer), CHARS_IN_GUID);
+    if (StringFromGUID2(class, buffer + lstrlenW(buffer), CHARS_IN_GUID) == 0)
+    {
+        /* Ignore error - buffer size should be sufficient */
+    }
     lstrcatW(buffer, backslashW);
     lstrcatW(buffer, name);
 
@@ -149,7 +152,10 @@ static HRESULT register_codec(const GUID *class, const WCHAR *name,
     }
 
     V_VT(&var) = VT_BSTR;
-    StringFromGUID2(clsid, guidstr, ARRAY_SIZE(guidstr));
+    if (StringFromGUID2(clsid, guidstr, ARRAY_SIZE(guidstr)) == 0)
+    {
+        /* Ignore error - buffer size should be sufficient */
+    }
     V_BSTR(&var) = SysAllocString(guidstr);
     hr = IPropertyBag_Write(propbag, clsidW, &var);
     VariantClear(&var);
@@ -555,7 +561,10 @@ static BOOL CALLBACK register_dsound_devices(GUID *guid, const WCHAR *desc, cons
 
     /* write DSound guid */
     V_VT(&var) = VT_BSTR;
-    StringFromGUID2(guid ? guid : &GUID_NULL, clsid, CHARS_IN_GUID);
+    if (StringFromGUID2(guid ? guid : &GUID_NULL, clsid, CHARS_IN_GUID) == 0)
+    {
+        /* Ignore error - buffer size should be sufficient */
+    }
     if ((V_BSTR(&var) = SysAllocString(clsid)))
         hr = IPropertyBag_Write(prop_bag, dsguidW, &var);
 
@@ -842,7 +851,10 @@ static HRESULT WINAPI DEVENUM_ICreateDevEnum_CreateClassEnumerator(
 
     if (!RegOpenKeyW(HKEY_CURRENT_USER, wszActiveMovieKey, &key))
     {
-        StringFromGUID2(class, guidstr, ARRAY_SIZE(guidstr));
+        if (StringFromGUID2(class, guidstr, ARRAY_SIZE(guidstr)) == 0)
+        {
+            /* Ignore error - buffer size should be sufficient */
+        }
         RegDeleteTreeW(key, guidstr);
     }
 

@@ -2949,7 +2949,12 @@ static UINT query_feature_state( const WCHAR *product, const WCHAR *squashed, co
             *state = INSTALLSTATE_BADCONFIG;
             return ERROR_BAD_CONFIGURATION;
         }
-        StringFromGUID2( &guid, comp, GUID_SIZE );
+        if (StringFromGUID2( &guid, comp, GUID_SIZE ) == 0)
+        {
+            free( components );
+            *state = INSTALLSTATE_BADCONFIG;
+            return ERROR_BAD_CONFIGURATION;
+        }
         if (ctx == MSIINSTALLCONTEXT_MACHINE)
             r = MSIREG_OpenUserDataComponentKey( comp, L"S-1-5-18", &hkey, FALSE );
         else
@@ -3410,7 +3415,10 @@ static UINT MSI_ProvideQualifiedComponentEx(LPCWSTR szComponent,
             return ERROR_FILE_NOT_FOUND;
         }
         free( components );
-        StringFromGUID2( &guid, comp, ARRAY_SIZE( comp ));
+        if (StringFromGUID2( &guid, comp, ARRAY_SIZE( comp )) == 0)
+        {
+            return ERROR_FILE_NOT_FOUND;
+        }
     }
 
     state = MSI_GetComponentPath( szProduct, comp, L"S-1-1-0", MSIINSTALLCONTEXT_ALL, lpPathBuf, pcchPathBuf );

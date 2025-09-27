@@ -449,7 +449,8 @@ HRESULT WINAPI PropVariantToStringAlloc(REFPROPVARIANT propvarIn, WCHAR **ret)
             {
                 if (!(res = CoTaskMemAlloc((GUID_STR_LEN + 1) * sizeof(WCHAR))))
                     return E_OUTOFMEMORY;
-                StringFromGUID2(propvarIn->puuid, res, GUID_STR_LEN + 1);
+                int nResult = StringFromGUID2(propvarIn->puuid, res, GUID_STR_LEN + 1);
+                UNREFERENCED_PARAMETER(nResult);
             }
             break;
 
@@ -698,7 +699,8 @@ HRESULT WINAPI InitPropVariantFromGUIDAsString(REFGUID guid, PROPVARIANT *ppropv
     if(!ppropvar->pwszVal)
         return E_OUTOFMEMORY;
 
-    StringFromGUID2(guid, ppropvar->pwszVal, GUID_STR_LEN + 1);
+    int nResult = StringFromGUID2(guid, ppropvar->pwszVal, GUID_STR_LEN + 1);
+    UNREFERENCED_PARAMETER(nResult);
     return S_OK;
 }
 
@@ -716,7 +718,8 @@ HRESULT WINAPI InitVariantFromGUIDAsString(REFGUID guid, VARIANT *pvar)
     if(!V_BSTR(pvar))
         return E_OUTOFMEMORY;
 
-    StringFromGUID2(guid, V_BSTR(pvar), GUID_STR_LEN + 1);
+    int nResult = StringFromGUID2(guid, V_BSTR(pvar), GUID_STR_LEN + 1);
+    UNREFERENCED_PARAMETER(nResult);
     return S_OK;
 }
 

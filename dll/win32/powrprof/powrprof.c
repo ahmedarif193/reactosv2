@@ -959,7 +959,7 @@ static BOOLEAN
 CreatePowrProfSemaphoreSecurity(_Out_ PSECURITY_DESCRIPTOR *PowrProfSd)
 {
     BOOLEAN Success = FALSE;
-    PACL Dacl;
+    PACL Dacl = NULL;
     ULONG DaclSize, RelSDSize = 0;
     PSID AuthenticatedUsersSid = NULL, SystemSid = NULL, AdminsSid = NULL;
     SECURITY_DESCRIPTOR AbsSd;

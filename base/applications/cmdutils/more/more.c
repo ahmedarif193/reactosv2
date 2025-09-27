@@ -818,7 +818,8 @@ static BOOL IsFlag(PCWSTR param)
         pch = param + 1;
         if (*pch)
         {
-            (void)wcstol(pch, &endptr, 10);
+            long value = wcstol(pch, &endptr, 10);
+            UNREFERENCED_PARAMETER(value);
             return (*endptr == 0);
         }
     }

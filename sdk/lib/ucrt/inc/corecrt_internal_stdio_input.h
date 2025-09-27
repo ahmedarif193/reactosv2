@@ -589,6 +589,9 @@ public:
 
         case conversion_mode::floating_point:
             return to_floating_point_length(_length);
+
+        case conversion_mode::enumerator_count:
+            break;
         }
 
         return 0; // Unreachable
@@ -1152,6 +1155,10 @@ private:
 
             return result;
         }
+
+        case format_directive_kind::unknown_error:
+        case format_directive_kind::end_of_string:
+            break;
         }
 
         return false;
@@ -1220,6 +1227,9 @@ private:
         case conversion_mode::floating_point:         return process_floating_point_specifier();
 
         case conversion_mode::report_character_count: return process_character_count_specifier();
+
+        case conversion_mode::enumerator_count:
+            break;
         }
 
         return false;
@@ -1497,6 +1507,16 @@ private:
 
             return true;
         }
+
+        case conversion_mode::signed_unknown:
+        case conversion_mode::signed_decimal:
+        case conversion_mode::unsigned_octal:
+        case conversion_mode::unsigned_decimal:
+        case conversion_mode::unsigned_hexadecimal:
+        case conversion_mode::floating_point:
+        case conversion_mode::report_character_count:
+        case conversion_mode::enumerator_count:
+            break;
         }
 
         return false;

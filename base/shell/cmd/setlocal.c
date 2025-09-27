@@ -162,7 +162,8 @@ INT cmd_endlocal(LPTSTR param)
     {
         _stprintf(szCurrent, _T("%C:\\"), _T('A') + Saved->CurDrive - 1);
     }
-    _tchdir(szCurrent); // SetRootPath(NULL, szCurrent);
+    int iResult = _tchdir(szCurrent); // SetRootPath(NULL, szCurrent);
+    UNREFERENCED_PARAMETER(iResult);
 
     cmd_free(Saved->Environment);
     cmd_free(Saved);

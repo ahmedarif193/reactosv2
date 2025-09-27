@@ -958,11 +958,17 @@ UINT WINAPI MsiDecomposeDescriptorW( LPCWSTR szDescriptor, LPWSTR szProduct,
     }
 
     if (szProduct)
-        StringFromGUID2( &product, szProduct, MAX_FEATURE_CHARS+1 );
+    {
+        int result = StringFromGUID2( &product, szProduct, MAX_FEATURE_CHARS+1 );
+        UNREFERENCED_PARAMETER(result);
+    }
     if (szComponent)
     {
         if (*p == '>')
-            StringFromGUID2( &component, szComponent, MAX_FEATURE_CHARS+1 );
+        {
+            int result = StringFromGUID2( &component, szComponent, MAX_FEATURE_CHARS+1 );
+            UNREFERENCED_PARAMETER(result);
+        }
         else
             szComponent[0] = 0;
     }

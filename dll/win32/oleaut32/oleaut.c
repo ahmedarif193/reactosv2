@@ -248,7 +248,10 @@ static inline IMalloc *get_malloc(void)
     static IMalloc *malloc;
 
     if (!malloc)
-        CoGetMalloc(1, &malloc);
+    {
+        HRESULT hr = CoGetMalloc(1, &malloc);
+        UNREFERENCED_PARAMETER(hr);
+    }
 
     return malloc;
 }
@@ -532,7 +535,8 @@ HRESULT WINAPI DECLSPEC_HOTPATCH RegisterActiveObject(
 	LPMONIKER		moniker;
         DWORD                   rot_flags = ROTFLAGS_REGISTRATIONKEEPSALIVE; /* default registration is strong */
 
-	StringFromGUID2(rcid,guidbuf,39);
+	INT result = StringFromGUID2(rcid,guidbuf,39);
+	UNREFERENCED_PARAMETER(result);
 	ret = CreateItemMoniker(pdelimiter,guidbuf,&moniker);
 	if (FAILED(ret))
 		return ret;
@@ -596,7 +600,8 @@ HRESULT WINAPI DECLSPEC_HOTPATCH GetActiveObject(REFCLSID rcid,LPVOID preserved,
 	LPRUNNINGOBJECTTABLE	runobtable;
 	LPMONIKER		moniker;
 
-	StringFromGUID2(rcid,guidbuf,39);
+	INT result = StringFromGUID2(rcid,guidbuf,39);
+	UNREFERENCED_PARAMETER(result);
 	ret = CreateItemMoniker(pdelimiter,guidbuf,&moniker);
 	if (FAILED(ret))
 		return ret;

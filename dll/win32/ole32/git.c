@@ -185,7 +185,8 @@ StdGlobalInterfaceTable_RegisterInterfaceInGlobal(
   entry = HeapAlloc(GetProcessHeap(), 0, sizeof(StdGITEntry));
   if (!entry)
   {
-      CoReleaseMarshalData(stream);
+      HRESULT hrRelease = CoReleaseMarshalData(stream);
+      (void)hrRelease;
       IStream_Release(stream);
       return E_OUTOFMEMORY;
   }
@@ -395,7 +396,8 @@ void release_std_git(void)
   {
       list_remove(&entry->entry);
 
-      CoReleaseMarshalData(entry->stream);
+      HRESULT hrRelease = CoReleaseMarshalData(entry->stream);
+      (void)hrRelease;
       IStream_Release(entry->stream);
       HeapFree(GetProcessHeap(), 0, entry);
   }

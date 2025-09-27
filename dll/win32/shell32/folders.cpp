@@ -50,7 +50,8 @@ static void InitIconOverlays(void)
 
     dwIndex = 0;
 
-    CoInitialize(0);
+    HRESULT hrInit = CoInitialize(0);
+    UNREFERENCED_PARAMETER(hrInit);
 
     do
     {
@@ -67,7 +68,9 @@ static void InitIconOverlays(void)
             {
                 CComPtr<IShellIconOverlayIdentifier> Overlay;
 
-                CLSIDFromString(szValue, &clsid);
+                HRESULT hrClsid = CLSIDFromString(szValue, &clsid);
+                if (FAILED(hrClsid))
+                    continue;
                 dwResult = CoCreateInstance(clsid, NULL, CLSCTX_INPROC_SERVER, IID_PPV_ARG(IShellIconOverlayIdentifier, &Overlay));
                 if (dwResult == S_OK)
                 {

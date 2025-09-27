@@ -1797,7 +1797,11 @@ static void get_localserver_pipe_name(WCHAR *pipefn, REFCLSID rclsid)
 {
     static const WCHAR wszPipeRef[] = {'\\','\\','.','\\','p','i','p','e','\\',0};
     lstrcpyW(pipefn, wszPipeRef);
-    StringFromGUID2(rclsid, pipefn + ARRAY_SIZE(wszPipeRef) - 1, CHARS_IN_GUID);
+    int ret = StringFromGUID2(rclsid, pipefn + ARRAY_SIZE(wszPipeRef) - 1, CHARS_IN_GUID);
+    if (ret == 0) {
+        WARN("StringFromGUID2 failed\n");
+        pipefn[ARRAY_SIZE(wszPipeRef) - 1] = 0; /* Null terminate if conversion fails */
+    }
 }
 
 /* FIXME: should call to rpcss instead */

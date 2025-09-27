@@ -1061,7 +1061,10 @@ static HRESULT fill_display_information_d3d(IDxDiagContainerImpl_Container *node
             if (FAILED(hr))
                 goto cleanup;
 
-            StringFromGUID2(&adapter_info.DeviceIdentifier, buffer, 39);
+            if (StringFromGUID2(&adapter_info.DeviceIdentifier, buffer, 39) == 0)
+            {
+                /* Ignore error - buffer will be empty on failure */
+            }
             hr = add_bstr_property(display_adapter, szDeviceIdentifier, buffer);
             if (FAILED(hr))
                 goto cleanup;

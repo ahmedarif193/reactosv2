@@ -20,6 +20,10 @@
 #ifndef __WINE_URLMON_MAIN_H
 #define __WINE_URLMON_MAIN_H
 
+#ifndef PROXY_CLSID_IS
+#define PROXY_CLSID_IS {0x79EAC9F1,0xBAF9,0x11CE,{0x8C,0x82,0x00,0xAA,0x00,0x4B,0xA9,0x0B}}
+#endif
+
 #include <stdarg.h>
 #ifdef __REACTOS__
 #include <wchar.h>

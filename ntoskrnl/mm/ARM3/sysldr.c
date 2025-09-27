@@ -2482,9 +2482,9 @@ MiWriteProtectSystemImage(
     _In_ PVOID ImageBase)
 {
     PIMAGE_NT_HEADERS NtHeaders;
-    PIMAGE_SECTION_HEADER SectionHeaders, Section;
+    PIMAGE_SECTION_HEADER SectionHeaders, Section = NULL;
     ULONG i;
-    PVOID SectionBase, SectionEnd;
+    PVOID SectionBase, SectionEnd = NULL;
     ULONG SectionSize;
     ULONG Protection;
     PMMPTE FirstPte, LastPte;

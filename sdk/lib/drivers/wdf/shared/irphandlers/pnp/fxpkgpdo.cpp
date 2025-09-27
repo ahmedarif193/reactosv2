@@ -1679,7 +1679,8 @@ Return Value:
 
   --*/
 {
-    ((FxPkgPdo*) Context)->AskParentToRemoveAndReenumerate();
+    NTSTATUS status = ((FxPkgPdo*) Context)->AskParentToRemoveAndReenumerate();
+    UNREFERENCED_PARAMETER(status);
 }
 
 _Must_inspect_result_

@@ -125,7 +125,14 @@ SHELL_GetDetailsOfColumnAsVariant(IShellFolder2 *pSF, PCUITEMID_CHILD pidl, UINT
             vt = VT_BSTR;
     }
     if (vt != VT_BSTR)
-        VariantChangeType(pVar, pVar, 0, vt);
+    {
+        HRESULT hrVariant = VariantChangeType(pVar, pVar, 0, vt);
+        if (FAILED(hrVariant))
+        {
+            // If conversion failed, leave as VT_BSTR
+            TRACE("VariantChangeType failed with hr=0x%08x, leaving as VT_BSTR\n", hrVariant);
+        }
+    }
     return hr;
 }
 
@@ -423,7 +430,12 @@ LSTATUS AddClassKeyToArray(const WCHAR* szClass, HKEY* array, UINT* cKeys)
 LSTATUS AddClsidKeyToArray(REFCLSID clsid, HKEY* array, UINT* cKeys)
 {
     WCHAR path[6 + 38 + 1] = L"CLSID\\";
-    StringFromGUID2(clsid, path + 6, 38 + 1);
+    INT result = StringFromGUID2(clsid, path + 6, 38 + 1);
+    if (result == 0)
+    {
+        // If GUID conversion fails, use a fallback
+        StringCchCopyW(path + 6, 38 + 1, L"{Invalid GUID}");
+    }
     return AddClassKeyToArray(path, array, cKeys);
 }
 

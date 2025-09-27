@@ -96,8 +96,7 @@ static HRESULT parse_uidl_response(POP3Transport *This, POP3UIDL *uidl)
             if ((p = strchr(This->ptr, ' ')))
             {
                 while (*p == ' ') p++;
-                sscanf(p, "%u", &uidl->dwPopId);
-                if ((p = strchr(p, ' ')))
+                if (sscanf(p, "%u", &uidl->dwPopId) == 1 && (p = strchr(p, ' ')))
                 {
                     while (*p == ' ') p++;
                     uidl->pszUidl = p;
@@ -117,8 +116,7 @@ static HRESULT parse_uidl_response(POP3Transport *This, POP3UIDL *uidl)
             This->state = STATE_DONE;
             return S_OK;
         }
-        sscanf(This->response, "%u", &uidl->dwPopId);
-        if ((p = strchr(This->response, ' ')))
+        if (sscanf(This->response, "%u", &uidl->dwPopId) == 1 && (p = strchr(This->response, ' ')))
         {
             while (*p == ' ') p++;
             uidl->pszUidl = p;
@@ -145,8 +143,8 @@ static HRESULT parse_stat_response(POP3Transport *This, POP3STAT *stat)
         if ((p = strchr(This->ptr, ' ')))
         {
             while (*p == ' ') p++;
-            sscanf(p, "%u %u", &stat->cMessages, &stat->cbMessages);
-            This->valid_info = TRUE;
+            if (sscanf(p, "%u %u", &stat->cMessages, &stat->cbMessages) == 2)
+                This->valid_info = TRUE;
             This->state = STATE_DONE;
             return S_OK;
         }
@@ -172,8 +170,8 @@ static HRESULT parse_list_response(POP3Transport *This, POP3LIST *list)
             if ((p = strchr(This->ptr, ' ')))
             {
                 while (*p == ' ') p++;
-                sscanf(p, "%u %u", &list->dwPopId, &list->cbSize);
-                This->valid_info = TRUE;
+                if (sscanf(p, "%u %u", &list->dwPopId, &list->cbSize) == 2)
+                    This->valid_info = TRUE;
             }
             This->state = STATE_DONE;
             return S_OK;
@@ -188,12 +186,11 @@ static HRESULT parse_list_response(POP3Transport *This, POP3LIST *list)
             This->state = STATE_DONE;
             return S_OK;
         }
-        sscanf(This->response, "%u", &list->dwPopId);
-        if ((p = strchr(This->response, ' ')))
+        if (sscanf(This->response, "%u", &list->dwPopId) == 1 && (p = strchr(This->response, ' ')))
         {
             while (*p == ' ') p++;
-            sscanf(p, "%u", &list->cbSize);
-            This->valid_info = TRUE;
+            if (sscanf(p, "%u", &list->cbSize) == 1)
+                This->valid_info = TRUE;
             return S_OK;
         }
 

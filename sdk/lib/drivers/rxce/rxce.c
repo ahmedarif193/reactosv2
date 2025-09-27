@@ -543,10 +543,10 @@ RxAllocateObject(
     PMINIRDR_DISPATCH MRxDispatch,
     ULONG NameLength)
 {
-    ULONG Tag, ObjectSize;
-    PVOID Object, *Extension;
-    PRX_PREFIX_ENTRY PrefixEntry;
-    USHORT StructSize, ExtensionSize;
+    ULONG Tag = 0, ObjectSize;
+    PVOID Object, *Extension = NULL;
+    PRX_PREFIX_ENTRY PrefixEntry = NULL;
+    USHORT StructSize = 0, ExtensionSize;
 
     PAGED_CODE();
 
@@ -618,10 +618,12 @@ RxAllocateObject(
 
         default:
             ASSERT(FALSE);
-            break;
+            RxFreePoolWithTag(Object, Tag);
+            return NULL;
     }
 
     /* Set the prefix table unicode string */
+    ASSERT(PrefixEntry != NULL);
     RtlZeroMemory(PrefixEntry, sizeof(RX_PREFIX_ENTRY));
     PrefixEntry->NodeTypeCode = RDBSS_NTC_PREFIX_ENTRY;
     PrefixEntry->NodeByteSize = sizeof(RX_PREFIX_ENTRY);
@@ -3484,7 +3486,7 @@ RxFindOrConstructVirtualNetRoot(
     while (TRUE)
     {
         PNET_ROOT NetRoot;
-        PV_NET_ROOT SavedVNetRoot;
+        PV_NET_ROOT SavedVNetRoot = NULL;
 
         /* Look in prefix table */
         Container = RxPrefixTableLookupName(RxDeviceObject->pRxNetNameTable, CanonicalName, RemainingName, &ConnectionID);
@@ -5251,7 +5253,7 @@ RxLockUserBuffer(
     IN LOCK_OPERATION Operation,
     IN ULONG BufferLength)
 {
-    PIRP Irp;
+    PIRP Irp = NULL;
     PMDL Mdl = NULL;
 
     PAGED_CODE();

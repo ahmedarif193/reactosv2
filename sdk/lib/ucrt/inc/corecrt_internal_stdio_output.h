@@ -854,6 +854,19 @@ bool __cdecl is_wide_character_specifier(
     case length_modifier::l: return true;
     case length_modifier::w: return true;
     case length_modifier::h: return false;
+    case length_modifier::none:
+    case length_modifier::hh:
+    case length_modifier::ll:
+    case length_modifier::j:
+    case length_modifier::z:
+    case length_modifier::t:
+    case length_modifier::L:
+    case length_modifier::I:
+    case length_modifier::I32:
+    case length_modifier::I64:
+    case length_modifier::T:
+    case length_modifier::enumerator_count:
+        break;
     }
 
     if (length == length_modifier::T)
@@ -1218,8 +1231,8 @@ protected:
           _current_pass         {pass::not_started},
           _format_mode          {mode::unknown    },
           _format               {_format_it       },
-          _type_index           {-1               },
-          _maximum_index        {-1               }
+          _maximum_index        {-1               },
+          _type_index           {-1               }
     {
         // Note that we do not zero-initialize the parameter data table until
         // the first positional parameter is encountered in the format string.
@@ -1792,6 +1805,7 @@ public:
                 case state::precision: result = state_case_precision(); break;
                 case state::size:      result = state_case_size     (); break;
                 case state::type:      result = state_case_type     (); break;
+                case state::invalid:   result = false;              break;
                 }
 
                 // If the state-specific operation failed, return immediately.
@@ -2890,8 +2904,8 @@ private:
     }
 
     // When a null pointer is passed, we print this string as a placeholder.
-    static char   * __cdecl narrow_null_string() throw() { return  "(null)"; }
-    static wchar_t* __cdecl wide_null_string  () throw() { return L"(null)"; }
+    static char   * __cdecl narrow_null_string() throw() { return const_cast<char*>("(null)"); }
+    static wchar_t* __cdecl wide_null_string  () throw() { return const_cast<wchar_t*>(L"(null)"); }
 };
 
 

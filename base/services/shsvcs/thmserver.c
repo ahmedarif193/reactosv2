@@ -76,7 +76,8 @@ CALLBACK
 ThemeStopCallback(PVOID lpParameter, BOOLEAN TimerOrWaitFired)
 {
     CloseHandle(hServiceProcess);
-    UnregisterWait(hThemeServiceWaitObject);
+    BOOL bResult = UnregisterWait(hThemeServiceWaitObject);
+    UNREFERENCED_PARAMETER(bResult);
 
     ThemeWatchForStart();
     ThemeHooksRemove();
@@ -92,7 +93,8 @@ ThemeServiceDiedCallback(PVOID lpParameter, BOOLEAN TimerOrWaitFired)
     ResetEvent(hStopEvent);
 
     CloseHandle(hServiceProcess);
-    UnregisterWait(hThemeStopWaitObject);
+    BOOL bResult = UnregisterWait(hThemeStopWaitObject);
+    UNREFERENCED_PARAMETER(bResult);
     ThemeWatchForStart();
     ThemeHooksRemove();
 }

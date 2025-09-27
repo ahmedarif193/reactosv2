@@ -94,10 +94,10 @@ PAGE_SAFE_BLK = PAGE_SIZE - BLK_SIZE // maximum offset for safe block compare
 
     public  _strncmp
 .PROC _strncmp
-        // uses ebx esi, \
-        // str1:ptr byte, \
-        // str2:ptr byte, \
-        // count:IWORD
+        # uses ebx esi
+        # str1:ptr byte
+        # str2:ptr byte
+        # count:IWORD
 
     //OPTION PROLOGUE:NONE, EPILOGUE:NONE
 

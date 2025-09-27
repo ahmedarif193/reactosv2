@@ -139,7 +139,8 @@ BOOL CNetFolderEnum::EnumerateRec(LPNETRESOURCE lpNet)
     if (!lpRes)
     {
         ERR("CoTaskMemAlloc() failed\n");
-        WNetCloseEnum(hEnum);
+        DWORD dwResult = WNetCloseEnum(hEnum);
+        UNREFERENCED_PARAMETER(dwResult);
         return FALSE;
     }
 
@@ -185,7 +186,8 @@ BOOL CNetFolderEnum::EnumerateRec(LPNETRESOURCE lpNet)
     } while (dRet != WN_NO_MORE_ENTRIES);
 
     CoTaskMemFree(lpRes);
-    WNetCloseEnum(hEnum);
+    DWORD dwResult = WNetCloseEnum(hEnum);
+    UNREFERENCED_PARAMETER(dwResult);
 
     TRACE("Done: %u\n", bRet);
 

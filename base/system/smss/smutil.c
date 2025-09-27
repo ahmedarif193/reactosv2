@@ -131,12 +131,13 @@ SmpReleasePrivilege(IN PVOID PrivState)
     PSMP_PRIVILEGE_STATE State = (PSMP_PRIVILEGE_STATE)PrivState;
 
     /* Adjust the privileges in the token */
-    NtAdjustPrivilegesToken(State->TokenHandle,
-                            FALSE,
-                            State->OldPrivileges,
-                            0,
-                            NULL,
-                            NULL);
+    NTSTATUS Status = NtAdjustPrivilegesToken(State->TokenHandle,
+                                              FALSE,
+                                              State->OldPrivileges,
+                                              0,
+                                              NULL,
+                                              NULL);
+    UNREFERENCED_PARAMETER(Status);
 
     /* Check if we used a dynamic buffer */
     if (State->OldPrivileges != (PTOKEN_PRIVILEGES)&State->OldBuffer)

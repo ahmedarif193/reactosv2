@@ -1149,7 +1149,8 @@ DWORD WINAPI IEWinMain(const WCHAR *cmdline, int nShowWindow)
 
     TRACE("%s %d\n", debugstr_w(cmdline), nShowWindow);
 
-    CoInitialize(NULL);
+    HRESULT hr = CoInitialize(NULL);
+    UNREFERENCED_PARAMETER(hr);
 
     init_dde();
 
@@ -1206,7 +1207,8 @@ DWORD WINAPI IEWinMain(const WCHAR *cmdline, int nShowWindow)
         DispatchMessageW(&msg);
     }
 
-    CoRevokeClassObject(reg_cookie);
+    hr = CoRevokeClassObject(reg_cookie);
+    UNREFERENCED_PARAMETER(hr);
     release_dde();
 
     CoUninitialize();

@@ -195,7 +195,7 @@ static int getch_pushback_buffer_current_size = 0;
 
 static bool is_getch_pushback_buffer_full()
 {
-    return getch_pushback_buffer_current_size >= getch_pushback_buffer_capacity;
+    return static_cast<size_t>(getch_pushback_buffer_current_size) >= getch_pushback_buffer_capacity;
 }
 
 static void add_to_getch_pushback_buffer(int const c)
@@ -510,7 +510,7 @@ extern "C" CharPair const* __cdecl _getextendedkeycode(KEY_EVENT_RECORD* const p
     if (CKS & ENHANCED_KEY)
     {
         // Find the appropriate entry in EnhancedKeys[]:
-        for (int i = 0 ; i < NUM_EKA_ELTS; ++i)
+        for (int i = 0 ; i < static_cast<int>(NUM_EKA_ELTS); ++i)
         {
             if (EnhancedKeys[i].ScanCode != pKE->wVirtualScanCode)
             {

@@ -286,7 +286,8 @@ HRESULT CSysTray::SysTrayThreadProc()
     GetModuleFileNameW(g_hInstance, strFileName, MAX_PATH);
     HMODULE hLib = LoadLibraryW(strFileName);
 
-    CoInitializeEx(NULL, COINIT_DISABLE_OLE1DDE | COINIT_APARTMENTTHREADED);
+    HRESULT hr = CoInitializeEx(NULL, COINIT_DISABLE_OLE1DDE | COINIT_APARTMENTTHREADED);
+    UNREFERENCED_PARAMETER(hr);
 
     Create(NULL);
 

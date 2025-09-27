@@ -544,7 +544,8 @@ static IDropTarget* get_droptarget_pointer(HWND hwnd)
 
     if(SUCCEEDED(create_stream_from_map(map, &stream)))
     {
-        CoUnmarshalInterface(stream, &IID_IDropTarget, (void**)&droptarget);
+        HRESULT hr = CoUnmarshalInterface(stream, &IID_IDropTarget, (void**)&droptarget);
+        UNREFERENCED_PARAMETER(hr);
         IStream_Release(stream);
     }
     CloseHandle(map);
@@ -625,7 +626,8 @@ HRESULT WINAPI RegisterDragDrop(HWND hwnd, LPDROPTARGET pDropTarget)
       LARGE_INTEGER zero;
       zero.QuadPart = 0;
       IStream_Seek(stream, zero, STREAM_SEEK_SET, NULL);
-      CoReleaseMarshalData(stream);
+      HRESULT hr2 = CoReleaseMarshalData(stream);
+      UNREFERENCED_PARAMETER(hr2);
     }
   }
   IStream_Release(stream);
@@ -664,7 +666,8 @@ HRESULT WINAPI RevokeDragDrop(HWND hwnd)
   hr = create_stream_from_map(map, &stream);
   if(SUCCEEDED(hr))
   {
-      CoReleaseMarshalData(stream);
+      HRESULT hr2 = CoReleaseMarshalData(stream);
+      UNREFERENCED_PARAMETER(hr2);
       IStream_Release(stream);
   }
   CloseHandle(map);
@@ -2486,7 +2489,8 @@ static DWORD OLEDD_GetButtonState(void)
   BYTE  keyboardState[256];
   DWORD keyMask = 0;
 
-  GetKeyboardState(keyboardState);
+  BOOL bResult = GetKeyboardState(keyboardState);
+  UNREFERENCED_PARAMETER(bResult);
 
   if ( (keyboardState[VK_SHIFT] & 0x80) !=0)
     keyMask |= MK_SHIFT;
@@ -2740,7 +2744,8 @@ HRESULT WINAPI OleSetAutoConvert(REFCLSID clsidOld, REFCLSID clsidNew)
     res = COM_OpenKeyForCLSID(clsidOld, NULL, KEY_READ | KEY_WRITE, &hkey);
     if (FAILED(res))
         goto done;
-    StringFromGUID2(clsidNew, szClsidNew, CHARS_IN_GUID);
+    int nResult = StringFromGUID2(clsidNew, szClsidNew, CHARS_IN_GUID);
+    UNREFERENCED_PARAMETER(nResult);
     if (RegSetValueW(hkey, wszAutoConvertTo, REG_SZ, szClsidNew, (lstrlenW(szClsidNew)+1) * sizeof(WCHAR)))
     {
         res = REGDB_E_WRITEREGDB;

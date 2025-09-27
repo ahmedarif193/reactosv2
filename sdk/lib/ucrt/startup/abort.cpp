@@ -109,6 +109,6 @@ extern "C" void __cdecl abort()
 extern "C" unsigned int __cdecl _set_abort_behavior(unsigned int flags, unsigned int mask)
 {
     unsigned int oldflags = __abort_behavior;
-    __abort_behavior = oldflags & (~mask) | flags & mask;
+    __abort_behavior = (oldflags & (~mask)) | (flags & mask);
     return oldflags;
 }

@@ -216,7 +216,7 @@ static size_t __cdecl _wcstombs_l_helper(
 
                     /* enforce this for prefast */
                     if (retval < 0 ||
-                        retval > _countof(buffer))
+                        static_cast<size_t>(retval) > _countof(buffer))
                     {
                         ptd.get_errno().set(EILSEQ);
                         return (size_t)-1;

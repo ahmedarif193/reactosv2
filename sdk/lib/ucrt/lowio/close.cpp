@@ -28,8 +28,8 @@ static DWORD close_os_handle_nolock(int const fh) throw()
     // provided.  Other handles may be mapped to the same OS file handle only
     // at the programmer's risk.
     bool is_other_std_handle_open =
-        fh == 1 && (_osfile(2) & FOPEN) ||
-        fh == 2 && (_osfile(1) & FOPEN);
+        (fh == 1 && (_osfile(2) & FOPEN)) ||
+        (fh == 2 && (_osfile(1) & FOPEN));
 
     if (is_other_std_handle_open && _get_osfhandle(1) == _get_osfhandle(2))
     {

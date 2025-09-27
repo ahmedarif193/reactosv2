@@ -183,7 +183,7 @@ static write_result __cdecl write_double_translated_ansi_nolock(
                     {
                         wc_used = 2;
                     }
-                    if (__crt_mbstring::__mbsrtowcs_utf8(wc, &str, wc_used, &state, ptd) == -1)
+                    if (__crt_mbstring::__mbsrtowcs_utf8(wc, &str, wc_used, &state, ptd) == static_cast<size_t>(-1))
                     {
                         return result;
                     }
@@ -216,7 +216,7 @@ static write_result __cdecl write_double_translated_ansi_nolock(
                     {
                         wc_used = 2;
                     }
-                    if (__crt_mbstring::__mbsrtowcs_utf8(wc, &str, wc_used, &state, ptd) == -1)
+                    if (__crt_mbstring::__mbsrtowcs_utf8(wc, &str, wc_used, &state, ptd) == static_cast<size_t>(-1))
                     {
                         return result;
                     }

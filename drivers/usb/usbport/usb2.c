@@ -1903,6 +1903,7 @@ USBPORT_AllocateBandwidthUSB2(IN PDEVICE_OBJECT FdoDevice,
                 DbgBreakPoint();
 
                 Tt = &TtExtension->Tt;
+                Period = EndpointProperties->Period;
                 break;
             }
         }

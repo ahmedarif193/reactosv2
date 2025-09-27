@@ -276,7 +276,7 @@ static void _tryLoadProvider(PCWSTR provider)
 static void _restoreSavedConnection(HKEY connection, WCHAR * local)
 {
     NETRESOURCEW net;
-    DWORD type, prov, index, size;
+    DWORD type, prov, index, size, ret;
 
     net.lpProvider = NULL;
     net.lpRemoteName = NULL;
@@ -342,7 +342,8 @@ static void _restoreSavedConnection(HKEY connection, WCHAR * local)
 
     TRACE("Attempting connection\n");
 
-    WNetAddConnection2W(&net, NULL, NULL, 0);
+    ret = WNetAddConnection2W(&net, NULL, NULL, 0);
+    UNREFERENCED_PARAMETER(ret);
 
 cleanup:
     HeapFree(GetProcessHeap(), 0, net.lpProvider);
@@ -2847,7 +2848,7 @@ DWORD WINAPI WNetClearConnections ( HWND owner )
     resources = HeapAlloc(GetProcessHeap(), 0, size);
     if (!resources)
     {
-        WNetCloseEnum(connected);
+        ret = WNetCloseEnum(connected);
         return WN_OUT_OF_MEMORY;
     }
 
@@ -2867,7 +2868,7 @@ DWORD WINAPI WNetClearConnections ( HWND owner )
                 else
                     connection = iter->lpRemoteName;
 
-                WNetCancelConnection2W(connection, 0, TRUE);
+                ret = WNetCancelConnection2W(connection, 0, TRUE);
             }
         }
         else
@@ -2875,7 +2876,7 @@ DWORD WINAPI WNetClearConnections ( HWND owner )
     }
 
     HeapFree(GetProcessHeap(), 0, resources);
-    WNetCloseEnum(connected);
+    ret = WNetCloseEnum(connected);
 
     return ret;
 }

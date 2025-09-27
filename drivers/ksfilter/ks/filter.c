@@ -862,9 +862,12 @@ KspHandleDataIntersection(
     {
         UNICODE_STRING MajorFormat, SubFormat, Specifier;
         /* convert the guid to string */
-        RtlStringFromGUID(&DataRange->MajorFormat, &MajorFormat);
-        RtlStringFromGUID(&DataRange->SubFormat, &SubFormat);
-        RtlStringFromGUID(&DataRange->Specifier, &Specifier);
+        NTSTATUS ConvertStatus1 = RtlStringFromGUID(&DataRange->MajorFormat, &MajorFormat);
+        UNREFERENCED_PARAMETER(ConvertStatus1);
+        NTSTATUS ConvertStatus2 = RtlStringFromGUID(&DataRange->SubFormat, &SubFormat);
+        UNREFERENCED_PARAMETER(ConvertStatus2);
+        NTSTATUS ConvertStatus3 = RtlStringFromGUID(&DataRange->Specifier, &Specifier);
+        UNREFERENCED_PARAMETER(ConvertStatus3);
 
         DPRINT("KspHandleDataIntersection Index %lu PinId %lu MajorFormat %S SubFormat %S Specifier %S FormatSize %lu SampleSize %lu Align %lu Flags %lx Reserved %lx DataLength %lu\n", Index, Pin->PinId, MajorFormat.Buffer, SubFormat.Buffer, Specifier.Buffer,
                DataRange->FormatSize, DataRange->SampleSize, DataRange->Alignment, DataRange->Flags, DataRange->Reserved, DataLength);
@@ -1123,7 +1126,8 @@ IKsFilter_DispatchDeviceIoControl(
         }
     }
 
-    RtlStringFromGUID(&Property->Set, &GuidString);
+    NTSTATUS ConvertStatus4 = RtlStringFromGUID(&Property->Set, &GuidString);
+    UNREFERENCED_PARAMETER(ConvertStatus4);
     DPRINT("IKsFilter_DispatchDeviceIoControl property PinCount %x\n", FilterInstance->Descriptor->PinDescriptorsCount);
     DPRINT("IKsFilter_DispatchDeviceIoControl property Set |%S| Id %u Flags %x Status %lx ResultLength %lu\n", GuidString.Buffer, Property->Id, Property->Flags, Status, Irp->IoStatus.Information);
     RtlFreeUnicodeString(&GuidString);

@@ -73,10 +73,10 @@ HENHMETAFILE
 WINAPI
 GdiCreateLocalEnhMetaFile(HANDLE hmo)
 {
-    HENHMETAFILE hEMF;
+    HENHMETAFILE hEMF = NULL;
     BYTE *       Buffer = NULL;
     UINT         nSize;
-    DWORD        iType, mm, xExt, yExt;
+    DWORD        iType = 0, mm = 0, xExt = 0, yExt = 0;
 
     nSize = NtGdiGetServerMetaFileBits( hmo, 0, NULL, NULL, NULL, NULL, NULL);
     if (nSize == 0)

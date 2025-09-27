@@ -294,7 +294,7 @@ __forceinline static __acrt_has_trailing_digits __cdecl convert_to_fos_high_prec
             mantissa_it[i] = d;
         }
 
-        mantissa_it += __min(digits_per_iteration, mantissa_last - mantissa_it);
+        mantissa_it += __min(digits_per_iteration, static_cast<uint32_t>(mantissa_last - mantissa_it));
     }
 
     *mantissa_it = '\0';
@@ -350,6 +350,7 @@ extern "C" __acrt_has_trailing_digits __cdecl __acrt_fltout(
 
     switch (classification)
     {
+    case __acrt_fp_class::finite:        break; // Continue with normal processing
     case __acrt_fp_class::infinity:      _ERRCHECK(strcpy_s(result, result_count, "1#INF" )); return __acrt_has_trailing_digits::trailing;
     case __acrt_fp_class::quiet_nan:     _ERRCHECK(strcpy_s(result, result_count, "1#QNAN")); return __acrt_has_trailing_digits::no_trailing;
     case __acrt_fp_class::signaling_nan: _ERRCHECK(strcpy_s(result, result_count, "1#SNAN")); return __acrt_has_trailing_digits::no_trailing;

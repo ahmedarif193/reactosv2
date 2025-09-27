@@ -159,7 +159,8 @@ static void rpn_mod_f(calc_number_t *r, calc_number_t *a, calc_number_t *b)
     if (b->f == 0)
         calc.is_nan = TRUE;
     else {
-        modf(a->f/b->f, &t);
+        double fracPart = modf(a->f/b->f, &t);
+        UNREFERENCED_PARAMETER(fracPart);
         r->f = a->f - (t * b->f);
     }
 }
@@ -198,7 +199,8 @@ static void rpn_shl_f(calc_number_t *r, calc_number_t *a, calc_number_t *b)
 {
     calc_number_t n;
 
-    modf(b->f, &n.f);
+    double fracPart = modf(b->f, &n.f);
+    UNREFERENCED_PARAMETER(fracPart);
 
     r->f = a->f * pow(2., n.f);
 }
@@ -207,7 +209,8 @@ static void rpn_shr_f(calc_number_t *r, calc_number_t *a, calc_number_t *b)
 {
     calc_number_t n;
 
-    modf(b->f, &n.f);
+    double fracPart = modf(b->f, &n.f);
+    UNREFERENCED_PARAMETER(fracPart);
 
     r->f = a->f / pow(2., n.f);
 }

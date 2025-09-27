@@ -854,10 +854,11 @@ CsrCreateLocalSystemSD(OUT PSECURITY_DESCRIPTOR *LocalSystemSd)
     NTSTATUS Status;
 
     /* Initialize the System SID */
-    RtlAllocateAndInitializeSid(&NtSidAuthority, 1,
+    NTSTATUS AllocStatus = RtlAllocateAndInitializeSid(&NtSidAuthority, 1,
                                 SECURITY_LOCAL_SYSTEM_RID,
                                 0, 0, 0, 0, 0, 0, 0,
                                 &SystemSid);
+    UNREFERENCED_PARAMETER(AllocStatus);
 
     /* Get the length of the SID */
     Length = RtlLengthSid(SystemSid) + sizeof(ACL) + sizeof(ACCESS_ALLOWED_ACE);

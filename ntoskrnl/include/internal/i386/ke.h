@@ -224,12 +224,26 @@ typedef union _KTRAP_EXIT_SKIP_BITS
  */
 extern const PULONG KiNtVdmState;
 static inline void KiVdmSetVdmEFlags(ULONG x) {
-    volatile PLONG ptr = (PLONG)KiNtVdmState;
-    InterlockedOr(ptr, (x));
+    volatile LONG *ptr = (volatile LONG *)(ULONG_PTR)KiNtVdmState;
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+#endif
+    InterlockedOr(ptr, (LONG)x);
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 }
 static inline void KiVdmClearVdmEFlags(ULONG x) {
-    volatile PLONG ptr = (PLONG)KiNtVdmState;
-    InterlockedAnd(ptr, ~(x));
+    volatile LONG *ptr = (volatile LONG *)(ULONG_PTR)KiNtVdmState;
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+#endif
+    InterlockedAnd(ptr, ~(LONG)x);
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 }
 #else
 #define KiVdmSetVdmEFlags(x)        InterlockedOr((PLONG)KiNtVdmState, (x));
@@ -926,7 +940,6 @@ KiSwitchToBootStack(IN ULONG_PTR InitialStack)
           "i"(NPX_FRAME_LENGTH + KTRAP_FRAME_ALIGN + KTRAP_FRAME_LENGTH),
           "i"(CR0_EM | CR0_TS | CR0_MP),
           "p"(KiSystemStartupBootStack)
-        : "%esp"
     );
 #elif defined(_MSC_VER)
     __asm

@@ -110,7 +110,7 @@ static wint_t __cdecl ungetwc_binary_mode_nolock(wint_t const c, __crt_stdio_str
         if (stream->_cnt)
             return WEOF;
 
-        if (sizeof(wchar_t) > stream->_bufsiz)
+        if (sizeof(wchar_t) > static_cast<size_t>(stream->_bufsiz))
             return WEOF;
 
         stream->_ptr = sizeof(wchar_t) + stream->_base;

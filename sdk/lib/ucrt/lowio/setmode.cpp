@@ -81,7 +81,9 @@ extern "C" int __cdecl _setmode_nolock(int const fh, int const mode)
     }
 
     if (old_mode == 0)
+    {
         return _O_BINARY;
+    }
 
 	if (old_textmode == __crt_lowio_text_mode::ansi)
 	{

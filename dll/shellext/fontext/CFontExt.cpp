@@ -67,12 +67,14 @@ WCHAR* g2s(REFCLSID iid)
         CoTaskMemFree(tmp);
         return buf[idx];
     }
-    StringFromGUID2(iid, buf[idx], _countof(buf[idx]));
+    INT result = StringFromGUID2(iid, buf[idx], _countof(buf[idx]));
+    UNREFERENCED_PARAMETER(result);
     if (GetInterfaceName(buf[idx], buf[idx], _countof(buf[idx])))
     {
         return buf[idx];
     }
-    StringFromGUID2(iid, buf[idx], _countof(buf[idx]));
+    result = StringFromGUID2(iid, buf[idx], _countof(buf[idx]));
+    UNREFERENCED_PARAMETER(result);
 
     return buf[idx];
 }

@@ -1456,7 +1456,8 @@ static FILE *REGPROC_open_export_file(WCHAR *file_name, BOOL unicode)
     if (!lstrcmpW(file_name, L"-"))
     {
         file = stdout;
-        _setmode(_fileno(file), _O_BINARY);
+        int oldmode = _setmode(_fileno(file), _O_BINARY);
+        (void)oldmode;
     }
     else
     {

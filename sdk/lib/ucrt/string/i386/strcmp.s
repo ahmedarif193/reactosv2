@@ -66,8 +66,8 @@ page
 
         public  _strcmp
 .PROC _strcmp
-        // str1:ptr byte, \
-        // str2:ptr byte
+        # str1:ptr byte
+        # str2:ptr byte
 
         //OPTION PROLOGUE:NONE, EPILOGUE:NONE
 

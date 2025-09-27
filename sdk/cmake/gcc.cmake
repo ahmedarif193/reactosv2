@@ -177,7 +177,7 @@ if((NOT CMAKE_BUILD_TYPE STREQUAL "Release") AND (NOT CMAKE_BUILD_TYPE STREQUAL 
     add_compile_options(-Werror)
 endif()
 
-add_compile_options(-Wall -Wpointer-arith)
+add_compile_options(-Wall -Wpointer-arith -Werror=maybe-uninitialized)
 
 # Disable some overzealous warnings
 add_compile_options(
@@ -186,9 +186,6 @@ add_compile_options(
     -Wno-unused-value
     -Wno-unused-const-variable
     -Wno-unused-local-typedefs
-    -Wno-deprecated
-    -Wno-unused-result # FIXME To be removed when CORE-17637 is resolved
-    -Wno-maybe-uninitialized
 )
 
 if(ARCH STREQUAL "amd64" OR ARCH STREQUAL "i386")
@@ -242,7 +239,7 @@ elseif(ARCH STREQUAL "amd64" OR ARCH STREQUAL "i386")
     if (CMAKE_C_COMPILER_ID STREQUAL "GNU")
         add_compile_options(-mpreferred-stack-boundary=4)
     endif()
-    add_compile_options(-Wno-error)
+    # add_compile_options(-Wno-error)  # Commented out to treat warnings as errors
 endif()
 
 # Other

@@ -84,7 +84,8 @@ ConioProcessKey(PCONSRV_CONSOLE Console, MSG* msg)
     Down = msg->message == WM_KEYDOWN || msg->message == WM_CHAR ||
            msg->message == WM_SYSKEYDOWN || msg->message == WM_SYSCHAR;
 
-    GetKeyboardState(KeyState);
+    if (!GetKeyboardState(KeyState))
+        return;
     ShiftState = ConioGetShiftState(KeyState, msg->lParam);
 
     if (msg->message == WM_CHAR || msg->message == WM_SYSCHAR)

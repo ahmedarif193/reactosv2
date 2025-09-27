@@ -158,7 +158,7 @@ static void OverrideFileContent(HGLOBAL& hMem, DWORD& Size)
             for (UINT i = 0; i < count; ++i)
             {
                 BOOL valid = FALSE;
-                IMAGESTATS info;
+                IMAGESTATS info = {0};
                 const BYTE* data = buffer + entries[i].offset;
                 if (IsPngSignature(data, entries[i].size))
                     valid = GetInfoFromPng(data, entries[i].size, info);
@@ -189,7 +189,7 @@ static void OverrideFileContent(HGLOBAL& hMem, DWORD& Size)
                         const BYTE* data = buffer + entries[i].offset;
                         if (IsPngSignature(data, entries[i].size))
                         {
-                            IMAGESTATS info;
+                            IMAGESTATS info = {0};
                             if (!GetInfoFromPng(data, entries[i].size, info))
                                 continue;
                             bih.biPlanes = 1;

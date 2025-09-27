@@ -3806,7 +3806,10 @@ static HRESULT DP_SetSessionDesc( IDirectPlayImpl *This, const DPSESSIONDESC2 *l
   if( bInitial )
   {
     /*Initializing session GUID*/
-    CoCreateGuid( &(This->dp2->lpSessionDesc->guidInstance) );
+    if (CoCreateGuid( &(This->dp2->lpSessionDesc->guidInstance) ) != S_OK)
+    {
+      /* Ignore GUID creation failure - GUID will be zeroed */
+    }
   }
   /* If this is an external invocation of the interface, we should be
    * letting everyone know that things have changed. Otherwise this is
@@ -4333,7 +4336,10 @@ static HRESULT WINAPI IDirectPlay4AImpl_EnumConnections( IDirectPlay4A *iface,
 
       /* FIXME: Check return types to ensure we're interpreting data right */
       MultiByteToWideChar( CP_ACP, 0, returnBuffer, -1, buff, ARRAY_SIZE( buff ));
-      CLSIDFromString( buff, &serviceProviderGUID );
+      if (CLSIDFromString( buff, &serviceProviderGUID ) != S_OK)
+      {
+        /* Ignore invalid GUID - enumeration will continue with default GUID */
+      }
       /* FIXME: Have I got a memory leak on the serviceProviderGUID? */
 
       /* Fill in the DPNAME struct for the service provider */
@@ -4431,7 +4437,10 @@ static HRESULT WINAPI IDirectPlay4AImpl_EnumConnections( IDirectPlay4A *iface,
 
       /* FIXME: Check return types to ensure we're interpreting data right */
       MultiByteToWideChar( CP_ACP, 0, returnBuffer, -1, buff, ARRAY_SIZE( buff ));
-      CLSIDFromString( buff, &serviceProviderGUID );
+      if (CLSIDFromString( buff, &serviceProviderGUID ) != S_OK)
+      {
+        /* Ignore invalid GUID - enumeration will continue with default GUID */
+      }
       /* FIXME: Have I got a memory leak on the serviceProviderGUID? */
 
       /* Fill in the DPNAME struct for the service provider */
@@ -4680,7 +4689,10 @@ static HMODULE DP_LoadSP( LPCGUID lpcGuid, LPSPINITDATA lpSpData, LPBOOL lpbIsDp
 
       /* FIXME: Check return types to ensure we're interpreting data right */
       MultiByteToWideChar( CP_ACP, 0, returnBuffer, -1, buff, ARRAY_SIZE( buff ));
-      CLSIDFromString( buff, &serviceProviderGUID );
+      if (CLSIDFromString( buff, &serviceProviderGUID ) != S_OK)
+      {
+        /* Ignore invalid GUID - enumeration will continue with default GUID */
+      }
       /* FIXME: Have I got a memory leak on the serviceProviderGUID? */
 
       /* Determine if this is the Service Provider that the user asked for */
@@ -5865,7 +5877,10 @@ static HRESULT DirectPlayEnumerateAW(LPDPENUMDPCALLBACKA lpEnumCallbackA,
 	    ERR(": invalid format for the GUID registry data member for service provider %s (%s).\n", debugstr_w(subKeyName), debugstr_w(guidKeyContent));
 	    continue;
 	}
-	CLSIDFromString(guidKeyContent, &guid_cache[dwIndex]);
+	if (CLSIDFromString(guidKeyContent, &guid_cache[dwIndex]) != S_OK)
+	{
+	  /* Ignore invalid GUID - cache will use default GUID */
+	}
 	
 	/* The enumeration will return FALSE if we are not to continue.
 	 *

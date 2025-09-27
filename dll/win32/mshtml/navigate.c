@@ -1309,47 +1309,57 @@ static void handle_navigation_error(nsChannelBSC *This, DWORD result)
     if(!sa)
         return;
 
+    HRESULT hr;
+
     ind = 0;
     V_VT(&var) = VT_I4;
     V_I4(&var) = result;
-    SafeArrayPutElement(sa, &ind, &var);
+    hr = SafeArrayPutElement(sa, &ind, &var);
+    UNREFERENCED_PARAMETER(hr);
 
     ind = 1;
     V_VT(&var) = VT_BSTR;
     V_BSTR(&var) = outer_window->url;
-    SafeArrayPutElement(sa, &ind, &var);
+    hr = SafeArrayPutElement(sa, &ind, &var);
+    UNREFERENCED_PARAMETER(hr);
 
     ind = 3;
     V_VT(&var) = VT_UNKNOWN;
     V_UNKNOWN(&var) = (IUnknown*)&outer_window->base.IHTMLWindow2_iface;
-    SafeArrayPutElement(sa, &ind, &var);
+    hr = SafeArrayPutElement(sa, &ind, &var);
+    UNREFERENCED_PARAMETER(hr);
 
     /* FIXME: what are the following fields for? */
     ind = 2;
     V_VT(&var) = VT_UNKNOWN;
     V_UNKNOWN(&var) = NULL;
-    SafeArrayPutElement(sa, &ind, &var);
+    hr = SafeArrayPutElement(sa, &ind, &var);
+    UNREFERENCED_PARAMETER(hr);
 
     ind = 4;
     V_VT(&var) = VT_BOOL;
     V_BOOL(&var) = FALSE;
-    SafeArrayPutElement(sa, &ind, &var);
+    hr = SafeArrayPutElement(sa, &ind, &var);
+    UNREFERENCED_PARAMETER(hr);
 
     ind = 5;
     V_VT(&var) = VT_BOOL;
     V_BOOL(&var) = FALSE;
-    SafeArrayPutElement(sa, &ind, &var);
+    hr = SafeArrayPutElement(sa, &ind, &var);
+    UNREFERENCED_PARAMETER(hr);
 
     ind = 6;
     V_VT(&var) = VT_BSTR;
     unk = SysAllocString(NULL);
     V_BSTR(&var) = unk;
-    SafeArrayPutElement(sa, &ind, &var);
+    hr = SafeArrayPutElement(sa, &ind, &var);
+    UNREFERENCED_PARAMETER(hr);
 
     ind = 7;
     V_VT(&var) = VT_UNKNOWN;
     V_UNKNOWN(&var) = NULL;
-    SafeArrayPutElement(sa, &ind, &var);
+    hr = SafeArrayPutElement(sa, &ind, &var);
+    UNREFERENCED_PARAMETER(hr);
 
     V_VT(&var) = VT_ARRAY;
     V_ARRAY(&var) = sa;

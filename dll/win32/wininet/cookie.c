@@ -359,8 +359,13 @@ static BOOL load_persistent_cookie(substr_t domain, substr_t path)
         pbeg = strchr(pend+1, '\n');
         if(!pbeg)
             break;
-        sscanf(pbeg, "%u %u %u %u %u", &flags, &expiry.dwLowDateTime, &expiry.dwHighDateTime,
-                &create.dwLowDateTime, &create.dwHighDateTime);
+        int scanned = sscanf(pbeg, "%u %u %u %u %u", &flags, &expiry.dwLowDateTime, &expiry.dwHighDateTime,
+                             &create.dwLowDateTime, &create.dwHighDateTime);
+        if (scanned != 5)
+        {
+            /* Invalid format, skip this cookie */
+            continue;
+        }
 
         /* skip "*\n" */
         pbeg = strchr(pbeg, '*');

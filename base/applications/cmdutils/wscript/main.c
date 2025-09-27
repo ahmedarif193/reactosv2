@@ -832,7 +832,10 @@ int WINAPI wWinMain(HINSTANCE hInst, HINSTANCE hPrevInst, LPWSTR cmdline, int cm
         return 1;
     }
 
-    CoInitialize(NULL);
+    if (FAILED(CoInitialize(NULL))) {
+        WINE_ERR("Could not initialize COM\n");
+        return 1;
+    }
 
     if(!create_engine(&clsid, &script, &parser)) {
         WINE_FIXME("Could not create script engine\n");

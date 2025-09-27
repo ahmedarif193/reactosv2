@@ -80,7 +80,8 @@ class CRecyclerDropTarget :
         static DWORD WINAPI _DoDeleteThreadProc(LPVOID lpParameter)
         {
             DeleteThreadData *data = static_cast<DeleteThreadData*>(lpParameter);
-            CoInitialize(NULL);
+            HRESULT hrInit = CoInitialize(NULL);
+            UNREFERENCED_PARAMETER(hrInit);
             IDataObject *pDataObject;
             HRESULT hr = CoGetInterfaceAndReleaseStream (data->s, IID_PPV_ARG(IDataObject, &pDataObject));
             if (SUCCEEDED(hr))
@@ -97,7 +98,12 @@ class CRecyclerDropTarget :
         {
             DeleteThreadData *data = static_cast<DeleteThreadData*>(HeapAlloc(GetProcessHeap(), 0, sizeof(DeleteThreadData)));
             data->fMask = fMask;
-            CoMarshalInterThreadInterfaceInStream(IID_IDataObject, pda, &data->s);
+            HRESULT hrMarshal = CoMarshalInterThreadInterfaceInStream(IID_IDataObject, pda, &data->s);
+            if (FAILED(hrMarshal))
+            {
+                HeapFree(GetProcessHeap(), 0, data);
+                return;
+            }
             SHCreateThread(_DoDeleteThreadProc, data, NULL, NULL);
         }
 

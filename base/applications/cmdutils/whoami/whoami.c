@@ -198,9 +198,9 @@ void WhoamiSetTableDyn(WhoamiTable *pTable, WCHAR *Entry, UINT Row, UINT Col)
 /* print and deallocate the table */
 void WhoamiPrintTable(WhoamiTable *pTable)
 {
-    UINT i, j;
+    UINT i = 0, j;
     UINT CurRow, CurCol;
-    UINT *ColLength;
+    UINT *ColLength = NULL;
 
 
     if (!pTable)

@@ -2519,7 +2519,7 @@ static HRESULT WINAPI DataCache_EnumCache(IOleCache2 *iface,
     DataCacheEntry *cache_entry;
     int i = 0, count = 0;
     STATDATA *data;
-    HRESULT hr;
+    HRESULT hr = E_FAIL;
 
     TRACE( "(%p, %p)\n", This, enum_stat );
 

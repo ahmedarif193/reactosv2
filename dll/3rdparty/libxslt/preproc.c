@@ -1476,7 +1476,8 @@ xsltNumberComp(xsltStylesheetPtr style, xmlNodePtr cur) {
 
     prop = xsltGetCNsProp(style, cur, (const xmlChar *)"grouping-size", XSLT_NAMESPACE);
     if (prop != NULL) {
-	sscanf((char *)prop, "%d", &comp->numdata.digitsPerGroup);
+	int scanResult = sscanf((char *)prop, "%d", &comp->numdata.digitsPerGroup);
+	(void)scanResult;
     } else {
 	comp->numdata.groupingCharacter = 0;
     }

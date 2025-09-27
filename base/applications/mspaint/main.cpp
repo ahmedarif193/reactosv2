@@ -212,7 +212,8 @@ BOOL CMainWindow::GetOpenFileName(IN OUT LPWSTR pszFile, INT cchMaxFile)
     {
         // The "All Files" item text
         CStringW strAllPictureFiles;
-        strAllPictureFiles.LoadString(g_hinstExe, IDS_ALLPICTUREFILES);
+        BOOL bLoadResult = strAllPictureFiles.LoadString(g_hinstExe, IDS_ALLPICTUREFILES);
+        UNREFERENCED_PARAMETER(bLoadResult);
 
         // Get the import filter
         CSimpleArray<GUID> aguidFileTypesI;

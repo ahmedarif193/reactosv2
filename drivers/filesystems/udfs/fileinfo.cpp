@@ -128,7 +128,7 @@ UDFCommonFileInfo(
     BOOLEAN                 PagingIoResourceAcquired = FALSE;
     PVOID                   PtrSystemBuffer = NULL;
     LONG                    BufferLength = 0;
-    FILE_INFORMATION_CLASS  FunctionalityRequested;
+    FILE_INFORMATION_CLASS  FunctionalityRequested = FileBasicInformation;
     BOOLEAN                 CanWait = FALSE;
     BOOLEAN                 PostRequest = FALSE;
     BOOLEAN                 AcquiredVcb = FALSE;

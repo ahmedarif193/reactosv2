@@ -857,9 +857,10 @@ SmpTranslateSystemPartitionInformation(VOID)
     RtlInitEmptyUnicodeString(&SystemPartition,
                               (PWCHAR)PartialInfo->Data,
                               PartialInfo->DataLength);
-    RtlStringCbLengthW(SystemPartition.Buffer,
-                       SystemPartition.MaximumLength,
-                       &StrLength);
+    HRESULT hr = RtlStringCbLengthW(SystemPartition.Buffer,
+                                    SystemPartition.MaximumLength,
+                                    &StrLength);
+    UNREFERENCED_PARAMETER(hr);
     SystemPartition.Length = (USHORT)StrLength;
 
     /* Enumerate the directory looking for the symbolic link string */
@@ -1877,9 +1878,10 @@ SmpCreateDynamicEnvironmentVariables(VOID)
                               (PWCHAR)PartialInfo->Data,
                               sizeof(ValueBuffer) -
                                 FIELD_OFFSET(KEY_VALUE_PARTIAL_INFORMATION, Data));
-    RtlStringCbLengthW(DestinationString.Buffer,
-                       PartialInfo->DataLength,
-                       &StrLength);
+    HRESULT hr = RtlStringCbLengthW(DestinationString.Buffer,
+                                    PartialInfo->DataLength,
+                                    &StrLength);
+    UNREFERENCED_PARAMETER(hr);
     DestinationString.Length = (USHORT)StrLength;
 
     /* As well as the vendor... */

@@ -34,7 +34,7 @@ extern "C" __crt_lowio_handle_data* __cdecl __acrt_lowio_create_handle_array()
         it->unicode            = false;
         it->utf8translations   = false;
         it->dbcsBufferUsed     = false;
-        for (int i = 0; i < sizeof(it->mbBuffer); ++i)
+        for (int i = 0; i < static_cast<int>(sizeof(it->mbBuffer)); ++i)
         {
             it->mbBuffer[i] = '\0';
         }

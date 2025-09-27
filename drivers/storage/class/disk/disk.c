@@ -253,9 +253,10 @@ Return Value:
     classQueryWmiRegInfoExList.Size = sizeof(CLASS_QUERY_WMI_REGINFO_EX_LIST);
     classQueryWmiRegInfoExList.ClassFdoQueryWmiRegInfoEx = DiskFdoQueryWmiRegInfoEx;
 
-    (VOID)ClassInitializeEx(DriverObject,
-                            &guidQueryRegInfoEx,
-                            &classQueryWmiRegInfoExList);
+    ULONG result = ClassInitializeEx(DriverObject,
+                                     &guidQueryRegInfoEx,
+                                     &classQueryWmiRegInfoExList);
+    UNREFERENCED_PARAMETER(result);
 
     //
     // Call class init Ex routine to register SRB support

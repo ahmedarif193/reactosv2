@@ -545,7 +545,8 @@ Done:
         //
         // We want to propagate the original error code
         //
-        (void) pDevice->DeleteDeviceFromFailedCreate(status, FALSE);
+        NTSTATUS deleteStatus = pDevice->DeleteDeviceFromFailedCreate(status, FALSE);
+        UNREFERENCED_PARAMETER(deleteStatus);
         pDevice = NULL;
     }
 
@@ -1189,8 +1190,9 @@ Return Value:
             //
             // Cleanup the device and then let the super class delete the object.
             //
-            (void) DeleteDeviceFromFailedCreateNoDelete(
+            NTSTATUS deleteStatus = DeleteDeviceFromFailedCreateNoDelete(
                 STATUS_UNSUCCESSFUL, TRUE);
+            UNREFERENCED_PARAMETER(deleteStatus);
         }
     }
     else if (IsLegacy() && m_PkgGeneral != NULL && m_DeviceObject.GetObject() != NULL) {
@@ -1623,7 +1625,8 @@ FxDevice::InstallPackage(
     //       an existing reference count model.
     //
     Package->AddRef();
-    Package->AssignParentObject(this);
+    NTSTATUS assignStatus = Package->AssignParentObject(this);
+    UNREFERENCED_PARAMETER(assignStatus);
 }
 
 PVOID

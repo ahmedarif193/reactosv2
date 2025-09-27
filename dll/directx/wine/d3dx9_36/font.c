@@ -531,7 +531,8 @@ static void word_break(HDC hdc, const WCHAR *str, unsigned int *str_len,
     memset(&sa, 0, sizeof(sa));
     sa.eScript = SCRIPT_UNDEFINED;
 
-    ScriptBreak(str, *str_len, &sa, sla);
+    HRESULT hr = ScriptBreak(str, *str_len, &sa, sla);
+    UNREFERENCED_PARAMETER(hr);
 
     /* Work back from the last character that did fit to a place where we can break */
     i = chars_fit;

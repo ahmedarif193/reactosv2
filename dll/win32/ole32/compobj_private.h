@@ -292,7 +292,10 @@ static inline GUID COM_CurrentCausalityId(void)
     if (!info)
         return GUID_NULL;
     if (IsEqualGUID(&info->causality_id, &GUID_NULL))
-        CoCreateGuid(&info->causality_id);
+    {
+        HRESULT hr = CoCreateGuid(&info->causality_id);
+        UNREFERENCED_PARAMETER(hr);
+    }
     return info->causality_id;
 }
 

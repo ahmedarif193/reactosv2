@@ -48,7 +48,7 @@ INT WINAPI IdnToNameprepUnicode(DWORD dwFlags, LPCWSTR lpUnicodeCharStr, INT cch
     extern const WCHAR nameprep_mapping[];
     const WCHAR *ptr;
     WORD flags;
-    WCHAR buf[64], *map_str, norm_str[64], ch;
+    WCHAR buf[64], *map_str, norm_str[64], ch = 0;
     DWORD i, map_len, norm_len, mask, label_start, label_end, out = 0;
     BOOL have_bidi_ral, prohibit_bidi_ral, ascii_only;
 

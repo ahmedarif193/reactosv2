@@ -2426,8 +2426,13 @@ static HRESULT _SHGetUserProfilePath(HANDLE hToken, DWORD dwFlags, BYTE folder,
         szValueName = CSIDL_Data[folder].szValueName;
         if (!szValueName)
         {
-            StringFromGUID2( CSIDL_Data[folder].id, buffer, 39 );
-            szValueName = &buffer[0];
+            if (StringFromGUID2( CSIDL_Data[folder].id, buffer, 39 ) > 0)
+                szValueName = &buffer[0];
+            else
+            {
+                hr = E_FAIL;
+                goto error;
+            }
         }
 
 #ifndef __REACTOS__
@@ -3029,7 +3034,8 @@ static HRESULT _SHRegisterFolders(HKEY hRootKey, HANDLE hToken,
         if (!szValueName && CSIDL_Data[folders[i]].type == CSIDL_Type_User)
 #endif
         {
-            StringFromGUID2( CSIDL_Data[folders[i]].id, buffer, 39 );
+            int result = StringFromGUID2( CSIDL_Data[folders[i]].id, buffer, 39 );
+            UNREFERENCED_PARAMETER(result);
             szValueName = &buffer[0];
         }
 
@@ -3240,7 +3246,8 @@ HRESULT SHGetFolderLocationHelper(HWND hwnd, int nFolder, REFCLSID clsid, LPITEM
     {
         WCHAR clsidstr[2 + 38 + 1];
         clsidstr[0] = clsidstr[1] = L':';
-        StringFromGUID2(clsid, clsidstr + 2, 38 + 1);
+        int result = StringFromGUID2(clsid, clsidstr + 2, 38 + 1);
+        UNREFERENCED_PARAMETER(result);
         hr = IShellFolder_ParseDisplayName(psf, hwnd, NULL, clsidstr, NULL, &child, NULL);
         if (SUCCEEDED(hr))
             *ppidl = ILCombine(parent, child);

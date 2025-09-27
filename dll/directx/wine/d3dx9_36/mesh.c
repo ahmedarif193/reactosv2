@@ -5529,7 +5529,7 @@ static BOOL attempt_line_merge(struct outline *outline,
                                BOOL to_curve,
                                const struct cos_table *table)
 {
-    D3DXVECTOR2 curdir, lastdir;
+    D3DXVECTOR2 curdir = {0.0f, 0.0f}, lastdir = {0.0f, 0.0f};
     struct point2d *prevpt, *pt;
     BOOL ret = FALSE;
 

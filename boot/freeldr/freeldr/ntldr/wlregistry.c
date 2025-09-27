@@ -751,8 +751,7 @@ WinLdrAddDriverToList(
          * where we instead need to use the same (hive) allocator as the
          * one used by CmpAddDriverToList(), for interoperability purposes.
          */
-        RtlCreateUnicodeString(&GroupString, GroupName);
-        if (!GroupString.Buffer)
+        if (!RtlCreateUnicodeString(&GroupString, GroupName))
             goto Failure;
     }
     else

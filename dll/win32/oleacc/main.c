@@ -285,12 +285,14 @@ LRESULT WINAPI LresultFromObject( REFIID riid, WPARAM wParam, LPUNKNOWN pAcc )
 
     hr = IStream_Stat(stream, &stat, STATFLAG_NONAME);
     if(FAILED(hr)) {
-        CoReleaseMarshalData(stream);
+        HRESULT hrRelease = CoReleaseMarshalData(stream);
+        (void)hrRelease;
         IStream_Release(stream);
         return hr;
     }else if(stat.cbSize.u.HighPart) {
         FIXME("stream size to big\n");
-        CoReleaseMarshalData(stream);
+        HRESULT hrRelease = CoReleaseMarshalData(stream);
+        (void)hrRelease;
         IStream_Release(stream);
         return E_NOTIMPL;
     }
@@ -298,7 +300,8 @@ LRESULT WINAPI LresultFromObject( REFIID riid, WPARAM wParam, LPUNKNOWN pAcc )
     mapping = CreateFileMappingW(INVALID_HANDLE_VALUE, NULL, PAGE_READWRITE,
             stat.cbSize.u.HighPart, stat.cbSize.u.LowPart, NULL);
     if(!mapping) {
-        CoReleaseMarshalData(stream);
+        HRESULT hrRelease = CoReleaseMarshalData(stream);
+        (void)hrRelease;
         IStream_Release(stream);
         return hr;
     }
@@ -306,7 +309,8 @@ LRESULT WINAPI LresultFromObject( REFIID riid, WPARAM wParam, LPUNKNOWN pAcc )
     view = MapViewOfFile(mapping, FILE_MAP_WRITE, 0, 0, 0);
     if(!view) {
         CloseHandle(mapping);
-        CoReleaseMarshalData(stream);
+        HRESULT hrRelease = CoReleaseMarshalData(stream);
+        (void)hrRelease;
         IStream_Release(stream);
         return E_FAIL;
     }
@@ -317,7 +321,10 @@ LRESULT WINAPI LresultFromObject( REFIID riid, WPARAM wParam, LPUNKNOWN pAcc )
         CloseHandle(mapping);
         hr = IStream_Seek(stream, seek_zero, STREAM_SEEK_SET, NULL);
         if(SUCCEEDED(hr))
-            CoReleaseMarshalData(stream);
+        {
+            HRESULT hrRelease = CoReleaseMarshalData(stream);
+            (void)hrRelease;
+        }
         IStream_Release(stream);
         return hr;
 
@@ -331,7 +338,10 @@ LRESULT WINAPI LresultFromObject( REFIID riid, WPARAM wParam, LPUNKNOWN pAcc )
         CloseHandle(mapping);
         hr = IStream_Seek(stream, seek_zero, STREAM_SEEK_SET, NULL);
         if(SUCCEEDED(hr))
-            CoReleaseMarshalData(stream);
+        {
+            HRESULT hrRelease = CoReleaseMarshalData(stream);
+            (void)hrRelease;
+        }
         IStream_Release(stream);
         return E_FAIL;
     }

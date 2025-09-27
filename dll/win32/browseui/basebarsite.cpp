@@ -707,7 +707,7 @@ LRESULT CBaseBarSite::OnCustomDraw(LPNMCUSTOMDRAW pnmcd)
                 DWORD index;
                 UINT pad = GetSystemMetrics(SM_CXEDGE), leftpad = max(pad * 2, 4);
                 UINT btnw = 20, btnh = 18, btnarea = 1 + btnw + 1;
-                HFONT newFont, oldFont;
+                HFONT newFont, oldFont = NULL;
 
                 index = SendMessage(RB_IDTOINDEX, fCurrentActiveBar->fBandID , 0);
                 ZeroMemory(&info, sizeof(info));

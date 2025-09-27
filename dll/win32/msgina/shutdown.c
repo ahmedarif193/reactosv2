@@ -318,7 +318,7 @@ DrawIconOnOwnerDrawnButtons(
     BOOL bRet;
     HDC hdcMem;
     HBITMAP hbmOld;
-    int y;
+    int y = 0;
     RECT rect;
 
     hdcMem = CreateCompatibleDC(pdis->hDC);

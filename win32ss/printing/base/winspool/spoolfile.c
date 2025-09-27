@@ -11,7 +11,7 @@
 HANDLE WINAPI
 GetSpoolFileHandle( HANDLE hPrinter )
 {
-    DWORD dwErrorCode, cpid;
+    DWORD dwErrorCode = ERROR_SUCCESS, cpid;
     WINSPOOL_FILE_INFO_CONTAINER FileInfoContainer;
     WINSPOOL_FILE_INFO_1 wsplfi;
     PSPOOLER_HANDLE pHandle = (PSPOOLER_HANDLE)hPrinter;
@@ -118,7 +118,7 @@ CommitSpoolData( HANDLE hPrinter, HANDLE hSpoolFile, DWORD cbCommit )
 BOOL WINAPI
 CloseSpoolFileHandle( HANDLE hPrinter, HANDLE hSpoolFile )
 {
-    DWORD dwErrorCode;
+    DWORD dwErrorCode = ERROR_SUCCESS;
     PSPOOLER_HANDLE pHandle = (PSPOOLER_HANDLE)hPrinter;
 
     FIXME("CloseSpoolFileHandle(%p, %p)\n", hPrinter,hSpoolFile);

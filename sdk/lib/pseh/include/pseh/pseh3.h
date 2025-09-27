@@ -178,7 +178,7 @@ _SEH3$_RegisterTryLevelWithNonVolatiles(
 #else /* !__clang__ */
 
 /* This will make GCC use ebp, even if it was disabled by -fomit-frame-pointer */
-#define _SEH3$_EnforceFramePointer() asm volatile ("#\n" : : "m"(*(char*)__builtin_alloca(0)) : "%esp", "memory")
+#define _SEH3$_EnforceFramePointer() asm volatile ("#\n" : : "m"(*(char*)__builtin_alloca(0)) : "memory")
 
 #define _SEH3$_ASM_GOTO(...) asm goto ("#\n" : : : "memory" : __VA_ARGS__)
 
@@ -383,6 +383,7 @@ _Pragma("GCC diagnostic pop") \
 \
         /* Allocate a registration frame */ \
         volatile SEH3$_REGISTRATION_FRAME _SEH3$_AUTO_CLEANUP _SEH3$_TrylevelFrame; \
+        _SEH3$_TrylevelFrame.ExceptionCode = 0; /* Initialize to prevent compiler warning */ \
 \
         goto _SEH3$_l_BeforeTry; \
         { \

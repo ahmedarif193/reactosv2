@@ -668,7 +668,10 @@ static HRESULT WINAPI IEnumDMO_fnNext(
             }
         }
         wsprintfW(szGuidKey,szToGuidFmt,szNextKey);
-        CLSIDFromString(szGuidKey, &pCLSID[count]);
+        if (CLSIDFromString(szGuidKey, &pCLSID[count]) != S_OK)
+        {
+            /* Ignore error - CLSID will be zeroed on failure */
+        }
 
         TRACE("found match %s %s\n", debugstr_w(szValue), debugstr_w(szNextKey));
         RegCloseKey(hkey);
@@ -831,9 +834,15 @@ HRESULT read_types(HKEY root, LPCWSTR key, ULONG *supplied, ULONG requested, DMO
                   }
 
                   wsprintfW(szGuidKey,szToGuidFmt,szNextKey);
-                  CLSIDFromString(szGuidKey, &types[*supplied].type);
+                  if (CLSIDFromString(szGuidKey, &types[*supplied].type) != S_OK)
+                  {
+                      /* Ignore error - type GUID will be zeroed on failure */
+                  }
                   wsprintfW(szGuidKey,szToGuidFmt,szSubKey);
-                  CLSIDFromString(szGuidKey, &types[*supplied].subtype);
+                  if (CLSIDFromString(szGuidKey, &types[*supplied].subtype) != S_OK)
+                  {
+                      /* Ignore error - subtype GUID will be zeroed on failure */
+                  }
                   TRACE("Adding type %s subtype %s at index %i\n",
                     debugstr_guid(&types[*supplied].type),
                     debugstr_guid(&types[*supplied].subtype),

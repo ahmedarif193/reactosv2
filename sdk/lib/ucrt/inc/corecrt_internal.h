@@ -413,7 +413,7 @@ void __cdecl __acrt_initialize_thread_local_exit_callback(_In_opt_ void * encode
 
 typedef struct __crt_locale_string_table
 {
-    wchar_t* szName;
+    const wchar_t* szName;
     wchar_t  chAbbrev[4];
 } __crt_locale_string_table;
 
@@ -427,25 +427,25 @@ typedef struct __crt_locale_strings
 
 typedef struct __crt_lc_time_data
 {
-    char*    wday_abbr [ 7];
-    char*    wday      [ 7];
-    char*    month_abbr[12];
-    char*    month     [12];
-    char*    ampm      [ 2];
-    char*    ww_sdatefmt;
-    char*    ww_ldatefmt;
-    char*    ww_timefmt;
+    const char*    wday_abbr [ 7];
+    const char*    wday      [ 7];
+    const char*    month_abbr[12];
+    const char*    month     [12];
+    const char*    ampm      [ 2];
+    const char*    ww_sdatefmt;
+    const char*    ww_ldatefmt;
+    const char*    ww_timefmt;
     int      ww_caltype;
     long     refcount;
-    wchar_t* _W_wday_abbr [ 7];
-    wchar_t* _W_wday      [ 7];
-    wchar_t* _W_month_abbr[12];
-    wchar_t* _W_month     [12];
-    wchar_t* _W_ampm      [ 2];
-    wchar_t* _W_ww_sdatefmt;
-    wchar_t* _W_ww_ldatefmt;
-    wchar_t* _W_ww_timefmt;
-    wchar_t* _W_ww_locale_name;
+    const wchar_t* _W_wday_abbr [ 7];
+    const wchar_t* _W_wday      [ 7];
+    const wchar_t* _W_month_abbr[12];
+    const wchar_t* _W_month     [12];
+    const wchar_t* _W_ampm      [ 2];
+    const wchar_t* _W_ww_sdatefmt;
+    const wchar_t* _W_ww_ldatefmt;
+    const wchar_t* _W_ww_timefmt;
+    const wchar_t* _W_ww_locale_name;
 } __crt_lc_time_data;
 
 typedef struct __crt_ctype_compatibility_data
@@ -493,10 +493,10 @@ typedef struct __crt_multibyte_data
 
 typedef struct __crt_locale_refcount
 {
-    char*    locale;
-    wchar_t* wlocale;
-    long*    refcount;
-    long*    wrefcount;
+    const char*    locale;
+    const wchar_t* wlocale;
+    long*          refcount;
+    long*          wrefcount;
 } __crt_locale_refcount;
 
 typedef struct __crt_locale_data

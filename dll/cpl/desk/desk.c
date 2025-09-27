@@ -455,7 +455,8 @@ DllMain(HINSTANCE hInstDLL, DWORD dwReason, LPVOID lpvReserved)
     switch (dwReason)
     {
         case DLL_PROCESS_ATTACH:
-            CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+            HRESULT hr = CoInitializeEx(NULL, COINIT_APARTMENTTHREADED);
+            UNREFERENCED_PARAMETER(hr);
             RegisterPreviewControl(hInstDLL);
 //        case DLL_THREAD_ATTACH:
             hApplet = hInstDLL;

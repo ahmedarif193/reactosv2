@@ -125,6 +125,9 @@ static bool __cdecl initialize_tmpfile_buffer_nolock(buffer_id const buffer_id) 
     case buffer_id::tmpnam:   *tail++ = sizeof(Character) == 1 ? 's' : 'v'; break;
     case buffer_id::tmpfile:  *tail++ = sizeof(Character) == 1 ? 't' : 'w'; break;
     case buffer_id::tmpnam_s: *tail++ = sizeof(Character) == 1 ? 'u' : 'x'; break;
+    case buffer_id::count:
+    default:
+        return false; // Invalid buffer_id
     }
 
     // Append the process identifier part of the file name:

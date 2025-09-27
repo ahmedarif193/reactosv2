@@ -541,8 +541,12 @@ int ME_CharFromPointContext(ME_Context *c, int cx, ME_Run *run, BOOL closest, BO
       int cp, trailing;
       if (visual_order && run->script_analysis.fRTL) cx = run->nWidth - cx - 1;
 
-      ScriptXtoCP( cx, run->len, run->num_glyphs, run->clusters, run->vis_attrs, run->advances, &run->script_analysis,
-                   &cp, &trailing );
+      HRESULT hr = ScriptXtoCP( cx, run->len, run->num_glyphs, run->clusters, run->vis_attrs, run->advances, &run->script_analysis,
+                                &cp, &trailing );
+      if (FAILED(hr)) {
+          WARN("ScriptXtoCP failed: %08x\n", hr);
+          return 0;
+      }
       TRACE("x %d cp %d trailing %d (run width %d) rtl %d log order %d\n", cx, cp, trailing, run->nWidth,
             run->script_analysis.fRTL, run->script_analysis.fLogicalOrder);
       return closest ? cp + trailing : cp;
@@ -628,8 +632,12 @@ int ME_PointFromCharContext(ME_Context *c, ME_Run *pRun, int nOffset, BOOL visua
   if (pRun->para->nFlags & MEPF_COMPLEX)
   {
       int x;
-      ScriptCPtoX( nOffset, FALSE, pRun->len, pRun->num_glyphs, pRun->clusters,
-                   pRun->vis_attrs, pRun->advances, &pRun->script_analysis, &x );
+      HRESULT hr = ScriptCPtoX( nOffset, FALSE, pRun->len, pRun->num_glyphs, pRun->clusters,
+                                pRun->vis_attrs, pRun->advances, &pRun->script_analysis, &x );
+      if (FAILED(hr)) {
+          WARN("ScriptCPtoX failed: %08x\n", hr);
+          return 0;
+      }
       if (visual_order && pRun->script_analysis.fRTL) x = pRun->nWidth - x - 1;
       return x;
   }

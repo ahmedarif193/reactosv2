@@ -270,9 +270,12 @@ LRESULT CStretchSkewDialog::OnOk(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL&
     CStringW strrcIntNumbers, strrcPercentage, strrcAngle;
     BOOL tr1, tr2, tr3, tr4;
 
-    strrcIntNumbers.LoadString(g_hinstExe, IDS_INTNUMBERS);
-    strrcPercentage.LoadString(g_hinstExe, IDS_PERCENTAGE);
-    strrcAngle.LoadString(g_hinstExe, IDS_ANGLE);
+    BOOL bResult1 = strrcIntNumbers.LoadString(g_hinstExe, IDS_INTNUMBERS);
+    BOOL bResult2 = strrcPercentage.LoadString(g_hinstExe, IDS_PERCENTAGE);
+    BOOL bResult3 = strrcAngle.LoadString(g_hinstExe, IDS_ANGLE);
+    UNREFERENCED_PARAMETER(bResult1);
+    UNREFERENCED_PARAMETER(bResult2);
+    UNREFERENCED_PARAMETER(bResult3);
 
     percentage.x = GetDlgItemInt(IDD_STRETCHSKEWEDITHSTRETCH, &tr1, FALSE);
     percentage.y = GetDlgItemInt(IDD_STRETCHSKEWEDITVSTRETCH, &tr2, FALSE);

@@ -900,7 +900,8 @@ BOOL WINAPI CRYPT_AsnEncodeOid(DWORD dwCertEncodingType,
                 ptr = pszObjId + firstPos;
                 while (ret && *ptr)
                 {
-                    sscanf(ptr, "%d%n", &val, &pos);
+                    int result = sscanf(ptr, "%d%n", &val, &pos);
+                    UNREFERENCED_PARAMETER(result);
                     {
                         unsigned char outBytes[5];
                         int numBytes, i;

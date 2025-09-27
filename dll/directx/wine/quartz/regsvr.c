@@ -191,7 +191,10 @@ static HRESULT register_interfaces(struct regsvr_interface const *list)
 	WCHAR buf[39];
 	HKEY iid_key;
 
-	StringFromGUID2(list->iid, buf, 39);
+	if (StringFromGUID2(list->iid, buf, 39) == 0)
+	{
+	    /* Ignore error - use empty buffer */
+	}
 	res = RegCreateKeyExW(interface_key, buf, 0, NULL, 0,
 			      KEY_READ | KEY_WRITE, NULL, &iid_key, NULL);
 	if (res != ERROR_SUCCESS) goto error_close_interface_key;
@@ -259,7 +262,10 @@ static HRESULT unregister_interfaces(struct regsvr_interface const *list)
     for (; res == ERROR_SUCCESS && list->iid; ++list) {
 	WCHAR buf[39];
 
-	StringFromGUID2(list->iid, buf, 39);
+	if (StringFromGUID2(list->iid, buf, 39) == 0)
+	{
+	    /* Ignore error - use empty buffer */
+	}
 	res = RegDeleteTreeW(interface_key, buf);
 	if (res == ERROR_FILE_NOT_FOUND) res = ERROR_SUCCESS;
     }
@@ -285,7 +291,10 @@ static HRESULT register_coclasses(struct regsvr_coclass const *list)
 	WCHAR buf[39];
 	HKEY clsid_key;
 
-	StringFromGUID2(list->clsid, buf, 39);
+	if (StringFromGUID2(list->clsid, buf, 39) == 0)
+	{
+	    /* Ignore error - use empty buffer */
+	}
 	res = RegCreateKeyExW(coclass_key, buf, 0, NULL, 0,
 			      KEY_READ | KEY_WRITE, NULL, &clsid_key, NULL);
 	if (res != ERROR_SUCCESS) goto error_close_coclass_key;
@@ -365,7 +374,10 @@ static HRESULT unregister_coclasses(struct regsvr_coclass const *list)
     for (; res == ERROR_SUCCESS && list->clsid; ++list) {
 	WCHAR buf[39];
 
-	StringFromGUID2(list->clsid, buf, 39);
+	if (StringFromGUID2(list->clsid, buf, 39) == 0)
+	{
+	    /* Ignore error - use empty buffer */
+	}
 	res = RegDeleteTreeW(coclass_key, buf);
 	if (res == ERROR_FILE_NOT_FOUND) res = ERROR_SUCCESS;
 	if (res != ERROR_SUCCESS) goto error_close_coclass_key;
@@ -407,17 +419,26 @@ static HRESULT register_mediatypes_parsing(struct regsvr_mediatype_parsing const
 	HKEY majortype_key = NULL;
 	HKEY subtype_key = NULL;
 
-	StringFromGUID2(list->majortype, buf, 39);
+	if (StringFromGUID2(list->majortype, buf, 39) == 0)
+	{
+	    /* Ignore error - use empty buffer */
+	}
 	res = RegCreateKeyExW(mediatype_key, buf, 0, NULL, 0,
 			      KEY_READ | KEY_WRITE, NULL, &majortype_key, NULL);
 	if (res != ERROR_SUCCESS) goto error_close_keys;
 
-	StringFromGUID2(list->subtype, buf, 39);
+	if (StringFromGUID2(list->subtype, buf, 39) == 0)
+	{
+	    /* Ignore error - use empty buffer */
+	}
 	res = RegCreateKeyExW(majortype_key, buf, 0, NULL, 0,
 			      KEY_READ | KEY_WRITE, NULL, &subtype_key, NULL);
 	if (res != ERROR_SUCCESS) goto error_close_keys;
 
-	StringFromGUID2(&CLSID_AsyncReader, buf, 39);
+	if (StringFromGUID2(&CLSID_AsyncReader, buf, 39) == 0)
+	{
+	    /* Ignore error - use empty buffer */
+	}
         res = RegSetValueExW(subtype_key, sourcefilter_valuename, 0, REG_SZ, (const BYTE*)buf,
 			     (lstrlenW(buf) + 1) * sizeof(WCHAR));
 	if (res != ERROR_SUCCESS) goto error_close_keys;
@@ -467,17 +488,26 @@ static HRESULT register_mediatypes_extension(struct regsvr_mediatype_extension c
 			      KEY_READ | KEY_WRITE, NULL, &extension_key, NULL);
 	if (res != ERROR_SUCCESS) break;
 
-	StringFromGUID2(list->majortype, buf, 39);
+	if (StringFromGUID2(list->majortype, buf, 39) == 0)
+	{
+	    /* Ignore error - use empty buffer */
+	}
         res = RegSetValueExW(extension_key, mediatype_name, 0, REG_SZ, (const BYTE*)buf,
 			     (lstrlenW(buf) + 1) * sizeof(WCHAR));
 	if (res != ERROR_SUCCESS) goto error_close_key;
 
-	StringFromGUID2(list->subtype, buf, 39);
+	if (StringFromGUID2(list->subtype, buf, 39) == 0)
+	{
+	    /* Ignore error - use empty buffer */
+	}
         res = RegSetValueExW(extension_key, subtype_valuename, 0, REG_SZ, (const BYTE*)buf,
 			     (lstrlenW(buf) + 1) * sizeof(WCHAR));
 	if (res != ERROR_SUCCESS) goto error_close_key;
 
-	StringFromGUID2(&CLSID_AsyncReader, buf, 39);
+	if (StringFromGUID2(&CLSID_AsyncReader, buf, 39) == 0)
+	{
+	    /* Ignore error - use empty buffer */
+	}
         res = RegSetValueExW(extension_key, sourcefilter_valuename, 0, REG_SZ, (const BYTE*)buf,
 			     (lstrlenW(buf) + 1) * sizeof(WCHAR));
 	if (res != ERROR_SUCCESS) goto error_close_key;
@@ -510,7 +540,10 @@ static HRESULT unregister_mediatypes_parsing(struct regsvr_mediatype_parsing con
     if (res != ERROR_SUCCESS) return HRESULT_FROM_WIN32(res);
 
     for (; res == ERROR_SUCCESS && list->majortype; ++list) {
-	StringFromGUID2(list->majortype, buf, 39);
+	if (StringFromGUID2(list->majortype, buf, 39) == 0)
+	{
+	    /* Ignore error - use empty buffer */
+	}
 	res = RegOpenKeyExW(mediatype_key, buf, 0,
 			KEY_READ | KEY_WRITE, &majortype_key);
 	if (res == ERROR_FILE_NOT_FOUND) {
@@ -519,7 +552,10 @@ static HRESULT unregister_mediatypes_parsing(struct regsvr_mediatype_parsing con
 	}
 	if (res != ERROR_SUCCESS) break;
 
-	StringFromGUID2(list->subtype, buf, 39);
+	if (StringFromGUID2(list->subtype, buf, 39) == 0)
+	{
+	    /* Ignore error - use empty buffer */
+	}
 	res = RegDeleteTreeW(majortype_key, buf);
     	if (res == ERROR_FILE_NOT_FOUND) res = ERROR_SUCCESS;
 
@@ -574,7 +610,10 @@ static HRESULT register_filters(struct regsvr_filter const *list)
     HRESULT hr;
     IFilterMapper2* pFM2 = NULL;
 
-    CoInitialize(NULL);
+    hr = CoInitialize(NULL);
+    if (FAILED(hr))
+        return hr;
+
     hr = CoCreateInstance(&CLSID_FilterMapper2, NULL, CLSCTX_INPROC_SERVER, &IID_IFilterMapper2, (LPVOID*)&pFM2);
 
     if (SUCCEEDED(hr)) {
@@ -658,8 +697,10 @@ static HRESULT unregister_filters(struct regsvr_filter const *list)
     HRESULT hr;
     IFilterMapper2* pFM2;
 
-    CoInitialize(NULL);
-    
+    hr = CoInitialize(NULL);
+    if (FAILED(hr))
+        return hr;
+
     hr = CoCreateInstance(&CLSID_FilterMapper2, NULL, CLSCTX_INPROC_SERVER, &IID_IFilterMapper2, (LPVOID*)&pFM2);
 
     if (SUCCEEDED(hr)) {
@@ -680,7 +721,10 @@ static LONG register_key_guid(HKEY base, WCHAR const *name, GUID const *guid)
 {
     WCHAR buf[39];
 
-    StringFromGUID2(guid, buf, 39);
+    if (StringFromGUID2(guid, buf, 39) == 0)
+    {
+        /* Ignore error - use empty buffer */
+    }
     return register_key_defvalueW(base, name, buf);
 }
 

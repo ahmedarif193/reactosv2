@@ -90,8 +90,8 @@ page
        public _strcat
        public _strcpy      // make both functions available
 .PROC _strcpy
-        // dst:ptr byte, \
-        // src:ptr byte
+        # dst:ptr byte
+        # src:ptr byte
 
         //OPTION PROLOGUE:NONE, EPILOGUE:NONE
 
@@ -104,8 +104,8 @@ page
         align   16
 
 .PROC _strcat
-        // dst:ptr byte, \
-        // src:ptr byte
+        # dst:ptr byte
+        # src:ptr byte
 
         //OPTION PROLOGUE:NONE, EPILOGUE:NONE
 

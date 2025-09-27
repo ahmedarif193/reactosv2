@@ -631,7 +631,10 @@ static HRESULT WINAPI ListEnumerator_Next(IEnumVARIANT* iface, ULONG celt, VARIA
         VariantInit(&rgVar[local]);
 
     for (i = This->pos, local = 0; i < This->list->count && local < celt; i++, local++)
-        VariantCopy(&rgVar[local], &This->list->data[i]);
+    {
+        HRESULT hr = VariantCopy(&rgVar[local], &This->list->data[i]);
+        UNREFERENCED_PARAMETER(hr);
+    }
 
     if (fetched) *fetched = local;
     This->pos = i;
@@ -1046,7 +1049,8 @@ static HRESULT list_invoke(
                 if (FAILED(hr)) return hr;
                 if (V_I4(&index) < 0 || V_I4(&index) >= list->count)
                     return DISP_E_BADINDEX;
-                VariantCopy(pVarResult, &list->data[V_I4(&index)]);
+                HRESULT hr = VariantCopy(pVarResult, &list->data[V_I4(&index)]);
+                UNREFERENCED_PARAMETER(hr);
             }
             else return DISP_E_MEMBERNOTFOUND;
             break;

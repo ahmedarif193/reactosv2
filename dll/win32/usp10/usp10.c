@@ -2081,9 +2081,13 @@ HRESULT WINAPI ScriptStringAnalyse(HDC hdc, const void *pString, int cString,
             goto error;
 
         for (i = 0; i < analysis->numItems; ++i)
-            ScriptBreak(&((const WCHAR *)pString)[analysis->pItem[i].iCharPos],
+        {
+            hr = ScriptBreak(&((const WCHAR *)pString)[analysis->pItem[i].iCharPos],
                     analysis->pItem[i + 1].iCharPos - analysis->pItem[i].iCharPos,
                     &analysis->pItem[i].a, &analysis->logattrs[analysis->pItem[i].iCharPos]);
+            if (FAILED(hr))
+                goto error;
+        }
     }
 
     if (!(analysis->logical2visual = heap_calloc(analysis->numItems, sizeof(*analysis->logical2visual))))
@@ -2142,7 +2146,8 @@ HRESULT WINAPI ScriptStringAnalyse(HDC hdc, const void *pString, int cString,
                     analysis->glyphs[i].fallbackFont = CreateFontIndirectW(&lf);
                     if (analysis->glyphs[i].fallbackFont)
                     {
-                        ScriptFreeCache(sc);
+                        HRESULT hr_cache = ScriptFreeCache(sc);
+                        UNREFERENCED_PARAMETER(hr_cache);
                         originalFont = SelectObject(hdc, analysis->glyphs[i].fallbackFont);
                     }
                 }
@@ -2155,8 +2160,12 @@ HRESULT WINAPI ScriptStringAnalyse(HDC hdc, const void *pString, int cString,
             if ((dwFlags & SSA_LINK) && !analysis->glyphs[i].fallbackFont && !scriptInformation[analysis->pItem[i].a.eScript].props.fComplex && !analysis->pItem[i].a.fRTL)
                 analysis->pItem[i].a.fNoGlyphIndex = TRUE;
 
-            ScriptShape(hdc, sc, &pStr[analysis->pItem[i].iCharPos], cChar, numGlyphs,
+            HRESULT hr_shape = ScriptShape(hdc, sc, &pStr[analysis->pItem[i].iCharPos], cChar, numGlyphs,
                         &analysis->pItem[i].a, glyphs, pwLogClust, psva, &numGlyphsReturned);
+            if (FAILED(hr_shape))
+            {
+                TRACE("ScriptShape failed: 0x%08x\n", hr_shape);
+            }
             hr = ScriptPlace(hdc, sc, glyphs, numGlyphsReturned, psva, &analysis->pItem[i].a,
                         piAdvance, pGoffset, &analysis->glyphs[i].abc);
             if (originalFont)
@@ -2190,7 +2199,11 @@ HRESULT WINAPI ScriptStringAnalyse(HDC hdc, const void *pString, int cString,
             BidiLevel[i] = analysis->pItem[i].a.s.uBidiLevel;
     }
 
-    ScriptLayout(analysis->numItems, BidiLevel, NULL, analysis->logical2visual);
+    HRESULT hr_layout = ScriptLayout(analysis->numItems, BidiLevel, NULL, analysis->logical2visual);
+    if (FAILED(hr_layout))
+    {
+        TRACE("ScriptLayout failed: 0x%08x\n", hr_layout);
+    }
     heap_free(BidiLevel);
 
     *pssa = analysis;
@@ -2278,17 +2291,45 @@ static HRESULT SS_ItemOut( SCRIPT_STRING_ANALYSIS ssa,
     if (analysis->pItem[iItem].a.fRTL)
     {
         if (cEnd >= 0 && cEnd < analysis->pItem[iItem+1].iCharPos)
-            ScriptStringCPtoX(ssa, cEnd, FALSE, &off_x);
+        {
+            HRESULT hr_cp = ScriptStringCPtoX(ssa, cEnd, FALSE, &off_x);
+            if (FAILED(hr_cp))
+            {
+                TRACE("ScriptStringCPtoX failed: 0x%08x\n", hr_cp);
+                off_x = 0;
+            }
+        }
         else
-            ScriptStringCPtoX(ssa, analysis->pItem[iItem+1].iCharPos-1, TRUE, &off_x);
+        {
+            HRESULT hr_cp = ScriptStringCPtoX(ssa, analysis->pItem[iItem+1].iCharPos-1, TRUE, &off_x);
+            if (FAILED(hr_cp))
+            {
+                TRACE("ScriptStringCPtoX failed: 0x%08x\n", hr_cp);
+                off_x = 0;
+            }
+        }
         crc.left = iX + off_x;
     }
     else
     {
         if (cStart >=0 && runStart)
-            ScriptStringCPtoX(ssa, cStart, FALSE, &off_x);
+        {
+            HRESULT hr_cp = ScriptStringCPtoX(ssa, cStart, FALSE, &off_x);
+            if (FAILED(hr_cp))
+            {
+                TRACE("ScriptStringCPtoX failed: 0x%08x\n", hr_cp);
+                off_x = 0;
+            }
+        }
         else
-            ScriptStringCPtoX(ssa, analysis->pItem[iItem].iCharPos, FALSE, &off_x);
+        {
+            HRESULT hr_cp = ScriptStringCPtoX(ssa, analysis->pItem[iItem].iCharPos, FALSE, &off_x);
+            if (FAILED(hr_cp))
+            {
+                TRACE("ScriptStringCPtoX failed: 0x%08x\n", hr_cp);
+                off_x = 0;
+            }
+        }
         crc.left = iX + off_x;
     }
 
@@ -2314,10 +2355,12 @@ static HRESULT SS_ItemOut( SCRIPT_STRING_ANALYSIS ssa,
     {
         if (analysis->glyphs[iItem].pwLogClust[i - analysis->pItem[iItem].iCharPos] == iGlyph)
         {
+            HRESULT hr;
             if (analysis->pItem[iItem].a.fRTL)
-                ScriptStringCPtoX(ssa, i, TRUE, &off_x);
+                hr = ScriptStringCPtoX(ssa, i, TRUE, &off_x);
             else
-                ScriptStringCPtoX(ssa, i, FALSE, &off_x);
+                hr = ScriptStringCPtoX(ssa, i, FALSE, &off_x);
+            UNREFERENCED_PARAMETER(hr);
             break;
         }
     }
@@ -2457,14 +2500,21 @@ HRESULT WINAPI ScriptStringCPtoX(SCRIPT_STRING_ANALYSIS ssa, int icp, BOOL fTrai
         /* initialize max extents for uninitialized runs */
         if (analysis->glyphs[i].iMaxPosX == -1)
         {
+            HRESULT hr;
             if (analysis->pItem[i].a.fRTL)
-                ScriptCPtoX(0, FALSE, CP, analysis->glyphs[i].numGlyphs, analysis->glyphs[i].pwLogClust,
-                            analysis->glyphs[i].psva, analysis->glyphs[i].piAdvance,
-                            &analysis->pItem[i].a, &analysis->glyphs[i].iMaxPosX);
+            {
+                hr = ScriptCPtoX(0, FALSE, CP, analysis->glyphs[i].numGlyphs, analysis->glyphs[i].pwLogClust,
+                                analysis->glyphs[i].psva, analysis->glyphs[i].piAdvance,
+                                &analysis->pItem[i].a, &analysis->glyphs[i].iMaxPosX);
+                UNREFERENCED_PARAMETER(hr);
+            }
             else
-                ScriptCPtoX(CP, TRUE, CP, analysis->glyphs[i].numGlyphs, analysis->glyphs[i].pwLogClust,
-                            analysis->glyphs[i].psva, analysis->glyphs[i].piAdvance,
-                            &analysis->pItem[i].a, &analysis->glyphs[i].iMaxPosX);
+            {
+                hr = ScriptCPtoX(CP, TRUE, CP, analysis->glyphs[i].numGlyphs, analysis->glyphs[i].pwLogClust,
+                                analysis->glyphs[i].psva, analysis->glyphs[i].piAdvance,
+                                &analysis->pItem[i].a, &analysis->glyphs[i].iMaxPosX);
+                UNREFERENCED_PARAMETER(hr);
+            }
         }
 
         if (icp >= analysis->pItem[i+1].iCharPos || icp < analysis->pItem[i].iCharPos)
@@ -2474,9 +2524,12 @@ HRESULT WINAPI ScriptStringCPtoX(SCRIPT_STRING_ANALYSIS ssa, int icp, BOOL fTrai
         }
 
         icp -= analysis->pItem[i].iCharPos;
-        ScriptCPtoX(icp, fTrailing, CP, analysis->glyphs[i].numGlyphs, analysis->glyphs[i].pwLogClust,
-                    analysis->glyphs[i].psva, analysis->glyphs[i].piAdvance,
-                    &analysis->pItem[i].a, &offset);
+        {
+            HRESULT hr = ScriptCPtoX(icp, fTrailing, CP, analysis->glyphs[i].numGlyphs, analysis->glyphs[i].pwLogClust,
+                        analysis->glyphs[i].psva, analysis->glyphs[i].piAdvance,
+                        &analysis->pItem[i].a, &offset);
+            UNREFERENCED_PARAMETER(hr);
+        }
         runningX += offset;
 
         *pX = runningX;
@@ -2530,14 +2583,21 @@ HRESULT WINAPI ScriptStringXtoCP(SCRIPT_STRING_ANALYSIS ssa, int iX, int* piCh, 
         /* initialize max extents for uninitialized runs */
         if (analysis->glyphs[i].iMaxPosX == -1)
         {
+            HRESULT hr;
             if (analysis->pItem[i].a.fRTL)
-                ScriptCPtoX(0, FALSE, CP, analysis->glyphs[i].numGlyphs, analysis->glyphs[i].pwLogClust,
-                            analysis->glyphs[i].psva, analysis->glyphs[i].piAdvance,
-                            &analysis->pItem[i].a, &analysis->glyphs[i].iMaxPosX);
+            {
+                hr = ScriptCPtoX(0, FALSE, CP, analysis->glyphs[i].numGlyphs, analysis->glyphs[i].pwLogClust,
+                                analysis->glyphs[i].psva, analysis->glyphs[i].piAdvance,
+                                &analysis->pItem[i].a, &analysis->glyphs[i].iMaxPosX);
+                UNREFERENCED_PARAMETER(hr);
+            }
             else
-                ScriptCPtoX(CP, TRUE, CP, analysis->glyphs[i].numGlyphs, analysis->glyphs[i].pwLogClust,
-                            analysis->glyphs[i].psva, analysis->glyphs[i].piAdvance,
-                            &analysis->pItem[i].a, &analysis->glyphs[i].iMaxPosX);
+            {
+                hr = ScriptCPtoX(CP, TRUE, CP, analysis->glyphs[i].numGlyphs, analysis->glyphs[i].pwLogClust,
+                                analysis->glyphs[i].psva, analysis->glyphs[i].piAdvance,
+                                &analysis->pItem[i].a, &analysis->glyphs[i].iMaxPosX);
+                UNREFERENCED_PARAMETER(hr);
+            }
         }
 
         if (iX > analysis->glyphs[i].iMaxPosX)
@@ -2546,9 +2606,12 @@ HRESULT WINAPI ScriptStringXtoCP(SCRIPT_STRING_ANALYSIS ssa, int iX, int* piCh, 
             continue;
         }
 
-        ScriptXtoCP(iX, CP, analysis->glyphs[i].numGlyphs, analysis->glyphs[i].pwLogClust,
-                    analysis->glyphs[i].psva, analysis->glyphs[i].piAdvance,
-                    &analysis->pItem[i].a, piCh, piTrailing);
+        {
+            HRESULT hr = ScriptXtoCP(iX, CP, analysis->glyphs[i].numGlyphs, analysis->glyphs[i].pwLogClust,
+                        analysis->glyphs[i].psva, analysis->glyphs[i].piAdvance,
+                        &analysis->pItem[i].a, piCh, piTrailing);
+            UNREFERENCED_PARAMETER(hr);
+        }
         *piCh += analysis->pItem[i].iCharPos;
 
         return S_OK;
@@ -2597,7 +2660,8 @@ HRESULT WINAPI ScriptStringFree(SCRIPT_STRING_ANALYSIS *pssa)
             heap_free(analysis->glyphs[i].pGoffset);
             if (analysis->glyphs[i].fallbackFont)
                 DeleteObject(analysis->glyphs[i].fallbackFont);
-            ScriptFreeCache((SCRIPT_CACHE *)&analysis->glyphs[i].sc);
+            HRESULT hr = ScriptFreeCache((SCRIPT_CACHE *)&analysis->glyphs[i].sc);
+            UNREFERENCED_PARAMETER(hr);
             heap_free(analysis->glyphs[i].sc);
         }
         heap_free(analysis->glyphs);

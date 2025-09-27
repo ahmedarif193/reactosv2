@@ -191,7 +191,8 @@ FxIoTargetRemote::InitRemote(
     SetDeviceBase(Device);
     m_InStackDevice = Device->GetDeviceObject();
 
-    (void) Device->AddIoTarget(this);
+    NTSTATUS addStatus = Device->AddIoTarget(this);
+    (void)addStatus;
 
     return STATUS_SUCCESS;
 }

@@ -3529,7 +3529,9 @@ HRESULT STDMETHODCALLTYPE CShellBrowser::ShowBrowserBar(VARIANT *pvaClsid, VARIA
     // called to show search bar
     if (V_VT(pvaClsid) != VT_BSTR)
         return E_INVALIDARG;
-    CLSIDFromString(V_BSTR(pvaClsid), &classID);
+    HRESULT hr = CLSIDFromString(V_BSTR(pvaClsid), &classID);
+    if (FAILED(hr))
+        return hr;
     // TODO: properly compute the value of vertical
     vertical = true;
     return ShowBand(classID, vertical);
@@ -3937,7 +3939,8 @@ LRESULT CShellBrowser::OnMapNetworkDrive(WORD wNotifyCode, WORD wID, HWND hWndCt
 
 LRESULT CShellBrowser::OnDisconnectNetworkDrive(WORD wNotifyCode, WORD wID, HWND hWndCtl, BOOL &bHandled)
 {
-    WNetDisconnectDialog(m_hWnd, RESOURCETYPE_DISK);
+    DWORD dwResult = WNetDisconnectDialog(m_hWnd, RESOURCETYPE_DISK);
+    (void)dwResult; // We intentionally ignore the result for this UI operation
     return 0;
 }
 

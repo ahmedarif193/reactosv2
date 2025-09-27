@@ -88,7 +88,7 @@ NtAddAtom(IN PWSTR AtomName,
           OUT PRTL_ATOM Atom)
 {
     PRTL_ATOM_TABLE AtomTable = ExpGetGlobalAtomTable();
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;
     KPROCESSOR_MODE PreviousMode = ExGetPreviousMode();
     LPWSTR CapturedName;
     ULONG CapturedSize;

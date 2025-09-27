@@ -370,7 +370,8 @@ int wmain(int argc, WCHAR* argv[])
     //wcscpy_s(driveLetter,sz,strPath);
     //wcstok_s(driveLetter,L":", &context); //parse for the drive letter
     wcscpy(driveLetter, strPath);
-    wcstok(driveLetter, L":");
+    WCHAR* result = wcstok(driveLetter, L":");
+    UNREFERENCED_PARAMETER(result);
 
     ConPrintf(StdOut, L"%s:.\n", driveLetter);
 

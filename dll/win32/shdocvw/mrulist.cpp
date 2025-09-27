@@ -864,7 +864,8 @@ BOOL CMruNode::_InitLate()
         if (m_pParent)
             m_pParent->BindToSlot(m_iSlot, &m_pShellFolder);
         else
-            SHGetDesktopFolder(&m_pShellFolder);
+            if (FAILED(SHGetDesktopFolder(&m_pShellFolder)))
+                m_pShellFolder = NULL;
     }
     return !!m_pShellFolder;
 }

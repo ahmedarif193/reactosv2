@@ -192,9 +192,11 @@ static int query_prop( const WCHAR *class, const WCHAR *propname )
 
     WINE_TRACE("%s, %s\n", debugstr_w(class), debugstr_w(propname));
 
-    CoInitialize( NULL );
-    CoInitializeSecurity( NULL, -1, NULL, NULL, RPC_C_AUTHN_LEVEL_DEFAULT,
-                          RPC_C_IMP_LEVEL_IMPERSONATE, NULL, EOAC_NONE, NULL );
+    HRESULT hrInit = CoInitialize( NULL );
+    UNREFERENCED_PARAMETER(hrInit);
+    HRESULT hrSec = CoInitializeSecurity( NULL, -1, NULL, NULL, RPC_C_AUTHN_LEVEL_DEFAULT,
+                                          RPC_C_IMP_LEVEL_IMPERSONATE, NULL, EOAC_NONE, NULL );
+    UNREFERENCED_PARAMETER(hrSec);
 
     hr = CoCreateInstance( &CLSID_WbemLocator, NULL, CLSCTX_INPROC_SERVER, &IID_IWbemLocator,
                            (void **)&locator );
@@ -225,7 +227,8 @@ static int query_prop( const WCHAR *class, const WCHAR *propname )
         }
         if (IWbemClassObject_Get( obj, prop, 0, &v, NULL, NULL ) == WBEM_S_NO_ERROR)
         {
-            VariantChangeType( &v, &v, 0, VT_BSTR );
+            HRESULT hrVar = VariantChangeType( &v, &v, 0, VT_BSTR );
+            UNREFERENCED_PARAMETER(hrVar);
             width = max( strlenW( V_BSTR( &v ) ), width );
             VariantClear( &v );
         }
@@ -246,7 +249,8 @@ static int query_prop( const WCHAR *class, const WCHAR *propname )
         }
         if (IWbemClassObject_Get( obj, prop, 0, &v, NULL, NULL ) == WBEM_S_NO_ERROR)
         {
-            VariantChangeType( &v, &v, 0, VT_BSTR );
+            HRESULT hrVar = VariantChangeType( &v, &v, 0, VT_BSTR );
+            UNREFERENCED_PARAMETER(hrVar);
             output_line( V_BSTR( &v ), width );
             VariantClear( &v );
         }

@@ -481,46 +481,46 @@
 
       {
          int subTriangle;
-         GLfixed fx, fxLeftEdge, fxRightEdge, fdxLeftEdge, fdxRightEdge;
+         GLfixed fx, fxLeftEdge = 0, fxRightEdge = 0, fdxLeftEdge = 0, fdxRightEdge = 0;
          GLfixed fdxOuter;
          int idxOuter;
          float dxOuter;
-         GLfixed fError, fdError;
+         GLfixed fError = 0, fdError = 0;
          float adjx, adjy;
          GLfixed fy;
-         int iy;
+         int iy = 0;
 #ifdef PIXEL_ADDRESS
          PIXEL_TYPE *pRow;
          int dPRowOuter, dPRowInner;  /* offset in bytes */
 #endif
 #if INTERP_Z
-         GLdepth *zRow;
-         int dZRowOuter, dZRowInner;  /* offset in bytes */
-         GLfixed fz, fdzOuter, fdzInner;
+         GLdepth *zRow = NULL;
+         int dZRowOuter = 0, dZRowInner = 0;  /* offset in bytes */
+         GLfixed fz = 0, fdzOuter = 0, fdzInner = 0;
 #endif
 #if INTERP_RGB
-         GLfixed fr, fdrOuter, fdrInner;
-         GLfixed fg, fdgOuter, fdgInner;
-         GLfixed fb, fdbOuter, fdbInner;
+         GLfixed fr = 0, fdrOuter = 0, fdrInner = 0;
+         GLfixed fg = 0, fdgOuter = 0, fdgInner = 0;
+         GLfixed fb = 0, fdbOuter = 0, fdbInner = 0;
 #endif
 #if INTERP_ALPHA
-         GLfixed fa, fdaOuter, fdaInner;
+         GLfixed fa = 0, fdaOuter = 0, fdaInner = 0;
 #endif
 #if INTERP_INDEX
-         GLfixed fi, fdiOuter, fdiInner;
+         GLfixed fi = 0, fdiOuter = 0, fdiInner = 0;
 #endif
 #if INTERP_ST
-         GLfixed fs, fdsOuter, fdsInner;
-         GLfixed ft, fdtOuter, fdtInner;
+         GLfixed fs = 0, fdsOuter = 0, fdsInner = 0;
+         GLfixed ft = 0, fdtOuter = 0, fdtInner = 0;
 #endif
 #if INTERP_STW
-         GLfloat sLeft, dsOuter, dsInner;
-         GLfloat tLeft, dtOuter, dtInner;
-         GLfloat wLeft, dwOuter, dwInner;
+         GLfloat sLeft = 0.0f, dsOuter = 0.0f, dsInner = 0.0f;
+         GLfloat tLeft = 0.0f, dtOuter = 0.0f, dtInner = 0.0f;
+         GLfloat wLeft = 0.0f, dwOuter = 0.0f, dwInner = 0.0f;
 #endif
 #if INTERP_UV
-         GLfloat uLeft, duOuter, duInner;
-         GLfloat vLeft, dvOuter, dvInner;
+         GLfloat uLeft = 0.0f, duOuter = 0.0f, duInner = 0.0f;
+         GLfloat vLeft = 0.0f, dvOuter = 0.0f, dvInner = 0.0f;
 #endif
 
          for (subTriangle=0; subTriangle<=1; subTriangle++) {

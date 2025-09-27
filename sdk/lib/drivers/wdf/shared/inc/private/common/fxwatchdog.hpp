@@ -97,7 +97,8 @@ struct FxWatchdog {
             // The state was successfully handled without the timer expiring.
             // We don't care about the return code in this case.
             //
-            (void) m_Timer.Stop();
+            BOOLEAN stopped = m_Timer.Stop();
+            UNREFERENCED_PARAMETER(stopped);
         }
     }
 

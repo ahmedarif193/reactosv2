@@ -574,9 +574,10 @@ usage:
 					int yy, mo, day, hour, min, sec;
 					struct tm *tm;
 					verbose = overbose;
-					sscanf(reply_string,
+					int scanResult = sscanf(reply_string,
 					    "%*s %04d%02d%02d%02d%02d%02d",
 					    &yy, &mo, &day, &hour, &min, &sec);
+					UNREFERENCED_PARAMETER(scanResult);
 					tm = gmtime(&stbuf.st_mtime);
 					tm->tm_mon++;
 					if (tm->tm_year > yy%100)
@@ -757,7 +758,9 @@ remglob(const char *argv[], int doswitch)
 		}
 		verbose = oldverbose; hash = oldhash;
 		ftemp = fopen(temp, "r");
-		(void) unlink(temp);
+		if (unlink(temp) != 0) {
+			/* Ignore unlink error - temporary file removal is non-critical */
+		}
 		if (ftemp == NULL) {
 			printf("can't find list of remote files, oops\n");
 			(void) fflush(stdout);
@@ -2253,8 +2256,9 @@ void modtime(int argc, const char *argv[])
 		verbose = -1;
 	if (command("MDTM %s", argv[1]) == COMPLETE) {
 		int yy, mo, day, hour, min, sec;
-		sscanf(reply_string, "%*s %04d%02d%02d%02d%02d%02d", &yy, &mo,
+		int scanResult = sscanf(reply_string, "%*s %04d%02d%02d%02d%02d%02d", &yy, &mo,
 			&day, &hour, &min, &sec);
+		UNREFERENCED_PARAMETER(scanResult);
 		/* might want to print this in local time */
 		printf("%s\t%02d/%02d/%04d %02d:%02d:%02d GMT\n", argv[1],
 			mo, day, yy, hour, min, sec);

@@ -1041,7 +1041,8 @@ CDeviceView::BuildActionMenuForNode(
 
         if (DeviceNode->CanUpdate())
         {
-            String.LoadStringW(g_hThisInstance, IDS_MENU_UPDATE);
+            BOOL result = String.LoadStringW(g_hThisInstance, IDS_MENU_UPDATE);
+            UNREFERENCED_PARAMETER(result);
             MenuItemInfo.wID = IDM_UPDATE_DRV;
             MenuItemInfo.dwTypeData = String.GetBuffer();
             InsertMenuItemW(OwnerMenu, i, TRUE, &MenuItemInfo);
@@ -1050,7 +1051,8 @@ CDeviceView::BuildActionMenuForNode(
 
         if (DeviceNode->IsDisabled())
         {
-            String.LoadStringW(g_hThisInstance, IDS_MENU_ENABLE);
+            BOOL result = String.LoadStringW(g_hThisInstance, IDS_MENU_ENABLE);
+            UNREFERENCED_PARAMETER(result);
             MenuItemInfo.wID = IDM_ENABLE_DRV;
             MenuItemInfo.dwTypeData = String.GetBuffer();
             InsertMenuItemW(OwnerMenu, i, TRUE, &MenuItemInfo);
@@ -1059,7 +1061,8 @@ CDeviceView::BuildActionMenuForNode(
 
         if (DeviceNode->CanDisable() && !DeviceNode->IsDisabled())
         {
-            String.LoadStringW(g_hThisInstance, IDS_MENU_DISABLE);
+            BOOL result = String.LoadStringW(g_hThisInstance, IDS_MENU_DISABLE);
+            UNREFERENCED_PARAMETER(result);
             MenuItemInfo.wID = IDM_DISABLE_DRV;
             MenuItemInfo.dwTypeData = String.GetBuffer();
             InsertMenuItemW(OwnerMenu, i, TRUE, &MenuItemInfo);
@@ -1068,7 +1071,8 @@ CDeviceView::BuildActionMenuForNode(
 
         if (DeviceNode->CanUninstall())
         {
-            String.LoadStringW(g_hThisInstance, IDS_MENU_UNINSTALL);
+            BOOL result = String.LoadStringW(g_hThisInstance, IDS_MENU_UNINSTALL);
+            UNREFERENCED_PARAMETER(result);
             MenuItemInfo.wID = IDM_UNINSTALL_DRV;
             MenuItemInfo.dwTypeData = String.GetBuffer();
             InsertMenuItemW(OwnerMenu, i, TRUE, &MenuItemInfo);
@@ -1080,7 +1084,8 @@ CDeviceView::BuildActionMenuForNode(
     }
 
     // All nodes have the scan option
-    String.LoadStringW(g_hThisInstance, IDS_MENU_SCAN);
+    BOOL result = String.LoadStringW(g_hThisInstance, IDS_MENU_SCAN);
+    UNREFERENCED_PARAMETER(result);
     MenuItemInfo.wID = IDM_SCAN_HARDWARE;
     MenuItemInfo.dwTypeData = String.GetBuffer();
     InsertMenuItemW(OwnerMenu, i, TRUE, &MenuItemInfo);
@@ -1088,7 +1093,8 @@ CDeviceView::BuildActionMenuForNode(
 
     if ((Node->GetNodeType() == RootNode) || (MainMenu == true))
     {
-        String.LoadStringW(g_hThisInstance, IDS_MENU_ADD);
+        BOOL result = String.LoadStringW(g_hThisInstance, IDS_MENU_ADD);
+        UNREFERENCED_PARAMETER(result);
         MenuItemInfo.wID = IDM_ADD_HARDWARE;
         MenuItemInfo.dwTypeData = String.GetBuffer();
         InsertMenuItemW(OwnerMenu, i, TRUE, &MenuItemInfo);
@@ -1100,7 +1106,8 @@ CDeviceView::BuildActionMenuForNode(
         InsertMenuItemW(OwnerMenu, i, TRUE, &MenuSeparator);
         i++;
 
-        String.LoadStringW(g_hThisInstance, IDS_MENU_PROPERTIES);
+        BOOL result = String.LoadStringW(g_hThisInstance, IDS_MENU_PROPERTIES);
+        UNREFERENCED_PARAMETER(result);
         MenuItemInfo.wID = IDM_PROPERTIES;
         MenuItemInfo.dwTypeData = String.GetBuffer();
         InsertMenuItemW(OwnerMenu, i, TRUE, &MenuItemInfo);

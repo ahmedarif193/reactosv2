@@ -570,7 +570,8 @@ extern "C" HRESULT WINAPI SHOpenFolderWindow(PIE_THREAD_PARAM_BLOCK parameters)
 
     PIE_THREAD_PARAM_BLOCK paramsCopy = SHCloneIETHREADPARAM(parameters);
 
-    SHGetInstanceExplorer(&(paramsCopy->pExplorerInstance));
+    HRESULT hr = SHGetInstanceExplorer(&(paramsCopy->pExplorerInstance));
+    UNREFERENCED_PARAMETER(hr);
     threadHandle = CreateThread(NULL, 0x10000, BrowserThreadProc, paramsCopy, 0, &threadID);
     if (threadHandle != NULL)
     {

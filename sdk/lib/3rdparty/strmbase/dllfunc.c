@@ -168,7 +168,12 @@ HRESULT WINAPI AMovieDllRegisterServer2(BOOL bRegister)
     if (bRegister)
         hr = SetupRegisterAllClasses(g_Templates, g_cTemplates, szFileName, TRUE );
 
-    CoInitialize(NULL);
+    hr = CoInitialize(NULL);
+    if (FAILED(hr) && hr != S_FALSE)
+    {
+        ERR("Failed to initialize COM: 0x%lx\n", hr);
+        return hr;
+    }
 
     TRACE("Getting IFilterMapper2\r\n");
     hr = CoCreateInstance(&CLSID_FilterMapper2, NULL, CLSCTX_INPROC_SERVER,

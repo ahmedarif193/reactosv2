@@ -4143,11 +4143,12 @@ FxPkgPnp::PnpDeviceUsageNotification(
                         // about yet another failure. So we ignore the return
                         // value.
                         //
-                        (void) SendDeviceUsageNotification(&dependentDevice,
+                        NTSTATUS notifyStatus = SendDeviceUsageNotification(&dependentDevice,
                                                            &relatedIrp,
                                                            &workItem,
                                                            Irp,
                                                            TRUE);
+                        UNREFERENCED_PARAMETER(notifyStatus);
                     }
 
                     //
@@ -4246,11 +4247,12 @@ FxPkgPnp::PnpDeviceUsageNotification(
                     //
                     // Ignore the status because we can't do anything on failure
                     //
-                    (void) SendDeviceUsageNotification(&topOfParentStack,
+                    NTSTATUS parentStatus = SendDeviceUsageNotification(&topOfParentStack,
                                                        &parentIrp,
                                                        &workItem,
                                                        Irp,
                                                        TRUE);
+                    UNREFERENCED_PARAMETER(parentStatus);
 
                     topOfParentStack.DereferenceObject();
                 }
@@ -4305,11 +4307,12 @@ FxPkgPnp::PnpDeviceUsageNotification(
                     // We're already in a failure path. We can't do anything
                     // about yet another failure. So we ignore the return value.
                     //
-                    (void) SendDeviceUsageNotification(&dependentDevice,
-                                                       &relatedIrp,
-                                                       &workItem,
-                                                       Irp,
-                                                       TRUE);
+                    NTSTATUS notifyStatus = SendDeviceUsageNotification(&dependentDevice,
+                                                                        &relatedIrp,
+                                                                        &workItem,
+                                                                        Irp,
+                                                                        TRUE);
+                    UNREFERENCED_PARAMETER(notifyStatus);
                 }
             }
         }
@@ -4370,11 +4373,12 @@ FxPkgPnp::PnpDeviceUsageNotification(
                     //
                     // Ignore the status because we can't do anything on failure
                     //
-                    (void) SendDeviceUsageNotification(&topOfParentStack,
+                    NTSTATUS parentStatus = SendDeviceUsageNotification(&topOfParentStack,
                                                        &parentIrp,
                                                        &workItem,
                                                        Irp,
                                                        TRUE);
+                    UNREFERENCED_PARAMETER(parentStatus);
 
                     topOfParentStack.DereferenceObject();
                 }
@@ -4422,11 +4426,12 @@ FxPkgPnp::PnpDeviceUsageNotification(
                         // We're already in a failure path. We can't do anything
                         // about yet another failure. So we ignore the return value.
                         //
-                        (void) SendDeviceUsageNotification(&dependentDevice,
-                                                           &relatedIrp,
-                                                           &workItem,
-                                                           Irp,
-                                                           TRUE);
+                        NTSTATUS notifyStatus = SendDeviceUsageNotification(&dependentDevice,
+                                                                            &relatedIrp,
+                                                                            &workItem,
+                                                                            Irp,
+                                                                            TRUE);
+                        UNREFERENCED_PARAMETER(notifyStatus);
                     }
                 }
             }

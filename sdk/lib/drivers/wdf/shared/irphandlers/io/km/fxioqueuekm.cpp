@@ -209,7 +209,8 @@ Routine Description:
         // Ignore the return status because QueueRequest will complete the
         // request on it own if it fails to queue request.
         //
-        (VOID) QueueRequest(ReservedRequest);
+        NTSTATUS queueStatus = QueueRequest(ReservedRequest);
+        UNREFERENCED_PARAMETER(queueStatus);
     }
     else {
         PutBackReservedRequest(ReservedRequest);
