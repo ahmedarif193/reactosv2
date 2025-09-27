@@ -232,10 +232,6 @@ CmpDelayDerefKCBWorker(IN PVOID Context)
     /* Sanity check */
     ASSERT(CmpDelayDerefKCBWorkItemActive);
 
-    DPRINT1("CM: DelayDeref worker start (listEmpty=%d, queueCount=%lu)\n",
-            IsListEmpty(&CmpDelayDerefKCBListHead),
-            KeReadStateQueue(&ExWorkerQueue[DelayedWorkQueue].WorkerQueue));
-
     /* Lock the registry and and list lock */
     CmpLockRegistry();
     KeAcquireGuardedMutex(&CmpDelayDerefKCBLock);
@@ -249,26 +245,18 @@ CmpDelayDerefKCBWorker(IN PVOID Context)
         /* We can release the lock now */
         KeReleaseGuardedMutex(&CmpDelayDerefKCBLock);
 
-        /* Now grab the actual entry */
         Entry = CONTAINING_RECORD(Entry, CM_DELAY_DEREF_KCB_ITEM, ListEntry);
         Entry->ListEntry.Flink = Entry->ListEntry.Blink = NULL;
 
-        /* Dereference and free */
         CmpDereferenceKeyControlBlock(Entry->Kcb);
         CmpFreeDelayItem(Entry);
 
-        /* Lock the list again */
         KeAcquireGuardedMutex(&CmpDelayDerefKCBLock);
     }
 
-    /* We're done */
     CmpDelayDerefKCBWorkItemActive = FALSE;
     KeReleaseGuardedMutex(&CmpDelayDerefKCBLock);
     CmpUnlockRegistry();
-
-    DPRINT1("CM: DelayDeref worker done (listEmpty=%d, queueCount=%lu)\n",
-            IsListEmpty(&CmpDelayDerefKCBListHead),
-            KeReadStateQueue(&ExWorkerQueue[DelayedWorkQueue].WorkerQueue));
 }
 
 CODE_SEG("INIT")
@@ -322,21 +310,15 @@ CmpDelayDerefKeyControlBlock(IN PCM_KEY_CONTROL_BLOCK Kcb)
     /* Acquire the delayed deref table lock */
     KeAcquireGuardedMutex(&CmpDelayDerefKCBLock);
 
-    /* Insert the entry into the list */
     InsertTailList(&CmpDelayDerefKCBListHead, &Entry->ListEntry);
 
-    /* Check if we need to enable anything */
     if (!CmpDelayDerefKCBWorkItemActive)
     {
-        /* The queue was idle, schedule immediate processing */
         CmpDelayDerefKCBWorkItemActive = TRUE;
-        DPRINT1("CM: DelayDeref queue scheduling worker (queueCount=%lu)\n",
-                KeReadStateQueue(&ExWorkerQueue[DelayedWorkQueue].WorkerQueue));
         ExQueueWorkItem(&CmpDelayDerefKCBWorkItem,
                         DelayedWorkQueue);
     }
 
-    /* Release the table lock */
     KeReleaseGuardedMutex(&CmpDelayDerefKCBLock);
 }
 

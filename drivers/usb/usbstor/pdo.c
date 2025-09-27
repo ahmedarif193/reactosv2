@@ -23,7 +23,13 @@ USBSTOR_DisableInterface(
     if (DeviceExtension->InterfaceEnabled &&
         DeviceExtension->InterfaceName.Buffer)
     {
-        IoSetDeviceInterfaceState(&DeviceExtension->InterfaceName, FALSE);
+        NTSTATUS Status;
+
+        Status = IoSetDeviceInterfaceState(&DeviceExtension->InterfaceName, FALSE);
+        if (!NT_SUCCESS(Status))
+        {
+            DPRINT1("USBSTOR_DisableInterface: IoSetDeviceInterfaceState failed 0x%08lx\n", Status);
+        }
         DeviceExtension->InterfaceEnabled = FALSE;
     }
 }
