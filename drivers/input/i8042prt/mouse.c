@@ -265,6 +265,7 @@ i8042MouDpcRoutine(
 	PPORT_DEVICE_EXTENSION PortDeviceExtension;
 	ULONG MouseTransferred = 0;
 	ULONG MouseInBufferCopy;
+	PKINTERRUPT InterruptObject;
 	KIRQL Irql;
 	LARGE_INTEGER Timeout;
 
@@ -314,12 +315,16 @@ i8042MouDpcRoutine(
 	if (!DeviceExtension->MouseComplete)
 		return;
 
-	Irql = KeAcquireInterruptSpinLock(PortDeviceExtension->HighestDIRQLInterrupt);
+	InterruptObject = I8042pGetInterruptObject(PortDeviceExtension);
+	if (!InterruptObject)
+		return;
+
+	Irql = KeAcquireInterruptSpinLock(InterruptObject);
 
 	DeviceExtension->MouseComplete = FALSE;
 	MouseInBufferCopy = DeviceExtension->MouseInBuffer;
 
-	KeReleaseInterruptSpinLock(PortDeviceExtension->HighestDIRQLInterrupt, Irql);
+	KeReleaseInterruptSpinLock(InterruptObject, Irql);
 
 	TRACE_(I8042PRT, "Send a mouse packet\n");
 
@@ -333,14 +338,18 @@ i8042MouDpcRoutine(
 		DeviceExtension->MouseBuffer + MouseInBufferCopy,
 		&MouseTransferred);
 
-	Irql = KeAcquireInterruptSpinLock(PortDeviceExtension->HighestDIRQLInterrupt);
+	InterruptObject = I8042pGetInterruptObject(PortDeviceExtension);
+	if (!InterruptObject)
+		return;
+
+	Irql = KeAcquireInterruptSpinLock(InterruptObject);
 	DeviceExtension->MouseInBuffer -= MouseTransferred;
 	if (DeviceExtension->MouseInBuffer)
 		RtlMoveMemory(
 			DeviceExtension->MouseBuffer,
 			DeviceExtension->MouseBuffer + MouseTransferred,
 			DeviceExtension->MouseInBuffer * sizeof(MOUSE_INPUT_DATA));
-	KeReleaseInterruptSpinLock(PortDeviceExtension->HighestDIRQLInterrupt, Irql);
+	KeReleaseInterruptSpinLock(InterruptObject, Irql);
 }
 
 /* This timer DPC will be called when the mouse reset times out.
@@ -356,6 +365,7 @@ i8042DpcRoutineMouseTimeout(
 {
 	PI8042_MOUSE_EXTENSION DeviceExtension;
 	PPORT_DEVICE_EXTENSION PortDeviceExtension;
+	PKINTERRUPT InterruptObject;
 	KIRQL Irql;
 
 	UNREFERENCED_PARAMETER(Dpc);
@@ -366,14 +376,18 @@ i8042DpcRoutineMouseTimeout(
 	DeviceExtension = DeferredContext;
 	PortDeviceExtension = DeviceExtension->Common.PortDeviceExtension;
 
-	Irql = KeAcquireInterruptSpinLock(PortDeviceExtension->HighestDIRQLInterrupt);
+	InterruptObject = I8042pGetInterruptObject(PortDeviceExtension);
+	if (!InterruptObject)
+		return;
+
+	Irql = KeAcquireInterruptSpinLock(InterruptObject);
 
 	WARN_(I8042PRT, "Mouse initialization timeout! (substate %x)\n",
 		DeviceExtension->MouseResetState);
 
 	PortDeviceExtension->Flags &= ~MOUSE_PRESENT;
 
-	KeReleaseInterruptSpinLock(PortDeviceExtension->HighestDIRQLInterrupt, Irql);
+	KeReleaseInterruptSpinLock(InterruptObject, Irql);
 }
 
 /*
@@ -391,94 +405,83 @@ i8042MouInternalDeviceControl(
 	Stack = IoGetCurrentIrpStackLocation(Irp);
 	Irp->IoStatus.Information = 0;
 	DeviceExtension = (PI8042_MOUSE_EXTENSION)DeviceObject->DeviceExtension;
+	Status = STATUS_NOT_SUPPORTED;
 
 	switch (Stack->Parameters.DeviceIoControl.IoControlCode)
 	{
-		case IOCTL_INTERNAL_MOUSE_CONNECT:
+				case IOCTL_INTERNAL_MOUSE_CONNECT:
 		{
 			SIZE_T Size;
-			PIO_WORKITEM WorkItem = NULL;
-			PI8042_HOOK_WORKITEM WorkItemData = NULL;
 
 			TRACE_(I8042PRT, "IRP_MJ_INTERNAL_DEVICE_CONTROL / IOCTL_INTERNAL_MOUSE_CONNECT\n");
+		DPRINT1("i8042: Mouse connect IRQL %lu\n", KeGetCurrentIrql());
 			if (Stack->Parameters.DeviceIoControl.InputBufferLength != sizeof(CONNECT_DATA))
 			{
 				Status = STATUS_INVALID_PARAMETER;
-				goto cleanup;
+				break;
 			}
 
 			DeviceExtension->MouseData =
 				*((PCONNECT_DATA)Stack->Parameters.DeviceIoControl.Type3InputBuffer);
 
-			/* Send IOCTL_INTERNAL_I8042_HOOK_MOUSE to device stack */
-			WorkItem = IoAllocateWorkItem(DeviceObject);
-			if (!WorkItem)
-			{
-				WARN_(I8042PRT, "IoAllocateWorkItem() failed\n");
-				Status = STATUS_INSUFFICIENT_RESOURCES;
-				goto cleanup;
-			}
-			WorkItemData = ExAllocatePoolWithTag(
-				NonPagedPool,
-				sizeof(I8042_HOOK_WORKITEM),
-				I8042PRT_TAG);
-			if (!WorkItemData)
-			{
-				WARN_(I8042PRT, "ExAllocatePoolWithTag() failed\n");
-				Status = STATUS_NO_MEMORY;
-				goto cleanup;
-			}
-			WorkItemData->WorkItem = WorkItem;
-			WorkItemData->Irp = Irp;
-
-			/* Initialize extension */
 			DeviceExtension->Common.Type = Mouse;
+
 			Size = DeviceExtension->Common.PortDeviceExtension->Settings.MouseDataQueueSize * sizeof(MOUSE_INPUT_DATA);
-			DeviceExtension->MouseBuffer = ExAllocatePoolWithTag(
-				NonPagedPool,
-				Size,
-				I8042PRT_TAG);
+			DeviceExtension->MouseBuffer = ExAllocatePoolWithTag(NonPagedPool,
+				                                             Size,
+				                                             I8042PRT_TAG);
 			if (!DeviceExtension->MouseBuffer)
 			{
-				WARN_(I8042PRT, "ExAllocatePoolWithTag() failed\n");
 				Status = STATUS_NO_MEMORY;
-				goto cleanup;
+				goto MouConnectError;
 			}
 			RtlZeroMemory(DeviceExtension->MouseBuffer, Size);
 			DeviceExtension->MouseAttributes.InputDataQueueLength =
 				DeviceExtension->Common.PortDeviceExtension->Settings.MouseDataQueueSize;
-			KeInitializeDpc(
-				&DeviceExtension->DpcMouse,
-				i8042MouDpcRoutine,
-				DeviceExtension);
-			KeInitializeDpc(
-				&DeviceExtension->DpcMouseTimeout,
-				i8042DpcRoutineMouseTimeout,
-				DeviceExtension);
+			KeInitializeDpc(&DeviceExtension->DpcMouse,
+			                i8042MouDpcRoutine,
+			                DeviceExtension);
+			KeInitializeDpc(&DeviceExtension->DpcMouseTimeout,
+			                i8042DpcRoutineMouseTimeout,
+			                DeviceExtension);
 			KeInitializeTimer(&DeviceExtension->TimerMouseTimeout);
-			DeviceExtension->Common.PortDeviceExtension->MouseExtension = DeviceExtension;
-			DeviceExtension->Common.PortDeviceExtension->Flags |= MOUSE_CONNECTED;
 
-			IoMarkIrpPending(Irp);
 			DeviceExtension->MouseState = MouseResetting;
 			DeviceExtension->MouseResetState = ExpectingReset;
 			DeviceExtension->MouseHook.IsrWritePort = i8042MouIsrWritePort;
 			DeviceExtension->MouseHook.QueueMousePacket = i8042MouQueuePacket;
 			DeviceExtension->MouseHook.CallContext = DeviceExtension;
-			IoQueueWorkItem(WorkItem,
-				i8042SendHookWorkItem,
-				DelayedWorkQueue,
-				WorkItemData);
-			Status = STATUS_PENDING;
+
+			Status = i8042PerformHookRequest(DeviceObject,
+			                              IOCTL_INTERNAL_I8042_HOOK_MOUSE,
+			                              &DeviceExtension->MouseHook,
+			                              sizeof(INTERNAL_I8042_HOOK_MOUSE));
+			if (!NT_SUCCESS(Status))
+				goto MouConnectError;
+
+			DeviceExtension->Common.Type = Mouse;
+			DeviceExtension->Common.PortDeviceExtension->MouseExtension = DeviceExtension;
+			DeviceExtension->Common.PortDeviceExtension->Flags |= MOUSE_CONNECTED;
+			Status = STATUS_SUCCESS;
+
+			Irp->IoStatus.Status = STATUS_SUCCESS;
+			Irp->IoStatus.Information = 0;
 			break;
 
-cleanup:
-			if (DeviceExtension->MouseBuffer)
-				ExFreePoolWithTag(DeviceExtension->MouseBuffer, I8042PRT_TAG);
-			if (WorkItem)
-				IoFreeWorkItem(WorkItem);
-			if (WorkItemData)
-				ExFreePoolWithTag(WorkItemData, I8042PRT_TAG);
+		MouConnectError:
+			DeviceExtension->Common.Type = Unknown;
+			if (!NT_SUCCESS(Status))
+			{
+				if (DeviceExtension->MouseBuffer)
+				{
+					ExFreePoolWithTag(DeviceExtension->MouseBuffer, I8042PRT_TAG);
+					DeviceExtension->MouseBuffer = NULL;
+				}
+				DeviceExtension->Common.PortDeviceExtension->Flags &= ~MOUSE_CONNECTED;
+				DeviceExtension->Common.PortDeviceExtension->MouseExtension = NULL;
+				if (NT_SUCCESS(Status))
+					Status = STATUS_UNSUCCESSFUL;
+			}
 			break;
 		}
 		case IOCTL_INTERNAL_MOUSE_DISCONNECT:

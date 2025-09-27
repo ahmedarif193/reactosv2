@@ -636,6 +636,9 @@ ScServiceDispatcher(HANDLE hPipe,
     PACTIVE_SERVICE lpService;
     SCM_REPLY_PACKET ReplyPacket;
     DWORD dwError;
+    WCHAR szLastServiceName[MAX_SERVICE_NAME_LENGTH + 1];
+
+    szLastServiceName[0] = L'\0';
 
     TRACE("ScServiceDispatcher(%p %p %lu)\n",
           hPipe, ControlPacket, dwBufferSize);
@@ -653,12 +656,23 @@ ScServiceDispatcher(HANDLE hPipe,
                            NULL);
         if (bResult == FALSE)
         {
-            ERR("Pipe read failed (Error: %lu)\n", GetLastError());
+            ERR("Service %S: pipe read failed (Error: %lu)\n",
+                (szLastServiceName[0] != L'\0') ? szLastServiceName : L"<unknown>",
+                GetLastError());
             return FALSE;
         }
 
         lpServiceName = (LPWSTR)((PBYTE)ControlPacket + ControlPacket->dwServiceNameOffset);
         TRACE("Service: %S\n", lpServiceName);
+
+        if (lpServiceName != NULL)
+        {
+            SIZE_T cchName = wcslen(lpServiceName);
+            if (cchName > MAX_SERVICE_NAME_LENGTH)
+                cchName = MAX_SERVICE_NAME_LENGTH;
+            wcsncpy(szLastServiceName, lpServiceName, cchName);
+            szLastServiceName[cchName] = L'\0';
+        }
 
         if ((ControlPacket->dwControl == SERVICE_CONTROL_STOP) &&
             (lpServiceName[0] == UNICODE_NULL))
@@ -711,7 +725,9 @@ ScServiceDispatcher(HANDLE hPipe,
                             NULL);
         if (bResult == FALSE)
         {
-            ERR("Pipe write failed (Error: %lu)\n", GetLastError());
+            ERR("Service %S: pipe write failed (Error: %lu)\n",
+                (szLastServiceName[0] != L'\0') ? szLastServiceName : L"<unknown>",
+                GetLastError());
             return FALSE;
         }
     }

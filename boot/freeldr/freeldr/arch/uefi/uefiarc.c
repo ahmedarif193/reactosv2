@@ -10,6 +10,7 @@
 #include <arcname.h>
 #include "ntldr/winldr.h"
 #include <disk.h>
+#include <string.h>
 
 #include <debug.h>
 DBG_DEFAULT_CHANNEL(WARNING);
@@ -67,6 +68,58 @@ BOOLEAN
 UefiArcDiskInfoReady(VOID)
 {
     return UefiArcDiskTableReady;
+}
+
+BOOLEAN
+UefiArcDiskNameExists(IN PCSTR ArcName)
+{
+    ULONG count, i;
+
+    if (!ArcName)
+        return FALSE;
+
+    count = ArcGetDiskCount();
+    for (i = 0; i < count; ++i)
+    {
+        PARC_DISK_SIGNATURE_EX info = ArcGetDiskInfo(i);
+        if (!info)
+            continue;
+
+        if (strcmp(info->ArcName, ArcName) == 0)
+            return TRUE;
+    }
+
+    return FALSE;
+}
+
+BOOLEAN
+UefiArcUpdateDiskInfo(IN PCSTR ArcName,
+                      IN ULONG Signature,
+                      IN ULONG Checksum,
+                      IN BOOLEAN ValidPartitionTable)
+{
+    ULONG count, i;
+
+    if (!ArcName)
+        return FALSE;
+
+    count = ArcGetDiskCount();
+    for (i = 0; i < count; ++i)
+    {
+        PARC_DISK_SIGNATURE_EX info = ArcGetDiskInfo(i);
+        if (!info)
+            continue;
+
+        if (strcmp(info->ArcName, ArcName) == 0)
+        {
+            info->DiskSignature.Signature = Signature;
+            info->DiskSignature.CheckSum = Checksum;
+            info->DiskSignature.ValidPartitionTable = ValidPartitionTable;
+            return TRUE;
+        }
+    }
+
+    return FALSE;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -376,6 +429,34 @@ MapToCdromIndex(IN EFI_HANDLE CdHandle)
     return (ULONG)-1; /* not found */
 }
 
+static BOOLEAN
+RegisterCdromArcEntry(IN EFI_HANDLE CdHandle, OUT PULONG Index)
+{
+    CHAR  ArcName[64];
+    ULONG existing = MapToCdromIndex(CdHandle);
+
+    if (existing != (ULONG)-1)
+    {
+        if (Index) *Index = existing;
+        return FALSE;
+    }
+
+    ULONG idx = UefiCdromCount;
+
+    RtlStringCbPrintfA(ArcName, sizeof(ArcName), "multi(0)disk(0)cdrom(%lu)", idx);
+
+    if (!UefiArcDiskNameExists(ArcName))
+        AddReactOSArcDiskInfo(ArcName, 0, 0, FALSE);
+
+    UefiCdromHandles[UefiCdromCount++] = CdHandle;
+
+    if (Index) *Index = idx;
+
+    TRACE("UEFI ARC: Registered CD-ROM %lu via fallback handle\n", idx);
+
+    return TRUE;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Enumerate disks and register ARC names                                      */
 /* -------------------------------------------------------------------------- */
@@ -436,8 +517,37 @@ UefiEnumerateArcDisks(VOID)
         BOOLEAN isRemovable = BlockIo->Media->RemovableMedia;
         BOOLEAN isCd        = IsCdRomHandle(H);
 
-        /* We only index physical handles (non-partitions) */
-        if (isPartition) continue;
+        if (isPartition)
+        {
+            if (isCd && isBootHandle)
+            {
+                EFI_HANDLE parentHandle = FindParentDiskHandle(H);
+                EFI_BLOCK_IO_PROTOCOL* parentIo = NULL;
+
+                if (parentHandle && parentHandle != H &&
+                    !EFI_ERROR(GlobalSystemTable->BootServices->HandleProtocol(
+                        parentHandle, &gEfiBlockIoProtocolGuid, (VOID**)&parentIo)) && parentIo)
+                {
+                    H = parentHandle;
+                    BlockIo = parentIo;
+                    isPartition = BlockIo->Media->LogicalPartition;
+                    isRemovable = BlockIo->Media->RemovableMedia;
+                    isCd = IsCdRomHandle(H);
+                }
+
+                if (isPartition)
+                {
+                    ULONG cdIndex = 0;
+                    RegisterCdromArcEntry(H, &cdIndex);
+                    TRACE("UEFI ARC: Boot CD partition mapped as cdrom(%lu)\n", cdIndex);
+                    continue;
+                }
+            }
+            else
+            {
+                continue;
+            }
+        }
 
         /* Skip non-boot removable devices except CD-ROMs (we still index CDs) */
         if (isRemovable && !isBootHandle && !isCd)
@@ -445,37 +555,33 @@ UefiEnumerateArcDisks(VOID)
 
         if (isCd)
         {
-            /* Map cdrom(k) with a sequential index */
-            CHAR ArcName[64];
-            ULONG idx = UefiCdromCount;
-
-            RtlStringCbPrintfA(ArcName, sizeof(ArcName), "multi(0)disk(0)cdrom(%lu)", (ULONG)idx);
-            /* CDs have no MBR; pass ValidPartitionTable = FALSE */
-            AddReactOSArcDiskInfo(ArcName, 0, 0, FALSE);
-            UefiCdromHandles[UefiCdromCount++] = H;
-
-            TRACE("UEFI ARC: Found CD-ROM %lu: %s\n", (ULONG)idx, ArcName);
+            ULONG cdIndex = 0;
+            BOOLEAN added = RegisterCdromArcEntry(H, &cdIndex);
+            if (added)
+            {
+                TRACE("UEFI ARC: Found CD-ROM %lu: multi(0)disk(0)cdrom(%lu)\n", cdIndex, cdIndex);
+            }
+            continue;
         }
-        else
-        {
-            /* HDD/SSD physical disk */
-            CHAR  ArcName[64];
-            ULONG Signature = 0, CheckSum = 0;
-            BOOLEAN HasMbr  = ReadDiskSignature(BlockIo, &Signature, &CheckSum);
 
-            UefiDiskHandles[ValidDiskCount].Handle     = H;
-            UefiDiskHandles[ValidDiskCount].BlockIo    = BlockIo;
-            UefiDiskHandles[ValidDiskCount].DiskNumber = ValidDiskCount;
+        /* HDD/SSD physical disk */
+        CHAR  ArcName[64];
+        ULONG Signature = 0, CheckSum = 0;
+        BOOLEAN HasMbr  = ReadDiskSignature(BlockIo, &Signature, &CheckSum);
 
-            RtlStringCbPrintfA(ArcName, sizeof(ArcName), "multi(0)disk(0)rdisk(%lu)", ValidDiskCount);
+        UefiDiskHandles[ValidDiskCount].Handle     = H;
+        UefiDiskHandles[ValidDiskCount].BlockIo    = BlockIo;
+        UefiDiskHandles[ValidDiskCount].DiskNumber = ValidDiskCount;
 
+        RtlStringCbPrintfA(ArcName, sizeof(ArcName), "multi(0)disk(0)rdisk(%lu)", ValidDiskCount);
+
+        if (!UefiArcDiskNameExists(ArcName))
             AddReactOSArcDiskInfo(ArcName, Signature, CheckSum, HasMbr);
 
-            TRACE("UEFI ARC: Disk %lu -> %s, Sig=0x%08X, Ck=0x%08X, MBR=%d\n",
-                  ValidDiskCount, ArcName, Signature, CheckSum, HasMbr);
+        TRACE("UEFI ARC: Disk %lu -> %s, Sig=0x%08X, Ck=0x%08X, MBR=%d\n",
+              ValidDiskCount, ArcName, Signature, CheckSum, HasMbr);
 
-            ++ValidDiskCount;
-        }
+        ++ValidDiskCount;
     }
 
     UefiDiskHandleCount = ValidDiskCount;
@@ -534,10 +640,23 @@ UefiInitializeArcDisks(PLOADER_PARAMETER_BLOCK LoaderBlock)
         InsertTailList(&LoaderBlock->ArcDiskInformation->DiskSignatureListHead,
                        &ArcDiskSig->DiskSignature.ListEntry);
 
-        TRACE("UEFI ARC: Added disk to loader list: %s (Sig=0x%08X, Ck=0x%08X)\n",
-              ArcDiskSig->ArcName,
-              ArcDiskSig->DiskSignature.Signature,
-              ArcDiskSig->DiskSignature.CheckSum);
+        if (UefiArcUpdateDiskInfo(ArcDiskSig->ArcName,
+                                   ArcDiskInfo->DiskSignature.Signature,
+                                   ArcDiskInfo->DiskSignature.CheckSum,
+                                   ArcDiskInfo->DiskSignature.ValidPartitionTable))
+        {
+            TRACE("UEFI ARC: Updated disk in loader list: %s (Sig=0x%08X, Ck=0x%08X)\n",
+                  ArcDiskSig->ArcName,
+                  ArcDiskSig->DiskSignature.Signature,
+                  ArcDiskSig->DiskSignature.CheckSum);
+        }
+        else
+        {
+            TRACE("UEFI ARC: Added disk to loader list: %s (Sig=0x%08X, Ck=0x%08X)\n",
+                  ArcDiskSig->ArcName,
+                  ArcDiskSig->DiskSignature.Signature,
+                  ArcDiskSig->DiskSignature.CheckSum);
+        }
     }
 
     TRACE("UefiInitializeArcDisks: Added %lu disks to loader block\n", DiskCount);
@@ -579,7 +698,23 @@ UefiGetBootPartitionInfo(
     /* CD-ROM boot? Emit cdrom(#) and no partition */
     if (IsCdRomHandle(BootHandle))
     {
-        ULONG cdIndex = MapToCdromIndex(BootHandle);
+        EFI_HANDLE cdHandle = BootHandle;
+        ULONG cdIndex = MapToCdromIndex(cdHandle);
+
+        if (cdIndex == (ULONG)-1)
+        {
+            EFI_HANDLE parentHandle = FindParentDiskHandle(BootHandle);
+            if (parentHandle)
+            {
+                cdHandle = parentHandle;
+                cdIndex = MapToCdromIndex(cdHandle);
+                if (cdIndex == (ULONG)-1)
+                {
+                    RegisterCdromArcEntry(cdHandle, &cdIndex);
+                }
+            }
+        }
+
         if (cdIndex != (ULONG)-1)
         {
             if (RDiskNumber)     *RDiskNumber     = cdIndex;

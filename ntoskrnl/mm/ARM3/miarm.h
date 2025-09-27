@@ -1131,8 +1131,8 @@ MiLockProcessWorkingSet(IN PEPROCESS Process,
     ASSERT(Thread->OwnsProcessWorkingSetShared == FALSE);
     ASSERT(Thread->OwnsProcessWorkingSetExclusive == FALSE);
 
-    /* Block APCs, make sure that still nothing is already held */
-    KeEnterGuardedRegion();
+    /* Block APCs when allowed; at DISPATCH_LEVEL they are already blocked */
+    if (KeGetCurrentIrql() <= APC_LEVEL) KeEnterGuardedRegion();
     ASSERT(!MM_ANY_WS_LOCK_HELD(Thread));
 
     /* Lock the working set */
@@ -1153,8 +1153,8 @@ MiLockProcessWorkingSetShared(IN PEPROCESS Process,
     ASSERT(Thread->OwnsProcessWorkingSetShared == FALSE);
     ASSERT(Thread->OwnsProcessWorkingSetExclusive == FALSE);
 
-    /* Block APCs, make sure that still nothing is already held */
-    KeEnterGuardedRegion();
+    /* Block APCs when allowed; at DISPATCH_LEVEL they are already blocked */
+    if (KeGetCurrentIrql() <= APC_LEVEL) KeEnterGuardedRegion();
     ASSERT(!MM_ANY_WS_LOCK_HELD(Thread));
 
     /* Lock the working set */
@@ -1205,9 +1205,10 @@ MiUnlockProcessWorkingSet(IN PEPROCESS Process,
     ASSERT(Thread->OwnsProcessWorkingSetExclusive == TRUE);
     Thread->OwnsProcessWorkingSetExclusive = FALSE;
 
-    /* Release the lock and re-enable APCs */
+    /* Release the lock */
     ExReleasePushLockExclusive(&Process->Vm.WorkingSetMutex);
-    KeLeaveGuardedRegion();
+    /* Re-enable APCs if we disabled them here */
+    if (KeGetCurrentIrql() <= APC_LEVEL) KeLeaveGuardedRegion();
 }
 
 //
@@ -1229,9 +1230,10 @@ MiUnlockProcessWorkingSetShared(IN PEPROCESS Process,
     /* Don't claim the lock anylonger */
     Thread->OwnsProcessWorkingSetShared = FALSE;
 
-    /* Release the lock and re-enable APCs */
+    /* Release the lock */
     ExReleasePushLockShared(&Process->Vm.WorkingSetMutex);
-    KeLeaveGuardedRegion();
+    /* Re-enable APCs if we disabled them here */
+    if (KeGetCurrentIrql() <= APC_LEVEL) KeLeaveGuardedRegion();
 }
 
 //
@@ -1268,8 +1270,8 @@ VOID
 MiLockWorkingSet(IN PETHREAD Thread,
                  IN PMMSUPPORT WorkingSet)
 {
-    /* Block APCs */
-    KeEnterGuardedRegion();
+    /* Block APCs when allowed; at DISPATCH_LEVEL they are already blocked */
+    if (KeGetCurrentIrql() <= APC_LEVEL) KeEnterGuardedRegion();
 
     /* Working set should be in global memory */
     ASSERT(MI_IS_SESSION_ADDRESS((PVOID)WorkingSet) == FALSE);
@@ -1310,8 +1312,10 @@ MiLockWorkingSetShared(
     _In_ PETHREAD Thread,
     _In_ PMMSUPPORT WorkingSet)
 {
-    /* Block APCs */
-    KeEnterGuardedRegion();
+    /* Avoid any debug printing here: this can be called at high IRQL */
+
+    /* Block APCs when allowed; at DISPATCH_LEVEL they are already blocked */
+    if (KeGetCurrentIrql() <= APC_LEVEL) KeEnterGuardedRegion();
 
     /* Working set should be in global memory */
     ASSERT(MI_IS_SESSION_ADDRESS((PVOID)WorkingSet) == FALSE);
@@ -1383,8 +1387,8 @@ MiUnlockWorkingSet(IN PETHREAD Thread,
     /* Release the working set lock */
     ExReleasePushLockExclusive(&WorkingSet->WorkingSetMutex);
 
-    /* Unblock APCs */
-    KeLeaveGuardedRegion();
+    /* Re-enable APCs if we disabled them here */
+    if (KeGetCurrentIrql() <= APC_LEVEL) KeLeaveGuardedRegion();
 }
 
 FORCEINLINE
@@ -1422,8 +1426,8 @@ MiUnlockWorkingSetShared(
     /* Release the working set lock */
     ExReleasePushLockShared(&WorkingSet->WorkingSetMutex);
 
-    /* Unblock APCs */
-    KeLeaveGuardedRegion();
+    /* Re-enable APCs if we disabled them here */
+    if (KeGetCurrentIrql() <= APC_LEVEL) KeLeaveGuardedRegion();
 }
 
 FORCEINLINE

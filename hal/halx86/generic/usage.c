@@ -165,18 +165,35 @@ HalpBuildPartialFromIdt(IN ULONG Entry,
 {
     /* Exclusive interrupt entry */
     RawDescriptor->Type = CmResourceTypeInterrupt;
-    RawDescriptor->ShareDisposition = CmResourceShareDriverExclusive;
 
     /* Check the interrupt type */
     if (HalpIDTUsageFlags[Entry].Flags & IDT_LATCHED)
     {
         /* Latched */
         RawDescriptor->Flags = CM_RESOURCE_INTERRUPT_LATCHED;
+
+        if (HalpIDTUsageFlags[Entry].Flags & IDT_DEVICE)
+        {
+            RawDescriptor->ShareDisposition = CmResourceShareDeviceExclusive;
+        }
+        else
+        {
+            RawDescriptor->ShareDisposition = CmResourceShareDriverExclusive;
+        }
     }
     else
     {
         /* Level */
         RawDescriptor->Flags = CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE;
+
+        if (HalpIDTUsageFlags[Entry].Flags & IDT_DEVICE)
+        {
+            RawDescriptor->ShareDisposition = CmResourceShareShared;
+        }
+        else
+        {
+            RawDescriptor->ShareDisposition = CmResourceShareDriverExclusive;
+        }
     }
 
     /* Get vector and level from IDT usage */

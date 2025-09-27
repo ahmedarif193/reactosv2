@@ -63,6 +63,7 @@ static INTERNAL_UEFI_DISK* InternalUefiDisk = NULL;
 static EFI_GUID bioGuid = BLOCK_IO_PROTOCOL;
 static EFI_BLOCK_IO* bio;
 static EFI_HANDLE* handles = NULL;
+static UINTN UefiHandleCount = 0;
 
 /* FUNCTIONS *****************************************************************/
 
@@ -341,7 +342,7 @@ GetHarddiskInformation(UCHAR DriveNumber)
 
     /* Fill out the ARC disk block */
     sprintf(ArcName, "multi(0)disk(0)rdisk(%u)", DriveNumber - FIRST_BIOS_DISK);
-    if (!UefiArcDiskInfoReady())
+    if (!UefiArcUpdateDiskInfo(ArcName, Signature, Checksum, ValidPartitionTable))
         AddReactOSArcDiskInfo(ArcName, Signature, Checksum, ValidPartitionTable);
 
     sprintf(ArcName, "multi(0)disk(0)rdisk(%u)partition(0)", DriveNumber - FIRST_BIOS_DISK);
@@ -404,6 +405,7 @@ UefiSetupBlockDevices(VOID)
     handles = MmAllocateMemoryWithType(handle_size, LoaderFirmwareTemporary);
     Status = GlobalSystemTable->BootServices->LocateHandle(ByProtocol, &bioGuid, NULL, &handle_size, handles);
     SystemHandleCount = handle_size / sizeof(EFI_HANDLE);
+    UefiHandleCount = SystemHandleCount;
     InternalUefiDisk = MmAllocateMemoryWithType(sizeof(INTERNAL_UEFI_DISK) * SystemHandleCount, LoaderFirmwareTemporary);
 
     BlockDeviceIndex = 0;
@@ -540,8 +542,28 @@ UefiInitializeBootDevices(VOID)
         ULONG ChecksumBytes;
         EFI_STATUS Status;
         EFI_BLOCK_IO* BootBlockIo;
+        EFI_HANDLE ReadHandle;
 
-        BlockSize = bio->Media->BlockSize;
+        ReadHandle = handles[UefiBootRootIdentifier];
+        if ((OffsetToBoot < UefiHandleCount) && (handles[OffsetToBoot] != NULL))
+        {
+            EFI_BLOCK_IO* CandidateIo = NULL;
+            if (!EFI_ERROR(GlobalSystemTable->BootServices->HandleProtocol(handles[OffsetToBoot], &bioGuid, (VOID**)&CandidateIo)) &&
+                CandidateIo != NULL && CandidateIo->Media->MediaPresent)
+            {
+                ReadHandle = handles[OffsetToBoot];
+            }
+        }
+
+        /* Obtain the block protocol for the boot handle */
+        Status = GlobalSystemTable->BootServices->HandleProtocol(ReadHandle, &bioGuid, (VOID**)&BootBlockIo);
+        if (EFI_ERROR(Status) || BootBlockIo == NULL)
+        {
+            ERR("Failed to query block protocol for boot device (Status=%lx)\n", (ULONG_PTR)Status);
+            return FALSE;
+        }
+
+        BlockSize = BootBlockIo->Media->BlockSize;
         if (BlockSize == 0)
         {
             /* Fallback to the ISO9660 logical block size */
@@ -553,15 +575,6 @@ UefiInitializeBootDevices(VOID)
         if (BlocksToRead == 0)
         {
             BlocksToRead = 1;
-        }
-
-        /* Obtain the block protocol for the boot handle */
-        Status = GlobalSystemTable->BootServices->HandleProtocol(
-            handles[UefiBootRootIdentifier], &bioGuid, (VOID**)&BootBlockIo);
-        if (EFI_ERROR(Status) || BootBlockIo == NULL)
-        {
-            ERR("Failed to query block protocol for boot device (Status=%lx)\n", (ULONG_PTR)Status);
-            return FALSE;
         }
 
         /* Sanity-check read buffer size */
@@ -614,7 +627,7 @@ UefiInitializeBootDevices(VOID)
         TRACE("Checksum: %x\n", Checksum);
 
         /* Fill out the ARC disk block */
-        if (!UefiArcDiskInfoReady())
+        if (!UefiArcUpdateDiskInfo(FrLdrBootPath, Signature, Checksum, TRUE))
             AddReactOSArcDiskInfo(FrLdrBootPath, Signature, Checksum, TRUE);
 
         if (TempBufferAllocated)

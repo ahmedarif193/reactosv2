@@ -6,6 +6,7 @@ list(APPEND SOURCE
     createclose.c
     hwhacks.c
     i8042prt.c
+    hook_safe.c
     keyboard.c
     misc.c
     mouse.c
@@ -24,5 +25,8 @@ set_module_type(i8042prt kernelmodedriver)
 target_link_libraries(i8042prt dmilib)
 add_importlibs(i8042prt ntoskrnl hal)
 add_pch(i8042prt i8042prt.h SOURCE)
+
+# Ensure i8042prt.c sees the original symbol name to avoid macro remapping
+set_source_files_properties(i8042prt.c PROPERTIES COMPILE_DEFINITIONS I8042PRT_DEFINE_PERFORM_HOOK)
 add_cd_file(TARGET i8042prt DESTINATION reactos/system32/drivers NO_CAB FOR all)
 add_registry_inf(i8042prt_reg.inf)

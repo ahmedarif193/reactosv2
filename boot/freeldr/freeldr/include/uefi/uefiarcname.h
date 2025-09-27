@@ -4,6 +4,8 @@
 // AGENT-MODIFIED: Updated function declarations to match renamed implementations
 BOOLEAN UefiEnumerateArcDisks(VOID);
 BOOLEAN UefiArcDiskInfoReady(VOID);
+BOOLEAN UefiArcDiskNameExists(IN PCSTR ArcName);
+BOOLEAN UefiArcUpdateDiskInfo(IN PCSTR ArcName, IN ULONG Signature, IN ULONG Checksum, IN BOOLEAN ValidPartitionTable);
 BOOLEAN UefiInitializeArcDisks(PLOADER_PARAMETER_BLOCK LoaderBlock);
 BOOLEAN UefiGetBootPartitionInfo(OUT PULONG RDiskNumber,
                                  OUT PULONG PartitionNumber,

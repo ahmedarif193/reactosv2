@@ -400,6 +400,7 @@ cleanup:
 	DeviceExtension->DeviceName = DeviceNameU.Buffer;
 	Fdo->Flags |= DO_POWER_PAGABLE;
 	Fdo->Flags |= DO_BUFFERED_IO; /* FIXME: Why is it needed for 1st stage setup? */
+	Fdo->Flags &= ~DO_DIRECT_IO;
 	Fdo->Flags &= ~DO_DEVICE_INITIALIZING;
 
 	/* Add entry entry to HKEY_LOCAL_MACHINE\HARDWARE\DEVICEMAP\[DeviceBaseName] */
@@ -684,6 +685,10 @@ ClassAddDevice(
 		Fdo->Flags |= DO_BUFFERED_IO;
 	if (DeviceExtension->LowerDevice->Flags & DO_DIRECT_IO)
 		Fdo->Flags |= DO_DIRECT_IO;
+
+	/* Always operate the class device in buffered I/O mode */
+	Fdo->Flags |= DO_BUFFERED_IO;
+	Fdo->Flags &= ~DO_DIRECT_IO;
 
 	if (DriverExtension->ConnectMultiplePorts)
 		DeviceExtension->ClassDO = DriverExtension->MainClassDeviceObject;

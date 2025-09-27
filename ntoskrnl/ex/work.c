@@ -351,8 +351,56 @@ ExpDetectWorkerThreadDeadlock(VOID)
             (Queue->WorkItemsProcessed == Queue->WorkItemsProcessedLastPass) &&
             (Queue->DynamicThreadCount < 16))
         {
+            ULONG QueueDepth = KeReadStateQueue(&Queue->WorkerQueue);
+
+#ifdef _M_AMD64
+            PWORK_QUEUE_ITEM WorkItem = NULL;
+            PWORK_QUEUE_ITEM WorkItemNext = NULL;
+            ULONGLONG ImageBase = 0;
+            PRUNTIME_FUNCTION FunctionEntry = NULL;
+            ULONG_PTR RoutineOffset = 0;
+
+            if (!IsListEmpty(&Queue->WorkerQueue.EntryListHead))
+            {
+                WorkItem = CONTAINING_RECORD(Queue->WorkerQueue.EntryListHead.Flink,
+                                             WORK_QUEUE_ITEM,
+                                             List);
+                if (Queue->WorkerQueue.EntryListHead.Flink !=
+                    Queue->WorkerQueue.EntryListHead.Blink)
+                {
+                    WorkItemNext = CONTAINING_RECORD(Queue->WorkerQueue.EntryListHead.Flink->Flink,
+                                                     WORK_QUEUE_ITEM,
+                                                     List);
+                }
+                FunctionEntry = RtlLookupFunctionEntry((ULONG_PTR)WorkItem->WorkerRoutine,
+                                                       &ImageBase,
+                                                       NULL);
+                if (ImageBase)
+                {
+                    RoutineOffset = (ULONG_PTR)WorkItem->WorkerRoutine - (ULONG_PTR)ImageBase;
+                }
+            }
+
             /* Stuff is still on the queue and nobody did anything about it */
-            DPRINT1("EX: Work Queue Deadlock detected: %lu\n", i);
+            DPRINT1("EX: Work Queue Deadlock detected: %lu (worker %p base %p+0x%Ix entry %p item %p param %p depth %lu processed %lu nextItem %p nextRoutine %p)\n",
+                    i,
+                    WorkItem ? WorkItem->WorkerRoutine : NULL,
+                    (PVOID)(ULONG_PTR)ImageBase,
+                    RoutineOffset,
+                    FunctionEntry,
+                    WorkItem,
+                    WorkItem ? WorkItem->Parameter : NULL,
+                    QueueDepth,
+                    Queue->WorkItemsProcessed,
+                    WorkItemNext,
+                    WorkItemNext ? WorkItemNext->WorkerRoutine : NULL);
+#else
+            /* Stuff is still on the queue and nobody did anything about it */
+            DPRINT1("EX: Work Queue Deadlock detected: %lu (depth %lu processed %lu)\n",
+                    i,
+                    QueueDepth,
+                    Queue->WorkItemsProcessed);
+#endif
             ExpCreateWorkerThread(i, TRUE);
             DPRINT1("Dynamic threads queued %d\n", Queue->DynamicThreadCount);
         }
@@ -550,13 +598,36 @@ ExpInitializeWorkerThreads(VOID)
     /* Initialize the Array */
     for (WorkQueueType = 0; WorkQueueType < MaximumWorkQueue; WorkQueueType++)
     {
-        /* Clear the structure and initialize the queue */
+        ULONG MaxActive;
+
+        /* Clear the structure */
         RtlZeroMemory(&ExWorkerQueue[WorkQueueType], sizeof(EX_WORK_QUEUE));
-        KeInitializeQueue(&ExWorkerQueue[WorkQueueType].WorkerQueue, 0);
+
+        /*
+         * Allow at least two simultaneous active workers on the delayed
+         * queue, even on uniprocessor systems, to avoid self-deadlocks
+         * when a worker depends on another work item to make progress.
+         * For other queues, keep the default of KeNumberProcessors.
+         */
+        if (WorkQueueType == DelayedWorkQueue)
+        {
+            MaxActive = (KeNumberProcessors < 2) ? 2 : KeNumberProcessors;
+        }
+        else
+        {
+            MaxActive = 0; /* use KeNumberProcessors */
+        }
+
+        /* Initialize the queue with the selected maximum active count */
+        KeInitializeQueue(&ExWorkerQueue[WorkQueueType].WorkerQueue, MaxActive);
     }
 
-    /* Dynamic threads are only used for the critical queue */
+    /*
+     * Enable dynamic threads for critical and delayed queues so they
+     * can scale under load and prevent prolonged backlogs during boot.
+     */
     ExWorkerQueue[CriticalWorkQueue].Info.MakeThreadsAsNecessary = TRUE;
+    ExWorkerQueue[DelayedWorkQueue].Info.MakeThreadsAsNecessary = TRUE;
 
     /* Initialize the balance set manager events */
     KeInitializeEvent(&ExpThreadSetManagerEvent, SynchronizationEvent, FALSE);

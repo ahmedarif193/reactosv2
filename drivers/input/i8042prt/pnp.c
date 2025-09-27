@@ -474,23 +474,37 @@ StartProcedure(
         Status = i8042ConnectMouseInterrupt(DeviceExtension->MouseExtension);
         if (NT_SUCCESS(Status))
         {
+            PKINTERRUPT InterruptObject;
+
             DeviceExtension->Flags |= MOUSE_INITIALIZED;
+
+            InterruptObject = I8042pGetInterruptObject(DeviceExtension);
+            if (InterruptObject)
+            {
+                DeviceExtension->HighestDIRQLInterrupt = InterruptObject;
+
+                /* Start the mouse */
+                Irql = KeAcquireInterruptSpinLock(InterruptObject);
+
+                /* HACK: the mouse has already been reset in i8042DetectMouse. This second
+                   reset prevents some touchpads/mice from working (Dell D531, D600).
+                   See CORE-6901 */
+                if (!(i8042HwFlags & FL_INITHACK))
+                {
+                    i8042IsrWritePort(DeviceExtension, MOU_CMD_RESET, CTRL_WRITE_MOUSE);
+                }
+
+                KeReleaseInterruptSpinLock(InterruptObject, Irql);
+            }
+            else
+            {
+                WARN_(I8042PRT, "Mouse initialized but no interrupt object available\n");
+            }
         }
         else
         {
             WARN_(I8042PRT, "i8042ConnectMouseInterrupt failed: %lx\n", Status);
         }
-
-        /* Start the mouse */
-        Irql = KeAcquireInterruptSpinLock(DeviceExtension->HighestDIRQLInterrupt);
-        /* HACK: the mouse has already been reset in i8042DetectMouse. This second
-           reset prevents some touchpads/mice from working (Dell D531, D600).
-           See CORE-6901 */
-        if (!(i8042HwFlags & FL_INITHACK))
-        {
-            i8042IsrWritePort(DeviceExtension, MOU_CMD_RESET, CTRL_WRITE_MOUSE);
-        }
-        KeReleaseInterruptSpinLock(DeviceExtension->HighestDIRQLInterrupt, Irql);
     }
 
     return Status;

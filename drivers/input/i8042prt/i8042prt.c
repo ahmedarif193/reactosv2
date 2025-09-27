@@ -67,6 +67,11 @@ i8042AddDevice(
 		goto cleanup;
 	}
 
+
+	/* Always use buffered I/O for port devices */
+	Fdo->Flags |= DO_BUFFERED_IO;
+	Fdo->Flags &= ~DO_DIRECT_IO;
+
 	DeviceExtension = (PFDO_DEVICE_EXTENSION)Fdo->DeviceExtension;
 	RtlZeroMemory(DeviceExtension, DeviceExtensionSize);
 	DeviceExtension->Type = Unknown;
@@ -96,130 +101,88 @@ cleanup:
 	return Status;
 }
 
-VOID NTAPI
-i8042SendHookWorkItem(
-	IN PDEVICE_OBJECT DeviceObject,
-	IN PVOID Context)
+NTSTATUS NTAPI
+i8042PerformHookRequest(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ ULONG IoControlCode,
+    _In_reads_bytes_opt_(InputBufferLength) PVOID InputBuffer,
+    _In_ ULONG InputBufferLength)
 {
-	PI8042_HOOK_WORKITEM WorkItemData;
-	PFDO_DEVICE_EXTENSION FdoDeviceExtension;
-	PPORT_DEVICE_EXTENSION PortDeviceExtension;
-	PDEVICE_OBJECT TopOfStack = NULL;
-	ULONG IoControlCode;
-	PVOID InputBuffer;
-	ULONG InputBufferLength;
-	IO_STATUS_BLOCK IoStatus;
-	KEVENT Event;
-	PIRP NewIrp;
-	NTSTATUS Status;
+    PDEVICE_OBJECT TopOfStack;
+    IO_STATUS_BLOCK IoStatus;
+    KEVENT Event;
+    PIRP Irp;
+    NTSTATUS Status;
+    KIRQL CurrentIrql;
 
-	TRACE_(I8042PRT, "i8042SendHookWorkItem(%p %p)\n", DeviceObject, Context);
+    KeInitializeEvent(&Event, NotificationEvent, FALSE);
 
-	WorkItemData = (PI8042_HOOK_WORKITEM)Context;
-	FdoDeviceExtension = (PFDO_DEVICE_EXTENSION)DeviceObject->DeviceExtension;
-	PortDeviceExtension = FdoDeviceExtension->PortDeviceExtension;
+    TopOfStack = IoGetAttachedDeviceReference(DeviceObject);
+    if (!TopOfStack)
+        return STATUS_INVALID_DEVICE_REQUEST;
 
-	switch (FdoDeviceExtension->Type)
-	{
-		case Keyboard:
-		{
-			PI8042_KEYBOARD_EXTENSION DeviceExtension;
-			DeviceExtension = (PI8042_KEYBOARD_EXTENSION)FdoDeviceExtension;
-			IoControlCode = IOCTL_INTERNAL_I8042_HOOK_KEYBOARD;
-			InputBuffer = &DeviceExtension->KeyboardHook;
-			InputBufferLength = sizeof(INTERNAL_I8042_HOOK_KEYBOARD);
-			break;
-		}
-		case Mouse:
-		{
-			PI8042_MOUSE_EXTENSION DeviceExtension;
-			DeviceExtension = (PI8042_MOUSE_EXTENSION)FdoDeviceExtension;
-			IoControlCode = IOCTL_INTERNAL_I8042_HOOK_MOUSE;
-			InputBuffer = &DeviceExtension->MouseHook;
-			InputBufferLength = sizeof(INTERNAL_I8042_HOOK_MOUSE);
-			break;
-		}
-		default:
-		{
-			ERR_(I8042PRT, "Unknown FDO type %u\n", FdoDeviceExtension->Type);
-			ASSERT(FALSE);
-			WorkItemData->Irp->IoStatus.Status = STATUS_INTERNAL_ERROR;
-			goto cleanup;
-		}
-	}
+    Irp = IoBuildDeviceIoControlRequest(IoControlCode,
+                                        TopOfStack,
+                                        InputBuffer,
+                                        InputBufferLength,
+                                        NULL,
+                                        0,
+                                        TRUE,
+                                        &Event,
+                                        &IoStatus);
+    if (!Irp)
+    {
+        ObDereferenceObject(TopOfStack);
+        return STATUS_INSUFFICIENT_RESOURCES;
+    }
 
-	KeInitializeEvent(&Event, NotificationEvent, FALSE);
-	TopOfStack = IoGetAttachedDeviceReference(DeviceObject);
+    CurrentIrql = KeGetCurrentIrql();
+    DPRINT1("i8042: Hook IOCTL 0x%lx at IRQL %lu\n", IoControlCode, CurrentIrql);
+    Status = IoCallDriver(TopOfStack, Irp);
+    if (Status == STATUS_PENDING)
+    {
+        if (CurrentIrql <= APC_LEVEL)
+        {
+            Status = KeWaitForSingleObject(&Event,
+                                           Executive,
+                                           KernelMode,
+                                           FALSE,
+                                           NULL);
+            if (NT_SUCCESS(Status))
+                Status = IoStatus.Status;
+        }
+        else
+        {
+            ULONG SpinCount = 0;
 
-	NewIrp = IoBuildDeviceIoControlRequest(
-		IoControlCode,
-		TopOfStack,
-		InputBuffer,
-		InputBufferLength,
-		NULL,
-		0,
-		TRUE,
-		&Event,
-		&IoStatus);
+            while (!KeReadStateEvent(&Event))
+            {
+                KeStallExecutionProcessor(50);
 
-	if (!NewIrp)
-	{
-		WARN_(I8042PRT, "IoBuildDeviceIoControlRequest() failed\n");
-		WorkItemData->Irp->IoStatus.Status = STATUS_INSUFFICIENT_RESOURCES;
-		goto cleanup;
-	}
+                if (++SpinCount >= 20000)
+                {
+                    IoCancelIrp(Irp);
 
-	Status = IoCallDriver(TopOfStack, NewIrp);
-	if (Status == STATUS_PENDING)
-	{
-		KeWaitForSingleObject(
-			&Event,
-			Executive,
-			KernelMode,
-			FALSE,
-			NULL);
-		Status = IoStatus.Status;
-	}
-	if (!NT_SUCCESS(Status))
-	{
-		WARN_(I8042PRT, "IoCallDriver() failed with status 0x%08lx\n", Status);
-		goto cleanup;
-	}
+                    while (!KeReadStateEvent(&Event))
+                    {
+                        KeStallExecutionProcessor(50);
+                    }
+                    break;
+                }
+            }
 
-	if (FdoDeviceExtension->Type == Keyboard)
-	{
-		PI8042_KEYBOARD_EXTENSION DeviceExtension;
+            Status = IoStatus.Status;
+        }
+    }
+    else
+    {
+        Status = IoStatus.Status;
+    }
 
-		DeviceExtension = (PI8042_KEYBOARD_EXTENSION)FdoDeviceExtension;
-		/* Call the hooked initialization if it exists */
-		if (DeviceExtension->KeyboardHook.InitializationRoutine)
-		{
-			Status = DeviceExtension->KeyboardHook.InitializationRoutine(
-				DeviceExtension->KeyboardHook.Context,
-				PortDeviceExtension,
-				i8042SynchReadPort,
-				i8042SynchWritePortKbd,
-				FALSE);
-			if (!NT_SUCCESS(Status))
-			{
-				WARN_(I8042PRT, "KeyboardHook.InitializationRoutine() failed with status 0x%08lx\n", Status);
-				WorkItemData->Irp->IoStatus.Status = Status;
-				goto cleanup;
-			}
-		}
-	}
-
-	WorkItemData->Irp->IoStatus.Status = STATUS_SUCCESS;
-
-cleanup:
-	if (TopOfStack != NULL)
-		ObDereferenceObject(TopOfStack);
-	WorkItemData->Irp->IoStatus.Information = 0;
-	IoCompleteRequest(WorkItemData->Irp, IO_NO_INCREMENT);
-
-	IoFreeWorkItem(WorkItemData->WorkItem);
-	ExFreePoolWithTag(WorkItemData, I8042PRT_TAG);
+    ObDereferenceObject(TopOfStack);
+    return Status;
 }
+
 
 static VOID NTAPI
 i8042StartIo(
@@ -333,10 +296,15 @@ i8042StartPacket(
 	IN ULONG ByteCount,
 	IN PIRP Irp)
 {
+	PKINTERRUPT InterruptObject;
 	KIRQL Irql;
 	NTSTATUS Status;
 
-	Irql = KeAcquireInterruptSpinLock(DeviceExtension->HighestDIRQLInterrupt);
+	InterruptObject = I8042pGetInterruptObject(DeviceExtension);
+	if (!InterruptObject)
+		return STATUS_DEVICE_BUSY;
+
+	Irql = KeAcquireInterruptSpinLock(InterruptObject);
 
 	if (DeviceExtension->Packet.State != Idle)
 	{
@@ -374,7 +342,7 @@ i8042StartPacket(
 	DeviceExtension->Packet.CurrentByte++;
 
 done:
-	KeReleaseInterruptSpinLock(DeviceExtension->HighestDIRQLInterrupt, Irql);
+	KeReleaseInterruptSpinLock(InterruptObject, Irql);
 
 	if (Status != STATUS_PENDING)
 	{

@@ -155,15 +155,17 @@ i8042PacketDpc(
 	IN PPORT_DEVICE_EXTENSION DeviceExtension)
 {
 	BOOLEAN FinishIrp = FALSE;
+	PKINTERRUPT InterruptObject;
 	KIRQL Irql;
 	NTSTATUS Result = STATUS_INTERNAL_ERROR; /* Shouldn't happen */
 
 	/* If the interrupt happens before this is setup, the key
 	 * was already in the buffer. Too bad! */
-	if (!DeviceExtension->HighestDIRQLInterrupt)
+	InterruptObject = I8042pGetInterruptObject(DeviceExtension);
+	if (!InterruptObject)
 		return;
 
-	Irql = KeAcquireInterruptSpinLock(DeviceExtension->HighestDIRQLInterrupt);
+	Irql = KeAcquireInterruptSpinLock(InterruptObject);
 
 	if (DeviceExtension->Packet.State == Idle
 	 && DeviceExtension->PacketComplete)
@@ -173,7 +175,7 @@ i8042PacketDpc(
 		DeviceExtension->PacketComplete = FALSE;
 	}
 
-	KeReleaseInterruptSpinLock(DeviceExtension->HighestDIRQLInterrupt, Irql);
+	KeReleaseInterruptSpinLock(InterruptObject, Irql);
 
 	if (!FinishIrp)
 		return;
@@ -327,6 +329,7 @@ i8042KbdDpcRoutine(
 	PPORT_DEVICE_EXTENSION PortDeviceExtension;
 	ULONG KeysTransferred = 0;
 	ULONG KeysInBufferCopy;
+	PKINTERRUPT InterruptObject;
 	KIRQL Irql;
 
 	UNREFERENCED_PARAMETER(Dpc);
@@ -347,15 +350,16 @@ i8042KbdDpcRoutine(
 	if (!DeviceExtension->KeyComplete)
 		return;
 	/* We got the interrupt as it was being enabled, too bad */
-	if (!PortDeviceExtension->HighestDIRQLInterrupt)
+	InterruptObject = I8042pGetInterruptObject(PortDeviceExtension);
+	if (!InterruptObject)
 		return;
 
-	Irql = KeAcquireInterruptSpinLock(PortDeviceExtension->HighestDIRQLInterrupt);
+	Irql = KeAcquireInterruptSpinLock(InterruptObject);
 
 	DeviceExtension->KeyComplete = FALSE;
 	KeysInBufferCopy = DeviceExtension->KeysInBuffer;
 
-	KeReleaseInterruptSpinLock(PortDeviceExtension->HighestDIRQLInterrupt, Irql);
+	KeReleaseInterruptSpinLock(InterruptObject, Irql);
 
 	TRACE_(I8042PRT, "Send a key\n");
 
@@ -372,9 +376,13 @@ i8042KbdDpcRoutine(
 	/* Validate that the callback didn't change the Irql. */
 	ASSERT(KeGetCurrentIrql() == Irql);
 
-	Irql = KeAcquireInterruptSpinLock(PortDeviceExtension->HighestDIRQLInterrupt);
+	InterruptObject = I8042pGetInterruptObject(PortDeviceExtension);
+	if (!InterruptObject)
+		return;
+
+	Irql = KeAcquireInterruptSpinLock(InterruptObject);
 	DeviceExtension->KeysInBuffer -= KeysTransferred;
-	KeReleaseInterruptSpinLock(PortDeviceExtension->HighestDIRQLInterrupt, Irql);
+	KeReleaseInterruptSpinLock(InterruptObject, Irql);
 }
 
 /*
@@ -392,6 +400,7 @@ i8042KbdDeviceControl(
 	Stack = IoGetCurrentIrpStackLocation(Irp);
 	Irp->IoStatus.Information = 0;
 	DeviceExtension = (PI8042_KEYBOARD_EXTENSION)DeviceObject->DeviceExtension;
+	Status = STATUS_NOT_SUPPORTED;
 
 	switch (Stack->Parameters.DeviceIoControl.IoControlCode)
 	{
@@ -429,7 +438,7 @@ i8042KbdDeviceControl(
 					NULL);
 				/* Check if an Irp is already pending */
 				if (WaitingIrp)
-				{
+		{
 					/* Unable to have a 2nd pending IRP for this IOCTL */
 					WARN_(I8042PRT, "Unable to pend a second IRP for IOCTL_GET_SYS_BUTTON_EVENT\n");
 					Status = STATUS_INVALID_PARAMETER;
@@ -527,99 +536,106 @@ i8042KbdInternalDeviceControl(
 		case IOCTL_INTERNAL_KEYBOARD_CONNECT:
 		{
 			SIZE_T Size;
-			PIO_WORKITEM WorkItem = NULL;
-			PI8042_HOOK_WORKITEM WorkItemData = NULL;
 
 			TRACE_(I8042PRT, "IRP_MJ_INTERNAL_DEVICE_CONTROL / IOCTL_INTERNAL_KEYBOARD_CONNECT\n");
+		DPRINT1("i8042: Keyboard connect IRQL %lu\n", KeGetCurrentIrql());
 			if (Stack->Parameters.DeviceIoControl.InputBufferLength != sizeof(CONNECT_DATA))
 			{
 				Status = STATUS_INVALID_PARAMETER;
-				goto cleanup;
+				break;
 			}
 
 			DeviceExtension->KeyboardData =
 				*((PCONNECT_DATA)Stack->Parameters.DeviceIoControl.Type3InputBuffer);
 
-			/* Send IOCTL_INTERNAL_I8042_HOOK_KEYBOARD to device stack */
-			WorkItem = IoAllocateWorkItem(DeviceObject);
-			if (!WorkItem)
-			{
-				WARN_(I8042PRT, "IoAllocateWorkItem() failed\n");
-				Status = STATUS_INSUFFICIENT_RESOURCES;
-				goto cleanup;
-			}
-			WorkItemData = ExAllocatePoolWithTag(
-				NonPagedPool,
-				sizeof(I8042_HOOK_WORKITEM),
-				I8042PRT_TAG);
-			if (!WorkItemData)
-			{
-				WARN_(I8042PRT, "ExAllocatePoolWithTag() failed\n");
-				Status = STATUS_NO_MEMORY;
-				goto cleanup;
-			}
-			WorkItemData->WorkItem = WorkItem;
-			WorkItemData->Irp = Irp;
-
-			/* Initialize extension */
 			DeviceExtension->Common.Type = Keyboard;
+
 			Size = DeviceExtension->Common.PortDeviceExtension->Settings.KeyboardDataQueueSize * sizeof(KEYBOARD_INPUT_DATA);
-			DeviceExtension->KeyboardBuffer = ExAllocatePoolWithTag(
-				NonPagedPool,
-				Size,
-				I8042PRT_TAG);
+			DeviceExtension->KeyboardBuffer = ExAllocatePoolWithTag(NonPagedPool,
+				                                             Size,
+				                                             I8042PRT_TAG);
 			if (!DeviceExtension->KeyboardBuffer)
 			{
-				WARN_(I8042PRT, "ExAllocatePoolWithTag() failed\n");
 				Status = STATUS_NO_MEMORY;
-				goto cleanup;
+				goto KbdConnectError;
 			}
 			RtlZeroMemory(DeviceExtension->KeyboardBuffer, Size);
-			KeInitializeDpc(
-				&DeviceExtension->DpcKeyboard,
-				i8042KbdDpcRoutine,
-				DeviceExtension);
+			KeInitializeDpc(&DeviceExtension->DpcKeyboard,
+			                i8042KbdDpcRoutine,
+			                DeviceExtension);
+
 			DeviceExtension->PowerWorkItem = IoAllocateWorkItem(DeviceObject);
 			if (!DeviceExtension->PowerWorkItem)
 			{
-				WARN_(I8042PRT, "IoAllocateWorkItem() failed\n");
 				Status = STATUS_INSUFFICIENT_RESOURCES;
-				goto cleanup;
+				goto KbdConnectError;
 			}
+
 			DeviceExtension->DebugWorkItem = IoAllocateWorkItem(DeviceObject);
 			if (!DeviceExtension->DebugWorkItem)
 			{
-				WARN_(I8042PRT, "IoAllocateWorkItem() failed\n");
 				Status = STATUS_INSUFFICIENT_RESOURCES;
-				goto cleanup;
+				goto KbdConnectError;
 			}
-			DeviceExtension->Common.PortDeviceExtension->KeyboardExtension = DeviceExtension;
-			DeviceExtension->Common.PortDeviceExtension->Flags |= KEYBOARD_CONNECTED;
 
-            i8042InitializeKeyboardAttributes(DeviceExtension);
+			i8042InitializeKeyboardAttributes(DeviceExtension);
 
-			IoMarkIrpPending(Irp);
-			/* FIXME: DeviceExtension->KeyboardHook.IsrWritePort = ; */
 			DeviceExtension->KeyboardHook.QueueKeyboardPacket = i8042KbdQueuePacket;
 			DeviceExtension->KeyboardHook.CallContext = DeviceExtension;
-			IoQueueWorkItem(WorkItem,
-				i8042SendHookWorkItem,
-				DelayedWorkQueue,
-				WorkItemData);
-			Status = STATUS_PENDING;
+
+			Status = i8042PerformHookRequest(DeviceObject,
+			                              IOCTL_INTERNAL_I8042_HOOK_KEYBOARD,
+			                              &DeviceExtension->KeyboardHook,
+			                              sizeof(INTERNAL_I8042_HOOK_KEYBOARD));
+			if (!NT_SUCCESS(Status))
+				goto KbdConnectError;
+
+			if (DeviceExtension->KeyboardHook.InitializationRoutine)
+			{
+				Status = DeviceExtension->KeyboardHook.InitializationRoutine(
+				    DeviceExtension->KeyboardHook.Context,
+				    DeviceExtension->Common.PortDeviceExtension,
+				    i8042SynchReadPort,
+				    i8042SynchWritePortKbd,
+				    FALSE);
+				if (!NT_SUCCESS(Status))
+				{
+					WARN_(I8042PRT, "KeyboardHook.InitializationRoutine() failed with status 0x%08lx\n", Status);
+					goto KbdConnectError;
+				}
+			}
+
+			DeviceExtension->Common.Type = Keyboard;
+			DeviceExtension->Common.PortDeviceExtension->KeyboardExtension = DeviceExtension;
+			DeviceExtension->Common.PortDeviceExtension->Flags |= KEYBOARD_CONNECTED;
+			Status = STATUS_SUCCESS;
+
+
+			Irp->IoStatus.Status = STATUS_SUCCESS;
+			Irp->IoStatus.Information = 0;
 			break;
 
-cleanup:
-			if (DeviceExtension->KeyboardBuffer)
-				ExFreePoolWithTag(DeviceExtension->KeyboardBuffer, I8042PRT_TAG);
+		KbdConnectError:
+			DeviceExtension->Common.Type = Unknown;
 			if (DeviceExtension->PowerWorkItem)
+			{
 				IoFreeWorkItem(DeviceExtension->PowerWorkItem);
+				DeviceExtension->PowerWorkItem = NULL;
+			}
 			if (DeviceExtension->DebugWorkItem)
+			{
 				IoFreeWorkItem(DeviceExtension->DebugWorkItem);
-			if (WorkItem)
-				IoFreeWorkItem(WorkItem);
-			if (WorkItemData)
-				ExFreePoolWithTag(WorkItemData, I8042PRT_TAG);
+				DeviceExtension->DebugWorkItem = NULL;
+			}
+			if (DeviceExtension->KeyboardBuffer)
+			{
+				ExFreePoolWithTag(DeviceExtension->KeyboardBuffer, I8042PRT_TAG);
+				DeviceExtension->KeyboardBuffer = NULL;
+			}
+			DeviceExtension->Common.PortDeviceExtension->Flags &= ~KEYBOARD_CONNECTED;
+			DeviceExtension->Common.PortDeviceExtension->KeyboardExtension = NULL;
+			if (NT_SUCCESS(Status))
+				Status = STATUS_UNSUCCESSFUL;
 			break;
 		}
 		case IOCTL_INTERNAL_KEYBOARD_DISCONNECT:

@@ -100,6 +100,40 @@ typedef struct _PORT_DEVICE_EXTENSION
 	PDEVICE_OBJECT CurrentIrpDevice;
 } PORT_DEVICE_EXTENSION, *PPORT_DEVICE_EXTENSION;
 
+NTSTATUS
+NTAPI
+i8042PerformHookRequest_Safe(
+    _In_ PDEVICE_OBJECT DeviceObject,
+    _In_ ULONG IoControlCode,
+    _In_reads_bytes_opt_(InputBufferLength) PVOID InputBuffer,
+    _In_ ULONG InputBufferLength);
+
+/* Map legacy name to safe helper for all compilation units except the one
+ * that defines the legacy function to avoid duplicate symbols. */
+#ifndef I8042PRT_DEFINE_PERFORM_HOOK
+#define i8042PerformHookRequest i8042PerformHookRequest_Safe
+#endif
+
+FORCEINLINE
+PKINTERRUPT
+I8042pGetInterruptObject(
+    _In_ PPORT_DEVICE_EXTENSION PortExtension)
+{
+    PKINTERRUPT Interrupt;
+
+    Interrupt = PortExtension->HighestDIRQLInterrupt;
+    if (Interrupt)
+        return Interrupt;
+
+    if (PortExtension->MouseInterrupt.Object)
+        return PortExtension->MouseInterrupt.Object;
+
+    if (PortExtension->KeyboardInterrupt.Object)
+        return PortExtension->KeyboardInterrupt.Object;
+
+    return NULL;
+}
+
 typedef struct _I8042_DRIVER_EXTENSION
 {
 	UNICODE_STRING RegistryPath;
@@ -198,11 +232,8 @@ typedef struct _I8042_MOUSE_EXTENSION
 	I8042_MOUSE_TYPE MouseType;
 } I8042_MOUSE_EXTENSION;
 
-typedef struct _I8042_HOOK_WORKITEM
-{
-	PIO_WORKITEM WorkItem;
-	PIRP Irp;
-} I8042_HOOK_WORKITEM, *PI8042_HOOK_WORKITEM;
+
+
 
 /*-----------------------------------------------------
  * Some defines
@@ -292,7 +323,6 @@ typedef struct _I8042_HOOK_WORKITEM
 
 /* createclose.c */
 
-IO_WORKITEM_ROUTINE i8042SendHookWorkItem;
 
 _Dispatch_type_(IRP_MJ_CREATE)
 DRIVER_DISPATCH i8042Create;

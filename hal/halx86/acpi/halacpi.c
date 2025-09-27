@@ -1174,14 +1174,14 @@ HalpDebugPciDumpBusAcpi(
 
     if (HeaderType == PCI_DEVICE_TYPE)
     {
-        PciDbgPrint("\tSubsystem: %s [%04x:%04x]\n",
+        PciDbgPrint("\t\t\t\t\tSubsystem: %s [%04x:%04x]\n",
                  bSubVendorName,
                  PciData->u.type0.SubVendorID,
                  PciData->u.type0.SubSystemID);
     }
 
     /* Print out and decode flags */
-    PciDbgPrint("\tFlags:");
+    PciDbgPrint("\t\t\t\t\tFlags:");
     if (PciData->Command & PCI_ENABLE_BUS_MASTER) PciDbgPrint(" bus master,");
     if (PciData->Status & PCI_STATUS_66MHZ_CAPABLE) PciDbgPrint(" 66MHz,");
     if ((PciData->Status & PCI_STATUS_DEVSEL) == 0x000) PciDbgPrint(" fast devsel,");
@@ -1197,7 +1197,7 @@ HalpDebugPciDumpBusAcpi(
 
     if (HeaderType == PCI_BRIDGE_TYPE)
     {
-        PciDbgPrint("\tBridge:");
+        PciDbgPrint("\t\t\t\t\tBridge:");
         PciDbgPrint(" primary bus %d,", PciData->u.type1.PrimaryBus);
         PciDbgPrint(" secondary bus %d,", PciData->u.type1.SecondaryBus);
         PciDbgPrint(" subordinate bus %d,", PciData->u.type1.SubordinateBus);
@@ -1247,7 +1247,7 @@ HalpDebugPciDumpBusAcpi(
                 while (!(PciBar & Size) && (Size)) Size <<= 1;
 
                 /* Print I/O BAR info */
-                PciDbgPrint("\tI/O ports at %04lx", Mem & PCI_ADDRESS_IO_ADDRESS_MASK);
+                PciDbgPrint("\t\t\t\t\tI/O ports at %04lx", Mem & PCI_ADDRESS_IO_ADDRESS_MASK);
                 ShowSize(Size);
             }
             else
@@ -1257,7 +1257,7 @@ HalpDebugPciDumpBusAcpi(
                 while (!(PciBar & Size) && (Size)) Size <<= 1;
 
                 /* Print Memory BAR info */
-                PciDbgPrint("\tMemory at %08lx (%d-bit, %sprefetchable)",
+                PciDbgPrint("\t\t\t\t\tMemory at %08lx (%d-bit, %sprefetchable)",
                          Mem & PCI_ADDRESS_MEMORY_ADDRESS_MASK,
                          (Mem & PCI_ADDRESS_MEMORY_TYPE_MASK) == PCI_TYPE_32BIT ? 32 : 64,
                          (Mem & PCI_ADDRESS_MEMORY_PREFETCHABLE) ? "" : "non-");

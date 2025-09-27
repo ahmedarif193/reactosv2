@@ -12,6 +12,8 @@
 #define NDEBUG
 #include <debug.h>
 
+extern EX_WORK_QUEUE ExWorkerQueue[MaximumWorkQueue];
+
 /* GLOBALS *******************************************************************/
 
 WORK_QUEUE_ITEM CmpDelayDerefKCBWorkItem;
@@ -29,7 +31,6 @@ KTIMER CmpDelayCloseTimer;
 KGUARDED_MUTEX CmpDelayDerefKCBLock;
 BOOLEAN CmpDelayDerefKCBWorkItemActive;
 LIST_ENTRY CmpDelayDerefKCBListHead;
-ULONG CmpDelayDerefKCBIntervalInSeconds = 5;
 KDPC CmpDelayDerefKCBDpc;
 KTIMER CmpDelayDerefKCBTimer;
 
@@ -231,6 +232,10 @@ CmpDelayDerefKCBWorker(IN PVOID Context)
     /* Sanity check */
     ASSERT(CmpDelayDerefKCBWorkItemActive);
 
+    DPRINT1("CM: DelayDeref worker start (listEmpty=%d, queueCount=%lu)\n",
+            IsListEmpty(&CmpDelayDerefKCBListHead),
+            KeReadStateQueue(&ExWorkerQueue[DelayedWorkQueue].WorkerQueue));
+
     /* Lock the registry and and list lock */
     CmpLockRegistry();
     KeAcquireGuardedMutex(&CmpDelayDerefKCBLock);
@@ -260,6 +265,10 @@ CmpDelayDerefKCBWorker(IN PVOID Context)
     CmpDelayDerefKCBWorkItemActive = FALSE;
     KeReleaseGuardedMutex(&CmpDelayDerefKCBLock);
     CmpUnlockRegistry();
+
+    DPRINT1("CM: DelayDeref worker done (listEmpty=%d, queueCount=%lu)\n",
+            IsListEmpty(&CmpDelayDerefKCBListHead),
+            KeReadStateQueue(&ExWorkerQueue[DelayedWorkQueue].WorkerQueue));
 }
 
 CODE_SEG("INIT")
@@ -286,7 +295,6 @@ NTAPI
 CmpDelayDerefKeyControlBlock(IN PCM_KEY_CONTROL_BLOCK Kcb)
 {
     LONG OldRefCount, NewRefCount;
-    LARGE_INTEGER Timeout;
     PCM_DELAY_DEREF_KCB_ITEM Entry;
     PAGED_CODE();
     CMTRACE(CM_REFERENCE_DEBUG,
@@ -320,10 +328,12 @@ CmpDelayDerefKeyControlBlock(IN PCM_KEY_CONTROL_BLOCK Kcb)
     /* Check if we need to enable anything */
     if (!CmpDelayDerefKCBWorkItemActive)
     {
-        /* Yes, we have no work item, setup the interval */
+        /* The queue was idle, schedule immediate processing */
         CmpDelayDerefKCBWorkItemActive = TRUE;
-        Timeout.QuadPart = CmpDelayDerefKCBIntervalInSeconds * -10000000;
-        KeSetTimer(&CmpDelayDerefKCBTimer, Timeout, &CmpDelayDerefKCBDpc);
+        DPRINT1("CM: DelayDeref queue scheduling worker (queueCount=%lu)\n",
+                KeReadStateQueue(&ExWorkerQueue[DelayedWorkQueue].WorkerQueue));
+        ExQueueWorkItem(&CmpDelayDerefKCBWorkItem,
+                        DelayedWorkQueue);
     }
 
     /* Release the table lock */

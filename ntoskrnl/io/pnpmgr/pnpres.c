@@ -309,10 +309,86 @@ IopFixupResourceListWithRequirements(
                         }
                         else
                         {
-                            DPRINT("Interrupt - Not a match! 0x%x not inside 0x%x to 0x%x\n",
-                                   CmDesc->u.Interrupt.Vector,
-                                   IoDesc->u.Interrupt.MinimumVector,
-                                   IoDesc->u.Interrupt.MaximumVector);
+                            ULONG CandidateVector;
+                            BOOLEAN TranslationMatched = FALSE;
+                            INTERFACE_TYPE InterfaceType;
+                            INTERFACE_TYPE InterfaceCandidates[4];
+                            ULONG CandidateCount = 0, CandidateIndex;
+                            ULONG BusNumber;
+
+                            if (*ResourceList)
+                            {
+                                InterfaceType = (*ResourceList)->List[0].InterfaceType;
+                                BusNumber = (*ResourceList)->List[0].BusNumber;
+                            }
+                            else
+                            {
+                                InterfaceType = RequirementsList->InterfaceType;
+                                BusNumber = RequirementsList->BusNumber;
+                            }
+
+                            for (CandidateVector = IoDesc->u.Interrupt.MinimumVector;
+                                 CandidateVector <= IoDesc->u.Interrupt.MaximumVector;
+                                 CandidateVector++)
+                            {
+                                KIRQL Irql;
+                                KAFFINITY Affinity;
+                                ULONG SystemVector;
+
+                                CandidateCount = 0;
+                                InterfaceCandidates[CandidateCount++] = InterfaceType;
+                                if (InterfaceType != Internal)
+                                    InterfaceCandidates[CandidateCount++] = Internal;
+                                if (InterfaceType != Isa)
+                                    InterfaceCandidates[CandidateCount++] = Isa;
+                                InterfaceCandidates[CandidateCount++] = InterfaceTypeUndefined;
+
+                                for (CandidateIndex = 0;
+                                     CandidateIndex < CandidateCount;
+                                     CandidateIndex++)
+                                {
+                                    INTERFACE_TYPE CurrentType = InterfaceCandidates[CandidateIndex];
+                                    ULONG CurrentBus = BusNumber;
+
+                                    if (CurrentType == InterfaceTypeUndefined ||
+                                        CurrentType == Internal)
+                                    {
+                                        CurrentBus = 0;
+                                    }
+
+                                    SystemVector = HalGetInterruptVector(CurrentType,
+                                                                         CurrentBus,
+                                                                         CandidateVector,
+                                                                         CandidateVector,
+                                                                         &Irql,
+                                                                         &Affinity);
+                                    if (!SystemVector)
+                                        continue;
+
+                                    if (SystemVector == CmDesc->u.Interrupt.Vector)
+                                    {
+                                        TranslationMatched = TRUE;
+                                        if (CmDesc->Flags & CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE)
+                                            CmDesc->ShareDisposition = CmResourceShareShared;
+                                        break;
+                                    }
+                                }
+
+                                if (TranslationMatched)
+                                    break;
+                            }
+
+                            if (TranslationMatched)
+                            {
+                                Matched = TRUE;
+                            }
+                            else
+                            {
+                                DPRINT("Interrupt - Not a match! 0x%x not inside 0x%x to 0x%x\n",
+                                       CmDesc->u.Interrupt.Vector,
+                                       IoDesc->u.Interrupt.MinimumVector,
+                                       IoDesc->u.Interrupt.MaximumVector);
+                            }
                         }
                         break;
 
@@ -1495,4 +1571,3 @@ cleanup:
 
    return Status;
 }
-
