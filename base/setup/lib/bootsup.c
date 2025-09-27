@@ -1679,7 +1679,7 @@ InstallBootManagerAndBootEntries(
     _In_ ULONG_PTR Options)
 {
     NTSTATUS Status = STATUS_SUCCESS;
-    HANDLE DeviceHandle;
+    HANDLE DeviceHandle = NULL;
     FILE_FS_DEVICE_INFORMATION DeviceInfo;
     ULONG DiskNumber;
     PARTITION_STYLE PartitionStyle;
@@ -1707,7 +1707,10 @@ InstallBootManagerAndBootEntries(
     if (!NT_SUCCESS(Status) || !*FileSystem)
     {
         DPRINT1("GetFileSystemName() failed (Status 0x%08lx)\n", Status);
-        goto Quit;
+        if (NT_SUCCESS(Status))
+            Status = STATUS_UNSUCCESSFUL;
+        NtClose(DeviceHandle);
+        return Status;
     }
 
     /* Retrieve the device type and characteristics */
@@ -1715,7 +1718,8 @@ InstallBootManagerAndBootEntries(
     if (!NT_SUCCESS(Status))
     {
         DPRINT1("FileFsDeviceInformation failed (Status 0x%08lx)\n", Status);
-        goto Quit;
+        NtClose(DeviceHandle);
+        return Status;
     }
 
     /* Ignore volumes that are NOT on usual disks */
@@ -1723,8 +1727,8 @@ InstallBootManagerAndBootEntries(
         DeviceInfo.DeviceType != FILE_DEVICE_VIRTUAL_DISK*/)
     {
         DPRINT1("Invalid volume; device type %lu\n", DeviceInfo.DeviceType);
-        Status = STATUS_INVALID_DEVICE_REQUEST;
-        goto Quit;
+        NtClose(DeviceHandle);
+        return STATUS_INVALID_DEVICE_REQUEST;
     }
 
 
@@ -1763,13 +1767,18 @@ InstallBootManagerAndBootEntries(
                                        NULL, 0,
                                        &DeviceNumber, sizeof(DeviceNumber));
         if (!NT_SUCCESS(Status))
-            goto Quit; /* This may be a dynamic volume, which is unsupported */
+        {
+            /* This may be a dynamic volume, which is unsupported */
+            NtClose(DeviceHandle);
+            return Status;
+        }
         ASSERT(DeviceNumber.DeviceType == DeviceInfo.DeviceType);
         if (DeviceNumber.DeviceNumber == ULONG_MAX)
         {
             DPRINT1("Invalid disk number reported, bail out\n");
             Status = STATUS_NOT_FOUND;
-            goto Quit;
+            NtClose(DeviceHandle);
+            return Status;
         }
 
         /* Retrieve the drive geometry. NOTE: Fails for floppy disks;
@@ -1784,7 +1793,8 @@ InstallBootManagerAndBootEntries(
         if (!NT_SUCCESS(Status))
         {
             DPRINT1("IOCTL_DISK_GET_DRIVE_GEOMETRY_EX failed (Status 0x%08lx)\n", Status);
-            goto Quit;
+            NtClose(DeviceHandle);
+            return Status;
         }
 
         /*
@@ -1806,7 +1816,8 @@ InstallBootManagerAndBootEntries(
         if (!NT_SUCCESS(Status))
         {
             DPRINT1("IOCTL_DISK_GET_PARTITION_INFO failed (Status 0x%08lx)\n", Status);
-            goto Quit;
+            NtClose(DeviceHandle);
+            return Status;
         }
 
         DiskNumber = DeviceNumber.DeviceNumber;
@@ -1821,7 +1832,6 @@ InstallBootManagerAndBootEntries(
                 DiskNumber, PartitionStyle, IsSuperFloppy, FileSystem,
                 SourceRootPath, DestinationArcPath, Options);
 
-Quit:
     NtClose(DeviceHandle);
     return Status;
 }

@@ -112,7 +112,7 @@ UDFTIOVerify(
     OSSTATUS final_RC = STATUS_SUCCESS;
     BOOLEAN zero;
     BOOLEAN non_zero;
-    BOOLEAN packet_ok;
+    BOOLEAN packet_ok = FALSE;
     BOOLEAN free_tmp = FALSE;
     BOOLEAN single_packet = FALSE;
 

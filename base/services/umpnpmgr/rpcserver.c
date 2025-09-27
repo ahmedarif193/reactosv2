@@ -3404,7 +3404,7 @@ SetupDeviceInstance(
     PLUGPLAY_CONTROL_DEVICE_CONTROL_DATA ControlData;
     HKEY hDeviceKey = NULL;
     DWORD dwDisableCount, dwSize;
-    DWORD ulStatus, ulProblem;
+    DWORD ulStatus = 0, ulProblem = 0;
     DWORD dwError;
     CONFIGRET ret = CR_SUCCESS;
     NTSTATUS Status;

@@ -807,9 +807,10 @@ struct chmFile *chm_openW(const WCHAR *filename)
         {
             newHandle->compression_enabled = 0;
         }
-
-        newHandle->window_size = ctlData.windowSize;
-        newHandle->reset_interval = ctlData.resetInterval;
+        else
+        {
+            newHandle->window_size = ctlData.windowSize;
+            newHandle->reset_interval = ctlData.resetInterval;
 
 /* Jed, Mon Jun 28: Experimentally, it appears that the reset block count */
 /*       must be multiplied by this formerly unknown ctrl data field in   */
@@ -822,6 +823,7 @@ struct chmFile *chm_openW(const WCHAR *filename)
                                     (newHandle->window_size / 2) *
                                     ctlData.windowsPerReset;
 #endif
+        }
     }
 
     return newHandle;

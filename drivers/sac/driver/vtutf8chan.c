@@ -270,6 +270,7 @@ VTUTF8ChannelConsumeEscapeSequence(IN PSAC_CHANNEL Channel,
     /* It's a more complex sequence, start parsing it */
     Result = 0;
     Sequence = String + 2;
+    Number = Number2 = Number3 = 1;
 
     /* First, check for the cursor sequences. This is useless due to above. */
     switch (*Sequence)
