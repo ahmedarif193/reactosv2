@@ -285,7 +285,7 @@ FsRtlCopyWrite(IN PFILE_OBJECT FileObject,
     BOOLEAN ResourceAcquiredShared = FALSE;
     BOOLEAN b_4GB = FALSE;
     BOOLEAN FileSizeModified = FALSE;
-    LARGE_INTEGER OldFileSize;
+    LARGE_INTEGER OldFileSize = {0};
     LARGE_INTEGER OldValidDataLength;
     LARGE_INTEGER NewSize;
     LARGE_INTEGER Offset;
@@ -542,7 +542,7 @@ FsRtlCopyWrite(IN PFILE_OBJECT FileObject,
     }
     else
     {
-        LARGE_INTEGER OldFileSize;
+        LARGE_INTEGER OldFileSize = {0};
 
         /* Sanity check */
         ASSERT(!KeIsExecutingDpc());
@@ -1283,7 +1283,7 @@ FsRtlPrepareMdlWriteDev(IN PFILE_OBJECT FileObject,
     PFSRTL_COMMON_FCB_HEADER FcbHeader;
     PSHARED_CACHE_MAP SharedCacheMap;
 
-    LARGE_INTEGER OldFileSize;
+    LARGE_INTEGER OldFileSize = {0};
     LARGE_INTEGER OldValidDataLength;
     LARGE_INTEGER NewSize;
     LARGE_INTEGER Offset;

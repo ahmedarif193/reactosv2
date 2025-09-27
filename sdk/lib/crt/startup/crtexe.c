@@ -214,7 +214,7 @@ __tmainCRTStartup (void)
   lpszCommandLine = (_TCHAR *) _alloca (32);
   memset (lpszCommandLine, 0xcc, 32);
 #ifdef __GNUC__
-  asm  __volatile__  ("andl $-16, %%esp" : : : "%esp");
+  asm  __volatile__  ("andl $-16, %%esp" : : : "memory");
 #endif
 #endif
 

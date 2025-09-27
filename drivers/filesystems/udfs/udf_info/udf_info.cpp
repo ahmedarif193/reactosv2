@@ -2589,7 +2589,7 @@ UDFCreateFile__(
 {
     uint32 l, d;
     uint_di i, j;
-    OSSTATUS status;
+    OSSTATUS status = STATUS_SUCCESS;
     LONG_AD FEicb;
     UDF_DIR_SCAN_CONTEXT ScanContext;
     PDIR_INDEX_HDR hDirNdx = DirInfo->Dloc->DirIndex;

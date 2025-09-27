@@ -940,7 +940,6 @@ KiSwitchToBootStack(IN ULONG_PTR InitialStack)
           "i"(NPX_FRAME_LENGTH + KTRAP_FRAME_ALIGN + KTRAP_FRAME_LENGTH),
           "i"(CR0_EM | CR0_TS | CR0_MP),
           "p"(KiSystemStartupBootStack)
-        : "%esp"
     );
 #elif defined(_MSC_VER)
     __asm

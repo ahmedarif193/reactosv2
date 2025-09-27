@@ -22,7 +22,7 @@ NTSTATUS
 SetupCreateSingleDirectory(
     _In_ PCUNICODE_STRING DirectoryName)
 {
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;
     UNICODE_STRING PathName = *DirectoryName;
     OBJECT_ATTRIBUTES ObjectAttributes;
     IO_STATUS_BLOCK IoStatusBlock;
@@ -135,7 +135,7 @@ SetupDeleteFile(
     IN PCWSTR FileName,
     IN BOOLEAN ForceDelete) // ForceDelete can be used to delete read-only files
 {
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;
     UNICODE_STRING NtPathU;
     OBJECT_ATTRIBUTES ObjectAttributes;
     IO_STATUS_BLOCK IoStatusBlock;
@@ -225,7 +225,7 @@ SetupCopyFile(
     IN PCWSTR DestinationFileName,
     IN BOOLEAN FailIfExists)
 {
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;
     UNICODE_STRING FileName;
     OBJECT_ATTRIBUTES ObjectAttributes;
     HANDLE FileHandleSource;
@@ -465,7 +465,7 @@ SetupMoveFile(
     IN PCWSTR NewFileName,
     IN ULONG Flags)
 {
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;
     IO_STATUS_BLOCK IoStatusBlock;
     OBJECT_ATTRIBUTES ObjectAttributes;
     PFILE_RENAME_INFORMATION RenameInfo;
@@ -645,7 +645,7 @@ ConcatPaths(
     IN ULONG NumberOfPathComponents,
     IN /* PCWSTR */ ...)
 {
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;
     va_list PathComponentsList;
 
     if (cchPathSize < 1)
@@ -667,7 +667,7 @@ CombinePaths(
     IN ULONG NumberOfPathComponents,
     IN /* PCWSTR */ ...)
 {
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;
     va_list PathComponentsList;
 
     if (cchPathSize < 1)
@@ -690,7 +690,7 @@ DoesPathExist_UStr(
     _In_ PCUNICODE_STRING PathName,
     _In_ BOOLEAN IsDirectory)
 {
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;
     HANDLE FileHandle;
     OBJECT_ATTRIBUTES ObjectAttributes;
     IO_STATUS_BLOCK IoStatusBlock;
@@ -885,7 +885,7 @@ OpenAndMapFile(
     _Out_ PVOID* BaseAddress,
     _In_ BOOLEAN ReadWriteAccess)
 {
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;
     UNICODE_STRING FileName;
     OBJECT_ATTRIBUTES ObjectAttributes;
     IO_STATUS_BLOCK IoStatusBlock;
@@ -984,7 +984,7 @@ MapFile(
     _Out_ PVOID* BaseAddress,
     _In_ BOOLEAN ReadWriteAccess)
 {
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;
     ULONG SectionPageProtection;
     SIZE_T ViewSize;
     PVOID ViewBase;
@@ -1052,7 +1052,7 @@ UnMapFile(
     _In_ HANDLE SectionHandle,
     _In_ PVOID BaseAddress)
 {
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;
     BOOLEAN Success = TRUE;
 
     Status = NtUnmapViewOfSection(NtCurrentProcess(), BaseAddress);

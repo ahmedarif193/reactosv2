@@ -79,7 +79,7 @@ Ext2ReadVolume (IN PEXT2_IRP_CONTEXT IrpContext)
     LARGE_INTEGER       ByteOffset;
 
     BOOLEAN             PagingIo;
-    BOOLEAN             Nocache;
+    BOOLEAN             Nocache = FALSE;
     BOOLEAN             SynchronousIo = FALSE;
     BOOLEAN             MainResourceAcquired = FALSE;
 
@@ -488,7 +488,7 @@ Ext2ReadFile(IN PEXT2_IRP_CONTEXT IrpContext)
 
     BOOLEAN             OpPostIrp = FALSE;
     BOOLEAN             PagingIo;
-    BOOLEAN             Nocache;
+    BOOLEAN             Nocache = FALSE;
     BOOLEAN             SynchronousIo;
     BOOLEAN             MainResourceAcquired = FALSE;
     BOOLEAN             PagingIoResourceAcquired = FALSE;

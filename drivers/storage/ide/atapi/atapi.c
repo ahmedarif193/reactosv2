@@ -613,7 +613,7 @@ Return Value:
             // Suck out any remaining bytes and throw away.
             //
 
-            ScsiPortReadPortUshort(&baseIoAddress1->Data);
+            {USHORT dummy = ScsiPortReadPortUshort(&baseIoAddress1->Data); UNREFERENCED_PARAMETER(dummy);}
 
         } else {
 
@@ -5155,7 +5155,7 @@ Return Value:
 
            if (statusByte & IDE_STATUS_DRQ) {
 
-              ScsiPortReadPortUshort(&baseIoAddress1->Data);
+              {USHORT dummy = ScsiPortReadPortUshort(&baseIoAddress1->Data); UNREFERENCED_PARAMETER(dummy);}
 
            } else {
 

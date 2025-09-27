@@ -236,7 +236,12 @@ static void gen_proxy(type_t *iface, const var_t *func, int idx,
   if (has_ret) {
     print_proxy( "%s", "" );
     write_type_decl(proxy, retval->type, retval->name);
-    fprintf( proxy, ";\n" );
+    if (is_ptr(retval->type) || is_array(retval->type))
+        fprintf( proxy, " = NULL;\n" );
+    else if (retval->type->name && !strcmp(retval->type->name, "HRESULT"))
+        fprintf( proxy, " = E_FAIL;\n" );
+    else
+        fprintf( proxy, " = 0;\n" );
   }
   print_proxy( "RPC_MESSAGE _RpcMessage;\n" );
   if (has_ret) {

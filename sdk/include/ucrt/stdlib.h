@@ -30,8 +30,11 @@ _CRT_BEGIN_C_HEADER
 
 
 // Minimum and maximum macros
+#pragma warning(push)
+#pragma warning(disable: 4018) // signed/unsigned mismatch
 #define __max(a,b) (((a) > (b)) ? (a) : (b))
 #define __min(a,b) (((a) < (b)) ? (a) : (b))
+#pragma warning(pop)
 
 
 

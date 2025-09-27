@@ -1736,6 +1736,7 @@ InstallBootManagerAndBootEntries(
         DiskNumber = ULONG_MAX;
         PartitionStyle = PARTITION_STYLE_MBR;
         IsSuperFloppy = TRUE;
+        Status = STATUS_SUCCESS; /* Explicitly set Status for floppy path */
     }
     else
     {
@@ -1833,7 +1834,7 @@ InstallBootcodeToRemovable(
     _In_ PCUNICODE_STRING SourceRootPath,
     _In_ PCUNICODE_STRING DestinationArcPath)
 {
-    NTSTATUS Status;
+    NTSTATUS Status = STATUS_SUCCESS;
     FILE_FS_DEVICE_INFORMATION DeviceInfo;
     PCWSTR FileSystemName;
     BOOLEAN IsFloppy;

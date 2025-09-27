@@ -294,7 +294,7 @@ __forceinline static __acrt_has_trailing_digits __cdecl convert_to_fos_high_prec
             mantissa_it[i] = d;
         }
 
-        mantissa_it += __min(digits_per_iteration, mantissa_last - mantissa_it);
+        mantissa_it += __min(digits_per_iteration, static_cast<uint32_t>(mantissa_last - mantissa_it));
     }
 
     *mantissa_it = '\0';

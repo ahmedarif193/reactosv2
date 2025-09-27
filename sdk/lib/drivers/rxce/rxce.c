@@ -618,10 +618,12 @@ RxAllocateObject(
 
         default:
             ASSERT(FALSE);
-            break;
+            RxFreePoolWithTag(Object, Tag);
+            return NULL;
     }
 
     /* Set the prefix table unicode string */
+    ASSERT(PrefixEntry != NULL);
     RtlZeroMemory(PrefixEntry, sizeof(RX_PREFIX_ENTRY));
     PrefixEntry->NodeTypeCode = RDBSS_NTC_PREFIX_ENTRY;
     PrefixEntry->NodeByteSize = sizeof(RX_PREFIX_ENTRY);
@@ -5251,7 +5253,7 @@ RxLockUserBuffer(
     IN LOCK_OPERATION Operation,
     IN ULONG BufferLength)
 {
-    PIRP Irp;
+    PIRP Irp = NULL;
     PMDL Mdl = NULL;
 
     PAGED_CODE();

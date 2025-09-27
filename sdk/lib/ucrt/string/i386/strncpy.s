@@ -63,9 +63,9 @@ page
 
         public  _strncpy
 .PROC _strncpy
-        // dest:ptr byte, \
-        // source:ptr byte, \
-        // count:dword
+        # dest:ptr byte
+        # source:ptr byte
+        # count:dword
 
         //OPTION PROLOGUE:NONE, EPILOGUE:NONE
 

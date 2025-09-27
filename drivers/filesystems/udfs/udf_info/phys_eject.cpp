@@ -42,7 +42,7 @@ UDFEjectReqWaiter(
     uint32 d;
     BOOLEAN FlushWCache = FALSE;
     IO_STATUS_BLOCK IoStatus;
-    BOOLEAN VcbAcquired;
+    BOOLEAN VcbAcquired = FALSE;
     BOOLEAN AllFlushed;
     PDEVICE_OBJECT TargetDevObj;
     uint32 BM_FlushPriod;
