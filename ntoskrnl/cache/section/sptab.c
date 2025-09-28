@@ -70,6 +70,7 @@ PVOID
 NTAPI
 MiSectionPageTableAllocate(PRTL_GENERIC_TABLE Table, CLONG Bytes)
 {
+    UNREFERENCED_PARAMETER(Table);
     PVOID Result;
     Result = ExAllocatePoolWithTag(NonPagedPool, Bytes, 'tPmM');
     //DPRINT("MiSectionPageTableAllocate(%d) => %p\n", Bytes, Result);
@@ -82,6 +83,7 @@ VOID
 NTAPI
 MiSectionPageTableFree(PRTL_GENERIC_TABLE Table, PVOID Data)
 {
+    UNREFERENCED_PARAMETER(Table);
     //DPRINT("MiSectionPageTableFree(%p)\n", Data);
     ExFreePoolWithTag(Data, 'tPmM');
 }
@@ -94,6 +96,7 @@ MiSectionPageTableCompare(PRTL_GENERIC_TABLE Table,
                           PVOID PtrA,
                           PVOID PtrB)
 {
+    UNREFERENCED_PARAMETER(Table);
     PLARGE_INTEGER A = PtrA, B = PtrB;
     BOOLEAN Result = (A->QuadPart < B->QuadPart) ? GenericLessThan :
         (A->QuadPart == B->QuadPart) ? GenericEqual : GenericGreaterThan;
@@ -181,6 +184,8 @@ _MmSetPageEntrySectionSegment(PMM_SECTION_SEGMENT Segment,
                               const char *file,
                               int line)
 {
+    UNREFERENCED_PARAMETER(file);
+    UNREFERENCED_PARAMETER(line);
     ULONG_PTR PageIndex, OldEntry;
     PCACHE_SECTION_PAGE_TABLE PageTable;
 
@@ -244,7 +249,7 @@ _MmSetPageEntrySectionSegment(PMM_SECTION_SEGMENT Segment,
             PageTable->PageEntries[PageIndex] = Entry;
             MmSetSectionAssociation(PFN_FROM_SSE(Entry), Segment, Offset);
 
-            if (Offset->QuadPart >= (Segment->LastPage << PAGE_SHIFT))
+            if ((ULONGLONG)Offset->QuadPart >= ((ULONGLONG)Segment->LastPage << PAGE_SHIFT))
                 Segment->LastPage = (Offset->QuadPart >> PAGE_SHIFT) + 1;
         }
     }
@@ -254,15 +259,15 @@ _MmSetPageEntrySectionSegment(PMM_SECTION_SEGMENT Segment,
         MmDeleteSectionAssociation(PFN_FROM_SSE(OldEntry));
         PageTable->PageEntries[PageIndex] = Entry;
 
-        if (Offset->QuadPart == ((Segment->LastPage - 1ULL) << PAGE_SHIFT))
+        if ((ULONGLONG)Offset->QuadPart == (((ULONGLONG)Segment->LastPage - 1ULL) << PAGE_SHIFT))
         {
             /* We are unsetting the last page */
             while (--Segment->LastPage)
             {
                 LARGE_INTEGER CheckOffset;
                 CheckOffset.QuadPart = (Segment->LastPage - 1) << PAGE_SHIFT;
-                ULONG_PTR Entry = MmGetPageEntrySectionSegment(Segment, &CheckOffset);
-                if ((Entry != 0) && !IS_SWAP_FROM_SSE(Entry))
+                ULONG_PTR EntryVal = MmGetPageEntrySectionSegment(Segment, &CheckOffset);
+                if ((EntryVal != 0) && !IS_SWAP_FROM_SSE(EntryVal))
                     break;
             }
         }
@@ -282,6 +287,8 @@ _MmGetPageEntrySectionSegment(PMM_SECTION_SEGMENT Segment,
                               const char *file,
                               int line)
 {
+    UNREFERENCED_PARAMETER(file);
+    UNREFERENCED_PARAMETER(line);
     LARGE_INTEGER FileOffset;
     ULONG_PTR PageIndex, Result;
     PCACHE_SECTION_PAGE_TABLE PageTable;
@@ -319,7 +326,7 @@ although it's in-order as written now.
 VOID
 NTAPI
 MmFreePageTablesSectionSegment(PMM_SECTION_SEGMENT Segment,
-                               FREE_SECTION_PAGE_FUN FreePage)
+                               FREE_SECTION_PAGE_FUN FreePageFn)
 {
     PCACHE_SECTION_PAGE_TABLE Element;
     DPRINT("MiFreePageTablesSectionSegment(%p)\n", &Segment->PageTable);
@@ -328,7 +335,7 @@ MmFreePageTablesSectionSegment(PMM_SECTION_SEGMENT Segment,
                Segment->FileObject ? &Segment->FileObject->FileName : NULL,
                Segment,
                Element->FileOffset.QuadPart);
-        if (FreePage)
+        if (FreePageFn)
         {
             ULONG i;
             for (i = 0; i < ENTRIES_PER_ELEMENT; i++)
@@ -344,7 +351,7 @@ MmFreePageTablesSectionSegment(PMM_SECTION_SEGMENT Segment,
                            Entry,
                            Offset.QuadPart);
 
-                    FreePage(Segment, &Offset);
+                    FreePageFn(Segment, &Offset);
                 }
             }
         }

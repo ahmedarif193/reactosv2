@@ -387,8 +387,13 @@ MiBalancerThread(PVOID Unused)
                     InitialTarget = MiTrimMemoryConsumer(i, InitialTarget);
                 }
 
-                /* Trim cache */
-                Target = max(InitialTarget, abs(MiMinimumAvailablePages - MmAvailablePages));
+                /* Trim cache: avoid abs() on mixed signedness; compute absolute diff safely */
+                {
+                    ULONG AvailableDiff = (MmAvailablePages > MiMinimumAvailablePages)
+                        ? (ULONG)(MmAvailablePages - MiMinimumAvailablePages)
+                        : (ULONG)(MiMinimumAvailablePages - (ULONG)MmAvailablePages);
+                    Target = max(InitialTarget, AvailableDiff);
+                }
                 if (Target)
                 {
                     CcRosTrimCache(Target, &NrFreedPages);

@@ -43,7 +43,11 @@ void WINAPI _com_issue_errorex(HRESULT hr, IUnknown *punk, REFIID riid)
     {
         ISupportErrorInfo *pserrinfo = static_cast<ISupportErrorInfo *>(pv);
         if (pserrinfo->InterfaceSupportsErrorInfo(riid) == S_OK)
-            (void)GetErrorInfo(0, &perrinfo);
+        {
+            HRESULT __gei_hr = GetErrorInfo(0, &perrinfo);
+            /* Intentionally ignore failures; use perrinfo if populated */
+            (void)__gei_hr;
+        }
         pserrinfo->Release();
     }
 

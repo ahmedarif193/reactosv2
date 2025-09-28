@@ -403,7 +403,7 @@ ExUuidCreate(OUT UUID *Uuid)
             AllocatedCount = InterlockedDecrement(&ExpUuidCachedValues.AllocatedCount);
         }
         /* Loop till we can do it without being disturbed */
-        while (Time.QuadPart != ExpUuidCachedValues.Time);
+        while ((ULONGLONG)Time.QuadPart != (ULONGLONG)ExpUuidCachedValues.Time);
 
         /* We have more than an allocated UUID left, that's OK to return! */
         if (AllocatedCount >= 0)
@@ -416,7 +416,7 @@ ExUuidCreate(OUT UUID *Uuid)
          * We need to be alone to do it, so lock the mutex
          */
         ExAcquireFastMutex(&ExpUuidLock);
-        if (Time.QuadPart == ExpUuidCachedValues.Time)
+        if ((ULONGLONG)Time.QuadPart == (ULONGLONG)ExpUuidCachedValues.Time)
         {
             /* If allocation fails, bail out! */
             Status = ExpUuidGetValues(&ExpUuidCachedValues);

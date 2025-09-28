@@ -429,13 +429,13 @@ NtCreatePagingFile(
      * Pagefiles cannot be larger than the platform-specific memory addressable
      * limits, and of course the minimum should be smaller than the maximum.
      */
-    if (SafeMinimumSize.QuadPart < MINIMUM_PAGEFILE_SIZE ||
-        SafeMinimumSize.QuadPart > MAXIMUM_PAGEFILE_SIZE)
+    if (SafeMinimumSize.QuadPart < (LONGLONG)MINIMUM_PAGEFILE_SIZE ||
+        SafeMinimumSize.QuadPart > (LONGLONG)MAXIMUM_PAGEFILE_SIZE)
     {
         return STATUS_INVALID_PARAMETER_2;
     }
     if (SafeMaximumSize.QuadPart < SafeMinimumSize.QuadPart ||
-        SafeMaximumSize.QuadPart > MAXIMUM_PAGEFILE_SIZE)
+        SafeMaximumSize.QuadPart > (LONGLONG)MAXIMUM_PAGEFILE_SIZE)
     {
         return STATUS_INVALID_PARAMETER_3;
     }
@@ -617,7 +617,7 @@ NtCreatePagingFile(
         }
 
         /* Don't allow page file shrinking */
-        if (PagingFile->MinimumSize > (SafeMinimumSize.QuadPart >> PAGE_SHIFT))
+        if ((ULONGLONG)PagingFile->MinimumSize > (ULONGLONG)(SafeMinimumSize.QuadPart >> PAGE_SHIFT))
         {
             KeReleaseGuardedMutex(&MmPageFileCreationLock);
             ObDereferenceObject(FileObject);
@@ -626,7 +626,7 @@ NtCreatePagingFile(
             goto EarlyQuit;
         }
 
-        if ((SafeMaximumSize.QuadPart >> PAGE_SHIFT) < PagingFile->MaximumSize)
+        if ((ULONGLONG)(SafeMaximumSize.QuadPart >> PAGE_SHIFT) < (ULONGLONG)PagingFile->MaximumSize)
         {
             KeReleaseGuardedMutex(&MmPageFileCreationLock);
             ObDereferenceObject(FileObject);

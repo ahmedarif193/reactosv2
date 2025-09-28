@@ -204,7 +204,7 @@ MmFindGap(
     if (TopDown)
     {
         /* Find an address top-down */
-        HighestAddress = Process ? (ULONG_PTR)MM_HIGHEST_VAD_ADDRESS : (LONG_PTR)-1;
+        HighestAddress = Process ? (ULONG_PTR)MM_HIGHEST_VAD_ADDRESS : (ULONG_PTR)-1;
         Result = MiFindEmptyAddressRangeDownTree(Length,
                                                  HighestAddress,
                                                  Granularity,

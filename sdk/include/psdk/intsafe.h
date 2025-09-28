@@ -253,17 +253,21 @@ C_ASSERT(sizeof(UINT_PTR) == sizeof(ULONG_PTR));
 #endif
 
 /* Convert unsigned to signed or unsigned */
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wtype-limits"
+#endif
 #define DEFINE_SAFE_CONVERT_UTOX(_Name, _TypeFrom, _TypeTo) \
 _Must_inspect_result_ \
 __forceinline \
 INTSAFE_RESULT \
 INTSAFE_NAME(_Name)( \
-    _In_ _TypeFrom Input, \
-    _Out_ _Deref_out_range_(==, Input) _TypeTo *pOutput) \
+    _In_ _TypeFrom __intsafe_input, \
+    _Out_ _Deref_out_range_(==, __intsafe_input) _TypeTo *pOutput) \
 { \
-    if ((sizeof(_TypeFrom) < sizeof(_TypeTo)) || (Input <= _TypeTo ## _MAX)) \
+    if ((sizeof(_TypeFrom) < sizeof(_TypeTo)) || (__intsafe_input <= _TypeTo ## _MAX)) \
     { \
-        *pOutput = (_TypeTo)Input; \
+        *pOutput = (_TypeTo)__intsafe_input; \
         return INTSAFE_SUCCESS; \
     } \
     else \
@@ -321,13 +325,13 @@ _Must_inspect_result_ \
 __forceinline \
 INTSAFE_RESULT \
 INTSAFE_NAME(_Name)( \
-    _In_ _TypeFrom Input, \
-    _Out_ _Deref_out_range_(==, Input) _TypeTo *pOutput) \
+    _In_ _TypeFrom __intsafe_input, \
+    _Out_ _Deref_out_range_(==, __intsafe_input) _TypeTo *pOutput) \
 { \
-    if ((Input >= 0) && \
-        ((sizeof(_TypeFrom) <= sizeof(_TypeTo)) || (Input <= (_TypeFrom)_TypeTo ## _MAX))) \
+    if ((__intsafe_input >= 0) && \
+        ((sizeof(_TypeFrom) <= sizeof(_TypeTo)) || (__intsafe_input <= (_TypeFrom)_TypeTo ## _MAX))) \
     { \
-        *pOutput = (_TypeTo)Input; \
+        *pOutput = (_TypeTo)__intsafe_input; \
         return INTSAFE_SUCCESS; \
     } \
     else \
@@ -398,12 +402,12 @@ _Must_inspect_result_ \
 __forceinline \
 INTSAFE_RESULT \
 INTSAFE_NAME(_Name)( \
-    _In_ _TypeFrom Input, \
-    _Out_ _Deref_out_range_(==, Input) _TypeTo *pOutput) \
+    _In_ _TypeFrom __intsafe_input, \
+    _Out_ _Deref_out_range_(==, __intsafe_input) _TypeTo *pOutput) \
 { \
-    if ((Input >= _TypeTo ## _MIN) && (Input <= _TypeTo ## _MAX)) \
+    if ((__intsafe_input >= _TypeTo ## _MIN) && (__intsafe_input <= _TypeTo ## _MAX)) \
     { \
-        *pOutput = (_TypeTo)Input; \
+        *pOutput = (_TypeTo)__intsafe_input; \
         return INTSAFE_SUCCESS; \
     } \
     else \
@@ -518,6 +522,10 @@ DEFINE_SAFE_CONVERT_STOS(LongPtrToChar, LONG_PTR, _INTSAFE_CHAR)
 #endif
 
 #endif // _NTINTSAFE_H_INCLUDED_
+
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 
 #define DEFINE_SAFE_ADD(_Name, _Type) \

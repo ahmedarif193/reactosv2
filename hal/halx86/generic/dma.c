@@ -607,20 +607,26 @@ HalpDmaInitializeEisaAdapter(IN PADAPTER_OBJECT AdapterObject,
         {
             /* Set the Request Data */
             _PRAGMA_WARNING_SUPPRESS(__WARNING_DEREF_NULL_PTR)
-            WRITE_PORT_UCHAR(&((PDMA1_CONTROL)AdapterBaseVa)->Mode, DmaMode.Byte);
+            WRITE_PORT_UCHAR(
+                (PUCHAR)((ULONG_PTR)AdapterBaseVa + FIELD_OFFSET(DMA1_CONTROL, Mode)),
+                DmaMode.Byte);
 
             /* Unmask DMA Channel */
-            WRITE_PORT_UCHAR(&((PDMA1_CONTROL)AdapterBaseVa)->SingleMask,
-                             AdapterObject->ChannelNumber | DMA_CLEARMASK);
+            WRITE_PORT_UCHAR(
+                (PUCHAR)((ULONG_PTR)AdapterBaseVa + FIELD_OFFSET(DMA1_CONTROL, SingleMask)),
+                AdapterObject->ChannelNumber | DMA_CLEARMASK);
         }
         else
         {
             /* Set the Request Data */
-            WRITE_PORT_UCHAR(&((PDMA2_CONTROL)AdapterBaseVa)->Mode, DmaMode.Byte);
+            WRITE_PORT_UCHAR(
+                (PUCHAR)((ULONG_PTR)AdapterBaseVa + FIELD_OFFSET(DMA2_CONTROL, Mode)),
+                DmaMode.Byte);
 
             /* Unmask DMA Channel */
-            WRITE_PORT_UCHAR(&((PDMA2_CONTROL)AdapterBaseVa)->SingleMask,
-                             AdapterObject->ChannelNumber | DMA_CLEARMASK);
+            WRITE_PORT_UCHAR(
+                (PUCHAR)((ULONG_PTR)AdapterBaseVa + FIELD_OFFSET(DMA2_CONTROL, SingleMask)),
+                AdapterObject->ChannelNumber | DMA_CLEARMASK);
         }
     }
     else
@@ -1344,7 +1350,7 @@ HalReadDmaCounter(IN PADAPTER_OBJECT AdapterObject)
     /* Send the request to the specific controller. */
     if (AdapterObject->AdapterNumber == 1)
     {
-        PDMA1_CONTROL DmaControl1 = AdapterObject->AdapterBaseVa;
+        PVOID Base = AdapterObject->AdapterBaseVa;
 
         Count = 0xffff00;
         do
@@ -1352,18 +1358,23 @@ HalReadDmaCounter(IN PADAPTER_OBJECT AdapterObject)
             OldCount = Count;
 
             /* Send Reset */
-            WRITE_PORT_UCHAR(&DmaControl1->ClearBytePointer, 0);
+            WRITE_PORT_UCHAR(
+                (PUCHAR)((ULONG_PTR)Base + FIELD_OFFSET(DMA1_CONTROL, ClearBytePointer)), 0);
 
             /* Read Count */
-            Count = READ_PORT_UCHAR(&DmaControl1->DmaAddressCount
-                                    [AdapterObject->ChannelNumber].DmaBaseCount);
-            Count |= READ_PORT_UCHAR(&DmaControl1->DmaAddressCount
-                                     [AdapterObject->ChannelNumber].DmaBaseCount) << 8;
+            Count = READ_PORT_UCHAR(
+                (PUCHAR)((ULONG_PTR)Base + FIELD_OFFSET(DMA1_CONTROL, DmaAddressCount) +
+                         sizeof(DMA1_ADDRESS_COUNT) * AdapterObject->ChannelNumber +
+                         FIELD_OFFSET(DMA1_ADDRESS_COUNT, DmaBaseCount)));
+            Count |= READ_PORT_UCHAR(
+                (PUCHAR)((ULONG_PTR)Base + FIELD_OFFSET(DMA1_CONTROL, DmaAddressCount) +
+                         sizeof(DMA1_ADDRESS_COUNT) * AdapterObject->ChannelNumber +
+                         FIELD_OFFSET(DMA1_ADDRESS_COUNT, DmaBaseCount))) << 8;
         } while (0xffff00 & (OldCount ^ Count));
     }
     else
     {
-        PDMA2_CONTROL DmaControl2 = AdapterObject->AdapterBaseVa;
+        PVOID Base = AdapterObject->AdapterBaseVa;
 
         Count = 0xffff00;
         do
@@ -1371,13 +1382,18 @@ HalReadDmaCounter(IN PADAPTER_OBJECT AdapterObject)
             OldCount = Count;
 
             /* Send Reset */
-            WRITE_PORT_UCHAR(&DmaControl2->ClearBytePointer, 0);
+            WRITE_PORT_UCHAR(
+                (PUCHAR)((ULONG_PTR)Base + FIELD_OFFSET(DMA2_CONTROL, ClearBytePointer)), 0);
 
             /* Read Count */
-            Count = READ_PORT_UCHAR(&DmaControl2->DmaAddressCount
-                                    [AdapterObject->ChannelNumber].DmaBaseCount);
-            Count |= READ_PORT_UCHAR(&DmaControl2->DmaAddressCount
-                                     [AdapterObject->ChannelNumber].DmaBaseCount) << 8;
+            Count = READ_PORT_UCHAR(
+                (PUCHAR)((ULONG_PTR)Base + FIELD_OFFSET(DMA2_CONTROL, DmaAddressCount) +
+                         sizeof(DMA2_ADDRESS_COUNT) * AdapterObject->ChannelNumber +
+                         FIELD_OFFSET(DMA2_ADDRESS_COUNT, DmaBaseCount)));
+            Count |= READ_PORT_UCHAR(
+                (PUCHAR)((ULONG_PTR)Base + FIELD_OFFSET(DMA2_CONTROL, DmaAddressCount) +
+                         sizeof(DMA2_ADDRESS_COUNT) * AdapterObject->ChannelNumber +
+                         FIELD_OFFSET(DMA2_ADDRESS_COUNT, DmaBaseCount))) << 8;
         } while (0xffff00 & (OldCount ^ Count));
     }
 
@@ -2216,18 +2232,22 @@ IoMapTransfer(IN PADAPTER_OBJECT AdapterObject,
 
         if (AdapterObject->AdapterNumber == 1)
         {
-            PDMA1_CONTROL DmaControl1 = AdapterObject->AdapterBaseVa;
+            PVOID Base = AdapterObject->AdapterBaseVa;
 
             /* Reset Register */
-            WRITE_PORT_UCHAR(&DmaControl1->ClearBytePointer, 0);
+            WRITE_PORT_UCHAR((PUCHAR)((ULONG_PTR)Base + FIELD_OFFSET(DMA1_CONTROL, ClearBytePointer)), 0);
 
             /* Set the Mode */
-            WRITE_PORT_UCHAR(&DmaControl1->Mode, AdapterMode.Byte);
+            WRITE_PORT_UCHAR((PUCHAR)((ULONG_PTR)Base + FIELD_OFFSET(DMA1_CONTROL, Mode)), AdapterMode.Byte);
 
             /* Set the Offset Register */
-            WRITE_PORT_UCHAR(&DmaControl1->DmaAddressCount[AdapterObject->ChannelNumber].DmaBaseAddress,
+            WRITE_PORT_UCHAR((PUCHAR)((ULONG_PTR)Base + FIELD_OFFSET(DMA1_CONTROL, DmaAddressCount) +
+                                      sizeof(DMA1_ADDRESS_COUNT) * AdapterObject->ChannelNumber +
+                                      FIELD_OFFSET(DMA1_ADDRESS_COUNT, DmaBaseAddress)),
                              (UCHAR)(TransferOffset));
-            WRITE_PORT_UCHAR(&DmaControl1->DmaAddressCount[AdapterObject->ChannelNumber].DmaBaseAddress,
+            WRITE_PORT_UCHAR((PUCHAR)((ULONG_PTR)Base + FIELD_OFFSET(DMA1_CONTROL, DmaAddressCount) +
+                                      sizeof(DMA1_ADDRESS_COUNT) * AdapterObject->ChannelNumber +
+                                      FIELD_OFFSET(DMA1_ADDRESS_COUNT, DmaBaseAddress)),
                              (UCHAR)(TransferOffset >> 8));
 
             /* Set the Page Register */
@@ -2240,28 +2260,37 @@ IoMapTransfer(IN PADAPTER_OBJECT AdapterObject,
             }
 
             /* Set the Length */
-            WRITE_PORT_UCHAR(&DmaControl1->DmaAddressCount[AdapterObject->ChannelNumber].DmaBaseCount,
+            WRITE_PORT_UCHAR((PUCHAR)((ULONG_PTR)Base + FIELD_OFFSET(DMA1_CONTROL, DmaAddressCount) +
+                                      sizeof(DMA1_ADDRESS_COUNT) * AdapterObject->ChannelNumber +
+                                      FIELD_OFFSET(DMA1_ADDRESS_COUNT, DmaBaseCount)),
                              (UCHAR)(TransferLength - 1));
-            WRITE_PORT_UCHAR(&DmaControl1->DmaAddressCount[AdapterObject->ChannelNumber].DmaBaseCount,
+            WRITE_PORT_UCHAR((PUCHAR)((ULONG_PTR)Base + FIELD_OFFSET(DMA1_CONTROL, DmaAddressCount) +
+                                      sizeof(DMA1_ADDRESS_COUNT) * AdapterObject->ChannelNumber +
+                                      FIELD_OFFSET(DMA1_ADDRESS_COUNT, DmaBaseCount)),
                              (UCHAR)((TransferLength - 1) >> 8));
 
             /* Unmask the Channel */
-            WRITE_PORT_UCHAR(&DmaControl1->SingleMask, AdapterObject->ChannelNumber | DMA_CLEARMASK);
+            WRITE_PORT_UCHAR((PUCHAR)((ULONG_PTR)Base + FIELD_OFFSET(DMA1_CONTROL, SingleMask)),
+                             AdapterObject->ChannelNumber | DMA_CLEARMASK);
         }
         else
         {
-            PDMA2_CONTROL DmaControl2 = AdapterObject->AdapterBaseVa;
+            PVOID Base = AdapterObject->AdapterBaseVa;
 
             /* Reset Register */
-            WRITE_PORT_UCHAR(&DmaControl2->ClearBytePointer, 0);
+            WRITE_PORT_UCHAR((PUCHAR)((ULONG_PTR)Base + FIELD_OFFSET(DMA2_CONTROL, ClearBytePointer)), 0);
 
             /* Set the Mode */
-            WRITE_PORT_UCHAR(&DmaControl2->Mode, AdapterMode.Byte);
+            WRITE_PORT_UCHAR((PUCHAR)((ULONG_PTR)Base + FIELD_OFFSET(DMA2_CONTROL, Mode)), AdapterMode.Byte);
 
             /* Set the Offset Register */
-            WRITE_PORT_UCHAR(&DmaControl2->DmaAddressCount[AdapterObject->ChannelNumber].DmaBaseAddress,
+            WRITE_PORT_UCHAR((PUCHAR)((ULONG_PTR)Base + FIELD_OFFSET(DMA2_CONTROL, DmaAddressCount) +
+                                      sizeof(DMA2_ADDRESS_COUNT) * AdapterObject->ChannelNumber +
+                                      FIELD_OFFSET(DMA2_ADDRESS_COUNT, DmaBaseAddress)),
                              (UCHAR)(TransferOffset));
-            WRITE_PORT_UCHAR(&DmaControl2->DmaAddressCount[AdapterObject->ChannelNumber].DmaBaseAddress,
+            WRITE_PORT_UCHAR((PUCHAR)((ULONG_PTR)Base + FIELD_OFFSET(DMA2_CONTROL, DmaAddressCount) +
+                                      sizeof(DMA2_ADDRESS_COUNT) * AdapterObject->ChannelNumber +
+                                      FIELD_OFFSET(DMA2_ADDRESS_COUNT, DmaBaseAddress)),
                              (UCHAR)(TransferOffset >> 8));
 
             /* Set the Page Register */
@@ -2274,13 +2303,17 @@ IoMapTransfer(IN PADAPTER_OBJECT AdapterObject,
             }
 
             /* Set the Length */
-            WRITE_PORT_UCHAR(&DmaControl2->DmaAddressCount[AdapterObject->ChannelNumber].DmaBaseCount,
+            WRITE_PORT_UCHAR((PUCHAR)((ULONG_PTR)Base + FIELD_OFFSET(DMA2_CONTROL, DmaAddressCount) +
+                                      sizeof(DMA2_ADDRESS_COUNT) * AdapterObject->ChannelNumber +
+                                      FIELD_OFFSET(DMA2_ADDRESS_COUNT, DmaBaseCount)),
                              (UCHAR)(TransferLength - 1));
-            WRITE_PORT_UCHAR(&DmaControl2->DmaAddressCount[AdapterObject->ChannelNumber].DmaBaseCount,
+            WRITE_PORT_UCHAR((PUCHAR)((ULONG_PTR)Base + FIELD_OFFSET(DMA2_CONTROL, DmaAddressCount) +
+                                      sizeof(DMA2_ADDRESS_COUNT) * AdapterObject->ChannelNumber +
+                                      FIELD_OFFSET(DMA2_ADDRESS_COUNT, DmaBaseCount)),
                              (UCHAR)((TransferLength - 1) >> 8));
 
             /* Unmask the Channel */
-            WRITE_PORT_UCHAR(&DmaControl2->SingleMask,
+            WRITE_PORT_UCHAR((PUCHAR)((ULONG_PTR)Base + FIELD_OFFSET(DMA2_CONTROL, SingleMask)),
                              AdapterObject->ChannelNumber | DMA_CLEARMASK);
         }
 

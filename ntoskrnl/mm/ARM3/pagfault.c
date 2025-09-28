@@ -660,12 +660,12 @@ MiResolveDemandZeroFault(IN PVOID Address,
     //ASSERT(MmAvailablePages >= 32);
 
 #if MI_TRACE_PFNS
-    if (UserPdeFault) MI_SET_USAGE(MI_USAGE_PAGE_TABLE);
-    if (!UserPdeFault) MI_SET_USAGE(MI_USAGE_DEMAND_ZERO);
+    if (UserPdeFault) { MI_SET_USAGE(MI_USAGE_PAGE_TABLE); }
+    if (!UserPdeFault) { MI_SET_USAGE(MI_USAGE_DEMAND_ZERO); }
 #endif
-    if (Process == HYDRA_PROCESS) MI_SET_PROCESS2("Hydra");
-    else if (Process) MI_SET_PROCESS2(Process->ImageFileName);
-    else MI_SET_PROCESS2("Kernel Demand 0");
+    if (Process == HYDRA_PROCESS) { MI_SET_PROCESS2("Hydra"); }
+    else if (Process) { MI_SET_PROCESS2(Process->ImageFileName); }
+    else { MI_SET_PROCESS2("Kernel Demand 0"); }
 
     /* Do we need a zero page? */
     if (Color != 0xFFFFFFFF)

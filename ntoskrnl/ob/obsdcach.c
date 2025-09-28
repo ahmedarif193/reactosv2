@@ -299,11 +299,11 @@ ObDereferenceSecurityDescriptor(IN PSECURITY_DESCRIPTOR SecurityDescriptor,
     OldValue = SdHeader->RefCount;
 
     /* Check if the caller is destroying this SD -- we need the lock for that */
-    while (OldValue != Count)
+    while (OldValue != (LONG)Count)
     {
         /* He isn't, we can just try to derefeference atomically */
         NewValue = InterlockedCompareExchange((PLONG)&SdHeader->RefCount,
-                                              OldValue - Count,
+                                              OldValue - (LONG)Count,
                                               OldValue);
         if (NewValue == OldValue) return;
 
@@ -320,7 +320,7 @@ ObDereferenceSecurityDescriptor(IN PSECURITY_DESCRIPTOR SecurityDescriptor,
     ASSERT(SdHeader->RefCount != 0);
 
     /* Now do the dereference */
-    if (InterlockedExchangeAdd((PLONG)&SdHeader->RefCount, -(LONG)Count) == Count)
+    if (InterlockedExchangeAdd((PLONG)&SdHeader->RefCount, -(LONG)Count) == (LONG)Count)
     {
         /* We're down to zero -- destroy the header */
         SdHeader = ObpDestroySecurityDescriptorHeader(SdHeader);

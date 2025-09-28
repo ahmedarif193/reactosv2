@@ -926,7 +926,7 @@ KeFlushQueuedDpcs(VOID)
     ASSERT(KeGetCurrentThread()->SystemAffinityActive == FALSE);
 
     /* Loop all processors */
-    for (ProcessorIndex = 0; ProcessorIndex < KeNumberProcessors; ProcessorIndex++)
+    for (ProcessorIndex = 0; ProcessorIndex < (ULONG)KeNumberProcessors; ProcessorIndex++)
     {
         /* Get the target processor's PRCB */
         TargetPrcb = KiProcessorBlock[ProcessorIndex];

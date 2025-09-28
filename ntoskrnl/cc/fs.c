@@ -16,6 +16,10 @@
 
 /* FUNCTIONS *****************************************************************/
 
+/* Forward declaration to satisfy -Wmissing-prototypes */
+BOOLEAN NTAPI CcGetFileSizes(IN PFILE_OBJECT FileObject,
+                             IN PCC_FILE_SIZES FileSizes);
+
 /*
  * @unimplemented
  */
@@ -66,6 +70,7 @@ CcGetLsnForFileObject (
     CCTRACE(CC_API_DEBUG, "FileObject=%p\n", FileObject);
 
     UNIMPLEMENTED;
+    UNREFERENCED_PARAMETER(OldestLsn);
     i.QuadPart = 0;
     return i;
 }

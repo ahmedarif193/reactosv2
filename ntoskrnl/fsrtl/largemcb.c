@@ -348,7 +348,7 @@ FsRtlGetNextBaseMcbEntry(IN PBASE_MCB OpaqueMcb,
         Run = (PLARGE_MCB_MAPPING_ENTRY)RtlEnumerateGenericTable(&Mcb->Mapping->Table, FALSE))
     {
         // is the current index a hole?
-        if (Run->RunStartVbn.QuadPart > (LastVbn + LastSectorCount))
+        if ((ULONGLONG)Run->RunStartVbn.QuadPart > (LastVbn + LastSectorCount))
         {
             // Is this the index we're looking for?
             if (RunIndex == CurrentIndex)
@@ -544,10 +544,13 @@ FsRtlLookupBaseMcbEntry(IN PBASE_MCB OpaqueMcb,
     }
 
 quit:
-    DPRINT("FsRtlLookupBaseMcbEntry(%p, %I64d, %p, %p, %p, %p, %p) = %d (%I64d, %I64d, %I64d, %I64d, %d)\n",
+    DPRINT("FsRtlLookupBaseMcbEntry(%p, %I64d, %p, %p, %p, %p, %p) = %d (%I64u, %I64u, %I64u, %I64u, %u)\n",
            OpaqueMcb, Vbn, Lbn, SectorCountFromLbn, StartingLbn, SectorCountFromStartingLbn, Index, Result,
-           (Lbn ? *Lbn : (ULONGLONG)-1), (SectorCountFromLbn ? *SectorCountFromLbn : (ULONGLONG)-1), (StartingLbn ? *StartingLbn : (ULONGLONG)-1),
-           (SectorCountFromStartingLbn ? *SectorCountFromStartingLbn : (ULONGLONG)-1), (Index ? *Index : (ULONG)-1));
+           (Lbn ? (ULONGLONG)*Lbn : (ULONGLONG)-1),
+           (SectorCountFromLbn ? (ULONGLONG)*SectorCountFromLbn : (ULONGLONG)-1),
+           (StartingLbn ? (ULONGLONG)*StartingLbn : (ULONGLONG)-1),
+           (SectorCountFromStartingLbn ? (ULONGLONG)*SectorCountFromStartingLbn : (ULONGLONG)-1),
+           (Index ? *Index : (ULONG)-1));
 
     return Result;
 }
@@ -579,10 +582,13 @@ FsRtlLookupLargeMcbEntry(IN PLARGE_MCB Mcb,
                                      Index);
     KeReleaseGuardedMutex(Mcb->GuardedMutex);
 
-    DPRINT("FsRtlLookupLargeMcbEntry(%p, %I64d, %p, %p, %p, %p, %p) = %d (%I64d, %I64d, %I64d, %I64d, %d)\n",
+    DPRINT("FsRtlLookupLargeMcbEntry(%p, %I64d, %p, %p, %p, %p, %p) = %d (%I64u, %I64u, %I64u, %I64u, %u)\n",
            Mcb, Vbn, Lbn, SectorCountFromLbn, StartingLbn, SectorCountFromStartingLbn, Index, Result,
-           (Lbn ? *Lbn : (ULONGLONG)-1), (SectorCountFromLbn ? *SectorCountFromLbn : (ULONGLONG)-1), (StartingLbn ? *StartingLbn : (ULONGLONG)-1),
-           (SectorCountFromStartingLbn ? *SectorCountFromStartingLbn : (ULONGLONG)-1), (Index ? *Index : (ULONG)-1));
+           (Lbn ? (ULONGLONG)*Lbn : (ULONGLONG)-1),
+           (SectorCountFromLbn ? (ULONGLONG)*SectorCountFromLbn : (ULONGLONG)-1),
+           (StartingLbn ? (ULONGLONG)*StartingLbn : (ULONGLONG)-1),
+           (SectorCountFromStartingLbn ? (ULONGLONG)*SectorCountFromStartingLbn : (ULONGLONG)-1),
+           (Index ? *Index : (ULONG)-1));
 
     return Result;
 }

@@ -296,6 +296,8 @@ _MmTryToLockAddressSpace(IN PMMSUPPORT AddressSpace,
                          const char *file,
                          int line)
 {
+    UNREFERENCED_PARAMETER(file);
+    UNREFERENCED_PARAMETER(line);
     BOOLEAN Result = KeTryToAcquireGuardedMutex(&CONTAINING_RECORD(AddressSpace, EPROCESS, Vm)->AddressCreationLock);
     //DbgPrint("(%s:%d) Try Lock Address Space %x -> %s\n", file, line, AddressSpace, Result ? "true" : "false");
     return Result;

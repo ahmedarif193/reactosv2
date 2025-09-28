@@ -2874,7 +2874,12 @@ NTSTRSAFEAPI RtlpStringVPrintfWorkerW(
     }
 
     if (pcchDestNewLen)
-        *pcchDestNewLen = (iRet == -1) ? cchDest : iRet;
+    {
+        if (iRet == -1)
+            *pcchDestNewLen = cchDest;
+        else
+            *pcchDestNewLen = (size_t)iRet;
+    }
 
     return Status;
 }

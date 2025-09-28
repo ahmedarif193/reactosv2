@@ -51,7 +51,8 @@ HalpInitPhase0(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 
     HalpPrintApicTables();
 
-    /* Enable clock interrupt handler */
+    /* Enable clock/profile interrupt handlers */
+#ifndef _M_AMD64
     HalpEnableInterruptHandler(IDT_INTERNAL,
                                0,
                                APIC_CLOCK_VECTOR,
@@ -59,13 +60,13 @@ HalpInitPhase0(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
                                HalpClockInterrupt,
                                Latched);
 
-    /* Enable profile interrupt handler */
     HalpEnableInterruptHandler(IDT_DEVICE,
                                0,
                                APIC_PROFILE_VECTOR,
                                APIC_PROFILE_LEVEL,
                                HalpProfileInterrupt,
                                Latched);
+#endif
 }
 
 VOID
@@ -73,6 +74,15 @@ HalpInitPhase1(VOID)
 {
     /* Initialize DMA. NT does this in Phase 0 */
     HalpInitDma();
+
+#ifdef _M_AMD64
+    /* Now that the kernel finalized the IDT, install APIC timer/IPI handlers */
+    KeRegisterInterruptHandler(APIC_CLOCK_VECTOR, HalpClockInterrupt);
+    KeRegisterInterruptHandler(CLOCK_IPI_VECTOR, HalpClockIpi);
+
+    /* Enable the timer interrupt now */
+    HalEnableSystemInterrupt(APIC_CLOCK_VECTOR, CLOCK_LEVEL, Latched);
+#endif
 }
 
 /* EOF */

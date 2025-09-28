@@ -1343,27 +1343,27 @@ IofCompleteRequest(IN PIRP Irp,
     /* Check for invalid CancelRoutine values that could cause crashes */
     if (Irp->CancelRoutine)
     {
+#if defined(_WIN64)
         PVOID CancelRoutine = Irp->CancelRoutine;
-        
-        /* AGENT-MODIFIED: Validate CancelRoutine pointer before proceeding */
-        /* Values below 0x10000 are definitely invalid (includes 0x1 seen in logs) */
-        /* Values above 0xFFFF800000000000 should be valid kernel addresses on x64 */
-        if ((ULONG_PTR)CancelRoutine < 0x10000 || 
-            ((ULONG_PTR)CancelRoutine > 0x7FFFFFFFFFFF && 
-             (ULONG_PTR)CancelRoutine < 0xFFFF800000000000))
+        /* Validate CancelRoutine pointer before proceeding (64-bit address space) */
+        if ((ULONG_PTR)CancelRoutine < 0x10000ULL ||
+            (((ULONG_PTR)CancelRoutine > 0x7FFFFFFFFFFFULL) &&
+             ((ULONG_PTR)CancelRoutine < 0xFFFF800000000000ULL)))
         {
             DPRINT1("AGENT-DEBUG: IRP %p has INVALID CancelRoutine %p at completion - clearing it\n",
                     Irp, CancelRoutine);
-            /* Clear invalid pointer directly to avoid crash */
             Irp->CancelRoutine = NULL;
         }
         else
         {
             DPRINT1("AGENT-DEBUG: IRP %p has CancelRoutine %p at completion - clearing via IoSetCancelRoutine\n",
                     Irp, CancelRoutine);
-            /* Use normal clearing for potentially valid pointers */
             IoSetCancelRoutine(Irp, NULL);
         }
+#else
+        /* 32-bit: just clear via IoSetCancelRoutine without range heuristics */
+        IoSetCancelRoutine(Irp, NULL);
+#endif
     }
 
     /* Some sanity checks */

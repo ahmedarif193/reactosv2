@@ -133,7 +133,9 @@ HalpInitializeClock(VOID)
     KeSetTimeIncrement(HalpMaximumTimeIncrement, HalpMinimumTimeIncrement);
 
     /* Enable the timer interrupt */
+#ifndef _M_AMD64
     HalEnableSystemInterrupt(APIC_CLOCK_VECTOR, CLOCK_LEVEL, Latched);
+#endif
 
     DPRINT1("Clock initialized\n");
 }

@@ -22,6 +22,29 @@ function(add_hal _halname)
         ${_haldata_SOURCES}
         ${CMAKE_CURRENT_BINARY_DIR}/hal.def)
 
+    # Stricter warnings for all builds (GCC/Clang only)
+    if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
+        target_compile_options(${_halname} PRIVATE
+            -UNDEBUG
+            -Wno-static-in-inline
+            $<$<COMPILE_LANGUAGE:C>:
+                -Werror
+                -Wextra -Wformat -Wformat-security
+                -Wcast-align -Wpointer-arith -Wvla
+                
+                -Wsign-compare -Wimplicit-fallthrough
+                -Wno-missing-prototypes -Wno-unused-parameter -Wno-sign-compare
+                -Wno-missing-field-initializers -Wno-cast-function-type
+                -Wno-null-dereference>
+            $<$<COMPILE_LANGUAGE:CXX>:
+                -Werror
+                -Wextra -Wformat -Wformat-security -Wpointer-arith
+                -Wcast-align -Wno-unused-parameter
+                -Wsign-compare -Wno-missing-field-initializers
+                -Wno-cast-function-type -Wno-implicit-fallthrough
+                -Wno-null-dereference>)
+    endif()
+
     if(${_halname} STREQUAL "hal")
         target_link_libraries(${_halname} libcntpr arbiter fast486)
     else()

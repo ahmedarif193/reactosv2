@@ -131,6 +131,9 @@ CcGetFlushedValidData (
 
 	UNIMPLEMENTED;
 
+    UNREFERENCED_PARAMETER(SectionObjectPointer);
+    UNREFERENCED_PARAMETER(BcbListHeld);
+
 	i.QuadPart = 0;
 	return i;
 }
@@ -146,6 +149,7 @@ CcRemapBcb (
 {
 	UNIMPLEMENTED;
 
+    UNREFERENCED_PARAMETER(Bcb);
     return 0;
 }
 

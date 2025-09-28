@@ -65,6 +65,7 @@ NTAPI
 CmpFree(IN PVOID Ptr,
         IN ULONG Quota)
 {
+    UNREFERENCED_PARAMETER(Quota);
     ExFreePool(Ptr);
 }
 
@@ -135,6 +136,7 @@ CmpFileSetSize(
     _In_ ULONG FileSize,
     _In_ ULONG OldFileSize)
 {
+    UNREFERENCED_PARAMETER(OldFileSize);
     PCMHIVE CmHive = (PCMHIVE)RegistryHive;
     HANDLE HiveHandle = CmHive->FileHandles[FileType];
     FILE_END_OF_FILE_INFORMATION EndOfFileInfo;
@@ -194,6 +196,8 @@ CmpFileFlush(IN PHHIVE RegistryHive,
              IN OUT PLARGE_INTEGER FileOffset,
              IN ULONG Length)
 {
+    UNREFERENCED_PARAMETER(FileOffset);
+    UNREFERENCED_PARAMETER(Length);
     PCMHIVE CmHive = (PCMHIVE)RegistryHive;
     HANDLE HiveHandle = CmHive->FileHandles[FileType];
     IO_STATUS_BLOCK IoStatusBlock;

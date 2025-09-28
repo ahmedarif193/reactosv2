@@ -14,11 +14,14 @@
 #error FIXME: Unsupported __ImageBase implementation.
 #else
 #ifdef __GNUC__
-/* Hack, for bug in ld.  Will be removed soon.  */
+/* Linker-provided symbol for module base; declare as incomplete array to avoid
+   array-bounds assumptions by the compiler when doing PE header pointer math. */
+extern const unsigned char __MINGW_LSYMBOL(_image_base__)[];
 #define __ImageBase __MINGW_LSYMBOL(_image_base__)
-#endif
+#else
 /* This symbol is defined by the linker.  */
 extern IMAGE_DOS_HEADER __ImageBase;
+#endif
 #endif
 
 WINBOOL _ValidateImageBase (PBYTE);
@@ -78,7 +81,7 @@ _FindPESectionByName (const char *pName)
   if (strlen (pName) > IMAGE_SIZEOF_SHORT_NAME)
     return NULL;
 
-  pImageBase = (PBYTE) &__ImageBase;
+  pImageBase = (PBYTE) __ImageBase;
   if (! _ValidateImageBase (pImageBase))
     return NULL;
 
@@ -103,7 +106,7 @@ __mingw_GetSectionForAddress (LPVOID p)
   PBYTE pImageBase;
   DWORD_PTR rva;
 
-  pImageBase = (PBYTE) &__ImageBase;
+  pImageBase = (PBYTE) __ImageBase;
   if (! _ValidateImageBase (pImageBase))
     return NULL;
 
@@ -117,7 +120,7 @@ __mingw_GetSectionCount (void)
   PBYTE pImageBase;
   PIMAGE_NT_HEADERS pNTHeader;
 
-  pImageBase = (PBYTE) &__ImageBase;
+  pImageBase = (PBYTE) __ImageBase;
   if (! _ValidateImageBase (pImageBase))
     return 0;
 
@@ -137,7 +140,7 @@ _FindPESectionExec (size_t eNo)
   PIMAGE_SECTION_HEADER pSection;
   unsigned int iSection;
 
-  pImageBase = (PBYTE) &__ImageBase;
+  pImageBase = (PBYTE) __ImageBase;
   if (! _ValidateImageBase (pImageBase))
     return NULL;
 
@@ -163,7 +166,7 @@ PBYTE
 _GetPEImageBase (void)
 {
   PBYTE pImageBase;
-  pImageBase = (PBYTE) &__ImageBase;
+  pImageBase = (PBYTE) __ImageBase;
   if (! _ValidateImageBase (pImageBase))
     return NULL;
   return pImageBase;

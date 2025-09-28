@@ -31,6 +31,8 @@ CcMdlRead (
     CCTRACE(CC_API_DEBUG, "FileObject=%p FileOffset=%I64d Length=%lu\n",
         FileObject, FileOffset->QuadPart, Length);
 
+    UNREFERENCED_PARAMETER(MdlChain);
+    UNREFERENCED_PARAMETER(IoStatus);
     UNIMPLEMENTED;
 }
 
@@ -58,6 +60,7 @@ CcMdlReadComplete2 (
     IN PMDL MemoryDescriptorList
 )
 {
+    UNREFERENCED_PARAMETER(FileObject);
     PMDL Mdl;
 
     /* Free MDLs */
@@ -157,6 +160,9 @@ CcMdlWriteComplete2 (
     IN PLARGE_INTEGER FileOffset,
     IN PMDL MdlChain)
 {
+    UNREFERENCED_PARAMETER(FileObject);
+    UNREFERENCED_PARAMETER(FileOffset);
+    UNREFERENCED_PARAMETER(MdlChain);
     UNIMPLEMENTED;
 }
 
@@ -169,6 +175,8 @@ CcMdlWriteAbort (
     IN PFILE_OBJECT FileObject,
     IN PMDL MdlChain)
 {
+    UNREFERENCED_PARAMETER(FileObject);
+    UNREFERENCED_PARAMETER(MdlChain);
     UNIMPLEMENTED;
 }
 
@@ -187,5 +195,7 @@ CcPrepareMdlWrite (
     CCTRACE(CC_API_DEBUG, "FileObject=%p FileOffset=%I64d Length=%lu\n",
         FileObject, FileOffset->QuadPart, Length);
 
+    UNREFERENCED_PARAMETER(MdlChain);
+    UNREFERENCED_PARAMETER(IoStatus);
     UNIMPLEMENTED;
 }

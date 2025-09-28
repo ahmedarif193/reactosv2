@@ -27,20 +27,25 @@
 
 /* FUNCTIONS ****************************************************************/
 
+/* Forward prototypes to satisfy -Wmissing-prototypes */
+INTERLOCKED_RESULT NTAPI ExInterlockedIncrementLong(IN PLONG Addend, IN PKSPIN_LOCK Lock);
+INTERLOCKED_RESULT NTAPI ExInterlockedDecrementLong(IN PLONG Addend, IN PKSPIN_LOCK Lock);
+ULONG NTAPI ExInterlockedExchangeUlong(IN PULONG Target, IN ULONG Value, IN PKSPIN_LOCK Lock);
+
 FORCEINLINE
 BOOLEAN
 _ExiDisableInterruptsAndAcquireSpinlock(
     IN OUT PKSPIN_LOCK Lock)
 {
-    BOOLEAN Enabled;
+    BOOLEAN InterruptsEnabled;
 
     /* Disable interrupts */
-    Enabled = KeDisableInterrupts();
+    InterruptsEnabled = KeDisableInterrupts();
 
     /* Acquire the spinlock (inline) */
     KxAcquireSpinLock(Lock);
 
-    return Enabled;
+    return InterruptsEnabled;
 }
 
 FORCEINLINE
@@ -254,6 +259,7 @@ ExInterlockedIncrementLong(
   IN PLONG Addend,
   IN PKSPIN_LOCK Lock)
 {
+    UNREFERENCED_PARAMETER(Lock);
     LONG Result;
 
     Result = _InterlockedIncrement(Addend);
@@ -268,6 +274,7 @@ ExInterlockedDecrementLong(
   IN PLONG Addend,
   IN PKSPIN_LOCK Lock)
 {
+    UNREFERENCED_PARAMETER(Lock);
     LONG Result;
 
     Result = _InterlockedDecrement(Addend);
@@ -283,6 +290,7 @@ ExInterlockedExchangeUlong(
   IN ULONG Value,
   IN PKSPIN_LOCK Lock)
 {
+    UNREFERENCED_PARAMETER(Lock);
     return (ULONG)_InterlockedExchange((PLONG)Target, (LONG)Value);
 }
 
@@ -558,4 +566,3 @@ ExInterlockedAddLargeStatistic(
 
 
 #endif
-

@@ -15,6 +15,9 @@
 
 /* GLOBALS *******************************************************************/
 
+/* Forward declaration to satisfy -Wmissing-prototypes */
+VOID NTAPI ExpDeleteProfile(PVOID ObjectBody);
+
 POBJECT_TYPE ExProfileObjectType = NULL;
 KMUTEX ExpProfileMutex;
 

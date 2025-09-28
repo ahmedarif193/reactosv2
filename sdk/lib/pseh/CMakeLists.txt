@@ -45,11 +45,16 @@ else()
         list(APPEND SOURCE amd64/framebased.S)
     endif()
 
-    add_library(pseh ${SOURCE} ${ASM_SOURCE})
-    target_link_libraries(pseh chkstk)
-    add_dependencies(pseh psdk)
+add_library(pseh ${SOURCE} ${ASM_SOURCE})
+target_link_libraries(pseh chkstk)
+add_dependencies(pseh psdk)
 
-    target_include_directories(pseh PRIVATE include/pseh)
+target_include_directories(pseh PRIVATE include/pseh)
+
+    # Suppress GCC alloc-size false positives for PSEH on 32-bit builds
+    if(CMAKE_C_COMPILER_ID STREQUAL "GNU" OR CMAKE_C_COMPILER_ID STREQUAL "Clang")
+        target_compile_options(pseh PRIVATE -Wno-error=alloc-size -Wno-alloc-size -Wno-alloc-zero -Wno-error=alloc-zero)
+    endif()
 endif()
 
 target_include_directories(pseh INTERFACE include)

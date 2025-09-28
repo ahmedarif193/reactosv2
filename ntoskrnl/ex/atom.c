@@ -37,7 +37,7 @@ PRTL_ATOM_TABLE GlobalAtomTable;
  * @remarks Internal function
  *
  *--*/
-PRTL_ATOM_TABLE
+static PRTL_ATOM_TABLE
 NTAPI
 ExpGetGlobalAtomTable(VOID)
 {

@@ -39,7 +39,7 @@ KdpGetStateChange(IN PDBGKD_MANIPULATE_STATE64 State,
         }
 
         /* Loop all processors */
-        for (i = 0; i < KeNumberProcessors; i++)
+        for (i = 0; i < (ULONG)KeNumberProcessors; i++)
         {
             /* Get the PRCB and update DR7 and DR6 */
             Prcb = KiProcessorBlock[i];
@@ -189,7 +189,7 @@ KdpSysReadControlSpace(
 
     /* Make sure that this is a valid request */
     if ((BaseAddress < sizeof(KPROCESSOR_STATE)) &&
-        (Processor < KeNumberProcessors))
+        (Processor < (ULONG)KeNumberProcessors))
     {
         /* Get the actual length */
         RealLength = sizeof(KPROCESSOR_STATE) - (ULONG_PTR)BaseAddress;
@@ -229,7 +229,7 @@ KdpSysWriteControlSpace(
 
     /* Make sure that this is a valid request */
     if (((BaseAddress + Length) <= sizeof(KPROCESSOR_STATE)) &&
-        (Processor < KeNumberProcessors))
+        (Processor < (ULONG)KeNumberProcessors))
     {
         /* Set the proper address */
         ControlStart = (PVOID)((ULONG_PTR)BaseAddress +
@@ -431,7 +431,7 @@ KdpAllowDisable(VOID)
     ULONG i;
 
     /* Loop every processor */
-    for (i = 0; i < KeNumberProcessors; i++)
+    for (i = 0; i < (ULONG)KeNumberProcessors; i++)
     {
         PKPROCESSOR_STATE ProcessorState = &KiProcessorBlock[i]->ProcessorState;
 

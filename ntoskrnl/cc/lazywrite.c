@@ -98,6 +98,10 @@ CcScanDpc(
     IN PVOID SystemArgument1,
     IN PVOID SystemArgument2)
 {
+    UNREFERENCED_PARAMETER(Dpc);
+    UNREFERENCED_PARAMETER(DeferredContext);
+    UNREFERENCED_PARAMETER(SystemArgument1);
+    UNREFERENCED_PARAMETER(SystemArgument2);
     PWORK_QUEUE_ENTRY WorkItem;
 
     /* Allocate a work item */
@@ -112,6 +116,10 @@ CcScanDpc(
     WorkItem->Function = LazyScan;
     CcPostWorkQueue(WorkItem, &CcRegularWorkQueue);
 }
+
+/* Forward prototypes to satisfy -Wmissing-prototypes */
+VOID CcWriteBehind(VOID);
+VOID CcLazyWriteScan(VOID);
 
 VOID
 CcWriteBehind(VOID)

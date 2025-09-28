@@ -16,7 +16,9 @@
 
 POBJECT_TYPE SeTokenObjectType = NULL;
 
-TOKEN_SOURCE SeSystemTokenSource = {"*SYSTEM*", {0}};
+/* Ensure string has no NUL truncation issues under -Wextra */
+static const CHAR _SeSystemTokenSourceName[8] = {'*','S','Y','S','T','E','M','*'};
+TOKEN_SOURCE SeSystemTokenSource = { {0} };
 LUID SeSystemAuthenticationId = SYSTEM_LUID;
 LUID SeAnonymousAuthenticationId = ANONYMOUS_LOGON_LUID;
 

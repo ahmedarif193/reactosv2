@@ -1513,9 +1513,15 @@ CcInitView (
 
 #include <kdbg/kdb.h>
 
+/* Forward declarations for KDBG extensions to satisfy -Wmissing-prototypes */
+BOOLEAN ExpKdbgExtFileCache(ULONG Argc, PCHAR Argv[]);
+BOOLEAN ExpKdbgExtDefWrites(ULONG Argc, PCHAR Argv[]);
+
 BOOLEAN
 ExpKdbgExtFileCache(ULONG Argc, PCHAR Argv[])
 {
+    UNREFERENCED_PARAMETER(Argc);
+    UNREFERENCED_PARAMETER(Argv);
     PLIST_ENTRY ListEntry;
     UNICODE_STRING NoName = RTL_CONSTANT_STRING(L"No name for File");
 
@@ -1575,6 +1581,8 @@ ExpKdbgExtFileCache(ULONG Argc, PCHAR Argv[])
 BOOLEAN
 ExpKdbgExtDefWrites(ULONG Argc, PCHAR Argv[])
 {
+    UNREFERENCED_PARAMETER(Argc);
+    UNREFERENCED_PARAMETER(Argv);
     KdbpPrint("CcTotalDirtyPages:\t%lu (%lu Kb)\n", CcTotalDirtyPages,
               (CcTotalDirtyPages * PAGE_SIZE) / 1024);
     KdbpPrint("CcDirtyPageThreshold:\t%lu (%lu Kb)\n", CcDirtyPageThreshold,

@@ -41,7 +41,7 @@ KdpGetStateChange(IN PDBGKD_MANIPULATE_STATE64 State,
         }
 
         /* Loop all processors */
-        for (i = 0; i < KeNumberProcessors; i++)
+        for (i = 0; i < (ULONG)KeNumberProcessors; i++)
         {
             /* Get the PRCB and update DR7 and DR6 */
             Prcb = KiProcessorBlock[i];
@@ -374,7 +374,7 @@ KdpAllowDisable(VOID)
     ULONG i;
 
     /* Loop every processor */
-    for (i = 0; i < KeNumberProcessors; i++)
+    for (i = 0; i < (ULONG)KeNumberProcessors; i++)
     {
         PKPROCESSOR_STATE ProcessorState = &KiProcessorBlock[i]->ProcessorState;
 

@@ -1274,6 +1274,13 @@ VOID
 NTAPI
 HalpRegisterKdSupportFunctions(VOID)
 {
+    /* Guard against early call before HalPrivateDispatchTable is published */
+#if defined(_M_AMD64) || defined(__x86_64__)
+    if (HalPrivateDispatchTable == NULL)
+    {
+        return;
+    }
+#endif
     /* Register PCI Device Functions */
     KdSetupPciDeviceForDebugging = HalpSetupPciDeviceForDebugging;
     KdReleasePciDeviceforDebugging = HalpReleasePciDeviceForDebugging;

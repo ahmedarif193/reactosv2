@@ -14,6 +14,15 @@
 
 /* GLOBALS *******************************************************************/
 
+/*
+ * On UEFI systems, provide a safe no-op HalResetDisplay implementation
+ * so callers can safely fall back to their own initialization paths.
+ */
+static BOOLEAN NTAPI HalpNoopResetDisplay(VOID)
+{
+    return FALSE;
+}
+
 //#ifdef CONFIG_SMP // FIXME: Reenable conditional once HAL is consistently compiled for SMP mode
 BOOLEAN HalpOnlyBootProcessor;
 //#endif
@@ -57,6 +66,7 @@ HalInitializeProcessor(
     IN ULONG ProcessorNumber,
     IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 {
+    DPRINT1("HAL: HalInitializeProcessor CPU %lu begin\n", ProcessorNumber);
     /* Hal specific initialization for this cpu */
     HalpInitProcessor(ProcessorNumber, LoaderBlock);
 
@@ -72,6 +82,8 @@ HalInitializeProcessor(
         /* Register routines for KDCOM */
         HalpRegisterKdSupportFunctions();
     }
+
+    DPRINT1("HAL: HalInitializeProcessor CPU %lu done\n", ProcessorNumber);
 }
 
 /*
@@ -114,6 +126,7 @@ HalInitSystem(
 
         /* Initialize ACPI */
         Status = HalpSetupAcpiPhase0(LoaderBlock);
+        DPRINT1("HAL: After HalpSetupAcpiPhase0 -> %lx\n", Status);
         if (!NT_SUCCESS(Status))
         {
             KeBugCheckEx(ACPI_BIOS_ERROR, Status, 0, 0, 0);
@@ -121,12 +134,14 @@ HalInitSystem(
 
         /* Initialize the PICs */
         HalpInitializePICs(TRUE);
+        DPRINT1("HAL: After HalpInitializePICs\n");
 
         /* Initialize CMOS lock */
         KeInitializeSpinLock(&HalpSystemHardwareLock);
 
         /* Initialize CMOS */
         HalpInitializeCmos();
+        DPRINT1("HAL: After HalpInitializeCmos\n");
 
         /* Fill out the dispatch tables */
         HalQuerySystemInformation = HaliQuerySystemInformation;
@@ -135,55 +150,54 @@ HalInitSystem(
         HalGetDmaAdapter = HalpGetDmaAdapter;
 
         HalGetInterruptTranslator = NULL;  // FIXME: TODO
-        // AGENT-MODIFIED: Use appropriate display reset based on firmware type
+        /* Provide a safe default for HalResetDisplay on UEFI systems */
         if (LoaderBlock->FirmwareInformation.FirmwareTypeEfi == 0)
         {
             HalResetDisplay = HalpBiosDisplayReset;
         }
         else
         {
-            // For UEFI systems, we don't need BIOS display reset
-            // The bootloader has already set up GOP framebuffer
-            HalResetDisplay = NULL;
+            /*
+             * Bootvid may call HalResetDisplay() unconditionally via the HAL
+             * private dispatch. Never leave this pointer NULL: provide a
+             * no-op stub that returns FALSE so Bootvid can take its fallback
+             * path without crashing.
+             */
+            HalResetDisplay = HalpNoopResetDisplay;
         }
         HalHaltSystem = HaliHaltSystem;
+        DPRINT1("HAL: After filling dispatch table\n");
 
         /* Setup I/O space */
         HalpDefaultIoSpace.Next = HalpAddressUsageList;
         HalpAddressUsageList = &HalpDefaultIoSpace;
+        DPRINT1("HAL: After setting up IO space\n");
 
         /* Setup busy waiting */
         HalpCalibrateStallExecution();
+        DPRINT1("HAL: After HalpCalibrateStallExecution\n");
 
         /* Initialize the clock */
         HalpInitializeClock();
+        DPRINT1("HAL: After HalpInitializeClock\n");
 
         /*
          * We could be rebooting with a pending profile interrupt,
          * so clear it here before interrupts are enabled
          */
         HalStopProfileInterrupt(ProfileTime);
+        DPRINT1("HAL: After HalStopProfileInterrupt\n");
 
         /* Do some HAL-specific initialization */
         HalpInitPhase0(LoaderBlock);
+        DPRINT1("HAL: After HalpInitPhase0\n");
 
         /* Initialize Phase 0 of the x86 emulator only for BIOS systems */
-        // AGENT-MODIFIED: Skip x86bios initialization on UEFI systems to prevent crashes
-        DPRINT1("AGENT-DEBUG: FirmwareTypeEfi = %d\n", LoaderBlock->FirmwareInformation.FirmwareTypeEfi);
-        DPRINT1("AGENT-DEBUG: LoaderBlock Extension = %p\n", LoaderBlock->Extension);
-        if (LoaderBlock->Extension)
-        {
-            DPRINT1("AGENT-DEBUG: Extension->BootViaEFI = %d\n", LoaderBlock->Extension->BootViaEFI);
-        }
-        
         if (LoaderBlock->FirmwareInformation.FirmwareTypeEfi == 0)
         {
             HalInitializeBios(0, LoaderBlock);
         }
-        else
-        {
-            DPRINT1("AGENT-DEBUG: Skipping x86bios initialization for UEFI system\n");
-        }
+        
     }
     else if (BootPhase == 1)
     {
@@ -194,7 +208,6 @@ HalInitSystem(
         HalpInitPhase1();
 
         /* Initialize Phase 1 of the x86 emulator only for BIOS systems */
-        // AGENT-MODIFIED: Skip x86bios initialization on UEFI systems to prevent crashes
         if (LoaderBlock->FirmwareInformation.FirmwareTypeEfi == 0)
         {
             HalInitializeBios(1, LoaderBlock);

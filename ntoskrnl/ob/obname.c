@@ -893,7 +893,7 @@ ParseFromRoot:
                  * That doesn't have the SeCreateGlobalPrivilege
                  * And that is not a known unsecure name
                  */
-                if (RootDirectory->SessionId != -1)
+                if (RootDirectory->SessionId != (ULONG)-1)
                 {
                     if (ObjectHeader->Type == MmSectionObjectType ||
                         ObjectHeader->Type == ObpSymbolicLinkObjectType)

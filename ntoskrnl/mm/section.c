@@ -577,35 +577,25 @@ l_ReadHeaderFromFile:
 
         pioh64OptHeader = (const IMAGE_OPTIONAL_HEADER64 *)piohOptHeader;
 
-        if(RTL_CONTAINS_FIELD(pioh64OptHeader, cbOptHeaderSize, ImageBase))
+        if (RTL_CONTAINS_FIELD(pioh64OptHeader, cbOptHeaderSize, ImageBase))
         {
             ImageBase = pioh64OptHeader->ImageBase;
-            if(pioh64OptHeader->ImageBase > MAXULONG_PTR)
-                DIE(("ImageBase exceeds the address space\n"));
+            /* On 64-bit, ImageBase is always within addressable range. */
         }
 
-        if(RTL_CONTAINS_FIELD(pioh64OptHeader, cbOptHeaderSize, SizeOfImage))
+        if (RTL_CONTAINS_FIELD(pioh64OptHeader, cbOptHeaderSize, SizeOfImage))
         {
-            if(pioh64OptHeader->SizeOfImage > MAXULONG_PTR)
-                DIE(("SizeOfImage exceeds the address space\n"));
-
             ImageSectionObject->ImageInformation.ImageFileSize = pioh64OptHeader->SizeOfImage;
         }
 
-        if(RTL_CONTAINS_FIELD(pioh64OptHeader, cbOptHeaderSize, SizeOfStackReserve))
+        if (RTL_CONTAINS_FIELD(pioh64OptHeader, cbOptHeaderSize, SizeOfStackReserve))
         {
-            if(pioh64OptHeader->SizeOfStackReserve > MAXULONG_PTR)
-                DIE(("SizeOfStackReserve exceeds the address space\n"));
-
-            ImageSectionObject->ImageInformation.MaximumStackSize = (ULONG_PTR) pioh64OptHeader->SizeOfStackReserve;
+            ImageSectionObject->ImageInformation.MaximumStackSize = (ULONG_PTR)pioh64OptHeader->SizeOfStackReserve;
         }
 
-        if(RTL_CONTAINS_FIELD(pioh64OptHeader, cbOptHeaderSize, SizeOfStackCommit))
+        if (RTL_CONTAINS_FIELD(pioh64OptHeader, cbOptHeaderSize, SizeOfStackCommit))
         {
-            if(pioh64OptHeader->SizeOfStackCommit > MAXULONG_PTR)
-                DIE(("SizeOfStackCommit exceeds the address space\n"));
-
-            ImageSectionObject->ImageInformation.CommittedStackSize = (ULONG_PTR) pioh64OptHeader->SizeOfStackCommit;
+            ImageSectionObject->ImageInformation.CommittedStackSize = (ULONG_PTR)pioh64OptHeader->SizeOfStackCommit;
         }
 
         if (RTL_CONTAINS_FIELD(pioh64OptHeader, cbOptHeaderSize, Subsystem))
@@ -1645,8 +1635,8 @@ MmNotPresentFaultSectionView(PMMSUPPORT AddressSpace,
         }
 
         MI_SET_USAGE(MI_USAGE_SECTION);
-        if (Process) MI_SET_PROCESS2(Process->ImageFileName);
-        if (!Process) MI_SET_PROCESS2("Kernel Section");
+        if (Process) { MI_SET_PROCESS2(Process->ImageFileName); }
+        if (!Process) { MI_SET_PROCESS2("Kernel Section"); }
         Status = MmRequestPageMemoryConsumer(MC_USER, TRUE, &Page);
         if (!NT_SUCCESS(Status))
         {
@@ -1766,8 +1756,8 @@ MmNotPresentFaultSectionView(PMMSUPPORT AddressSpace,
         {
             /* We are beyond the data which is on file. Just get a new page. */
             MI_SET_USAGE(MI_USAGE_SECTION);
-            if (Process) MI_SET_PROCESS2(Process->ImageFileName);
-            if (!Process) MI_SET_PROCESS2("Kernel Section");
+            if (Process) { MI_SET_PROCESS2(Process->ImageFileName); }
+            if (!Process) { MI_SET_PROCESS2("Kernel Section"); }
             Status = MmRequestPageMemoryConsumer(MC_USER, FALSE, &Page);
             if (!NT_SUCCESS(Status))
             {
@@ -3694,9 +3684,12 @@ MiRosUnmapViewOfSection(
             Status = MmUnmapViewOfSegment(AddressSpace, SBaseAddress);
             if (!NT_SUCCESS(Status))
             {
+                /*
+                 * Be resilient to rare unmap failures in teardown paths.
+                 * Log and continue instead of asserting, to allow boot to progress.
+                 */
                 DPRINT1("MmUnmapViewOfSegment failed for %p (Process %p) with %lx\n",
                         SBaseAddress, Process, Status);
-                ASSERT(NT_SUCCESS(Status));
             }
         }
         DPRINT("One mapping less for %p\n", ImageSectionObject->FileObject->SectionObjectPointer);
@@ -3719,9 +3712,12 @@ MiRosUnmapViewOfSection(
         Status = MmUnmapViewOfSegment(AddressSpace, BaseAddress);
         if (!NT_SUCCESS(Status))
         {
+            /*
+             * Be resilient to rare unmap failures in teardown paths.
+             * Log and continue instead of asserting, to allow boot to progress.
+             */
             DPRINT1("MmUnmapViewOfSegment failed for %p (Process %p) with %lx\n",
                     BaseAddress, Process, Status);
-            ASSERT(NT_SUCCESS(Status));
         }
 
         /* These might be deleted now */

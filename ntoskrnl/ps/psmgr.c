@@ -335,13 +335,16 @@ PspInitPhase0(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
             /* Increase the WS sizes a bit */
             PsMinimumWorkingSet += 10;
             PsMaximumWorkingSet += 100;
+            /* fallthrough */
 
         /* Large systems */
         case MmLargeSystem:
+            /* fall through */
 
             /* Increase the WS sizes a bit more */
             PsMinimumWorkingSet += 30;
             PsMaximumWorkingSet += 300;
+            /* fallthrough */
 
         /* Small and other systems */
         default:

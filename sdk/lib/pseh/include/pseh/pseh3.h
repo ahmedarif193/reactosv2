@@ -164,7 +164,7 @@ _SEH3$_RegisterTryLevelWithNonVolatiles(
 #define _SEH3$_RegisterTryLevel_(_TrylevelFrame, _DataTable) \
     do { \
         (_TrylevelFrame)->TryLevel = _SEH3$_TryLevel; \
-        int result = _SEH3$_RegisterTryLevelWithNonVolatiles(_TrylevelFrame, _DataTable, __builtin_alloca(0)); \
+        int result = _SEH3$_RegisterTryLevelWithNonVolatiles(_TrylevelFrame, _DataTable, __builtin_alloca(4)); \
         if (__builtin_expect(result != 0, 0)) \
         { \
             if (result == 1) goto _SEH3$_l_FilterOrFinally; \
@@ -178,7 +178,7 @@ _SEH3$_RegisterTryLevelWithNonVolatiles(
 #else /* !__clang__ */
 
 /* This will make GCC use ebp, even if it was disabled by -fomit-frame-pointer */
-#define _SEH3$_EnforceFramePointer() asm volatile ("#\n" : : "m"(*(char*)__builtin_alloca(0)) : "memory")
+#define _SEH3$_EnforceFramePointer() asm volatile ("#\n" : : "m"(*(char*)__builtin_alloca(4)) : "memory")
 
 #define _SEH3$_ASM_GOTO(...) asm goto ("#\n" : : : "memory" : __VA_ARGS__)
 
@@ -188,7 +188,7 @@ _SEH3$_RegisterTryLevelWithNonVolatiles(
               "leal %1, %%edx\n\t" \
               "call " #_Function "WithStackLayout" \
               : \
-              : "m" (*(_TrylevelFrame)), "m" (*(_DataTable)), "c" (__builtin_alloca(0)), "p" (_SEH3$_RegisterFrameWithNonVolatiles) \
+              : "m" (*(_TrylevelFrame)), "m" (*(_DataTable)), "c" (__builtin_alloca(4)), "p" (_SEH3$_RegisterFrameWithNonVolatiles) \
               : "eax", "edx", "memory" \
               : _SEH3$_l_BeforeTry, _SEH3$_l_HandlerTarget, _SEH3$_l_OnException, _SEH3$_l_BeforeFilterOrFinally, _SEH3$_l_FilterOrFinally)
 

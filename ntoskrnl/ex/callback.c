@@ -14,6 +14,9 @@
 
 /* TYPES *********************************************************************/
 
+/* Forward declaration to satisfy -Wmissing-prototypes */
+VOID NTAPI ExpDeleteCallback(IN PVOID Object);
+
 /* Mapping for Callback Object */
 GENERIC_MAPPING ExpCallbackMapping =
 {

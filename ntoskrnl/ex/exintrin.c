@@ -25,6 +25,17 @@
 
 /* FUNCTIONS ******************************************************************/
 
+/* Forward prototypes to satisfy -Wmissing-prototypes */
+LONG FASTCALL InterlockedIncrement(IN LONG volatile *Addend);
+LONG FASTCALL InterlockedDecrement(IN LONG volatile *Addend);
+LONG FASTCALL InterlockedCompareExchange(IN OUT LONG volatile *Destination,
+                                        IN LONG Exchange,
+                                        IN LONG Comperand);
+LONG FASTCALL InterlockedExchange(IN OUT LONG volatile *Destination,
+                                 IN LONG Value);
+LONG FASTCALL InterlockedExchangeAdd(IN OUT LONG volatile *Addend,
+                                     IN LONG Increment);
+
 /*
  * @implemented
  */

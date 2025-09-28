@@ -120,10 +120,17 @@ NTAPI
 HalpCalibrateStallExecution(VOID)
 {
     // Timer interrupt is now active
-
+#ifdef _M_AMD64
+    /* Avoid early IDT programming during calibration on AMD64 */
+    if (HalpCpuClockFrequency.QuadPart == 0)
+    {
+        HalpCpuClockFrequency.QuadPart = 1000000000ULL; /* 1 GHz fallback */
+    }
+    KeGetPcr()->StallScaleFactor = (ULONG)(HalpCpuClockFrequency.QuadPart / 1000000ULL);
+#else
     HalpInitializeTsc();
-
-    KeGetPcr()->StallScaleFactor = (ULONG)(HalpCpuClockFrequency.QuadPart / 1000000);
+    KeGetPcr()->StallScaleFactor = (ULONG)(HalpCpuClockFrequency.QuadPart / 1000000ULL);
+#endif
 }
 
 /* PUBLIC FUNCTIONS ***********************************************************/
@@ -175,4 +182,3 @@ HalCalibratePerformanceCounter(
     UNIMPLEMENTED;
     ASSERT(FALSE);
 }
-

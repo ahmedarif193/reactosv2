@@ -295,6 +295,7 @@ VOID
 KiRundownThread(IN PKTHREAD Thread)
 {
     /* Nothing to do */
+    UNREFERENCED_PARAMETER(Thread);
 }
 
 /* Registers an interrupt handler with an IDT vector */

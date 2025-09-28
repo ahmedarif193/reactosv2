@@ -236,7 +236,7 @@ KeUpdateRunTime(IN PKTRAP_FRAME TrapFrame,
         {
             /* Reset it, and check the queue maximum */
             Prcb->AdjustDpcThreshold = KiAdjustDpcThreshold;
-            if (KiMaximumDpcQueueDepth != Prcb->MaximumDpcQueueDepth)
+            if (KiMaximumDpcQueueDepth != (ULONG)Prcb->MaximumDpcQueueDepth)
             {
                 /* Increase it */
                 Prcb->MaximumDpcQueueDepth++;
@@ -248,7 +248,8 @@ KeUpdateRunTime(IN PKTRAP_FRAME TrapFrame,
     Thread->Quantum -= CLOCK_QUANTUM_DECREMENT;
 
     /* Check if the time expired */
-    if ((Thread->Quantum <= 0) && (Thread != Prcb->IdleThread))
+    /* Avoid signed/unsigned compare; Quantum is byte-sized */
+    if ((Thread->Quantum == 0) && (Thread != Prcb->IdleThread))
     {
         /* Schedule a quantum end */
         Prcb->QuantumEnd = 1;

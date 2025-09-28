@@ -50,6 +50,9 @@
 #include <debug.h>
 #include <reactos/exeformat.h>
 
+/* Forward declaration to satisfy -Wmissing-prototypes */
+PDEVICE_OBJECT NTAPI MmGetDeviceObjectForFile(IN PFILE_OBJECT FileObject);
+
 KEVENT CcpLazyWriteEvent;
 
 PDEVICE_OBJECT
@@ -67,12 +70,14 @@ nothing, including freeing the mdls.
 
 */
 _Function_class_(IO_COMPLETION_ROUTINE)
-NTSTATUS
+static NTSTATUS
 NTAPI
 MiSimpleReadComplete(PDEVICE_OBJECT DeviceObject,
                      PIRP Irp,
                      PVOID Context)
 {
+    UNREFERENCED_PARAMETER(DeviceObject);
+    UNREFERENCED_PARAMETER(Context);
     PMDL Mdl = Irp->MdlAddress;
 
     /* Unlock MDL Pages, page 167. */

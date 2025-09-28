@@ -146,13 +146,13 @@ extern "C" {
 #endif
 
 // FIXME: move inside _M_CEE_PURE section
-  _CRTIMP int *__cdecl __p___argc();
-  _CRTIMP char ***__cdecl __p___argv();
-  _CRTIMP wchar_t ***__cdecl __p___wargv();
-  _CRTIMP char ***__cdecl __p__environ();
-  _CRTIMP wchar_t ***__cdecl __p__wenviron();
-  _CRTIMP char **__cdecl __p__pgmptr();
-  _CRTIMP wchar_t **__cdecl __p__wpgmptr();
+  _CRTIMP int *__cdecl __p___argc(void);
+  _CRTIMP char ***__cdecl __p___argv(void);
+  _CRTIMP wchar_t ***__cdecl __p___wargv(void);
+  _CRTIMP char ***__cdecl __p__environ(void);
+  _CRTIMP wchar_t ***__cdecl __p__wenviron(void);
+  _CRTIMP char **__cdecl __p__pgmptr(void);
+  _CRTIMP wchar_t **__cdecl __p__wpgmptr(void);
 
 #ifdef _M_CEE_PURE
   #define __argv (*__p___argv())
@@ -178,7 +178,7 @@ extern "C" {
   _CRTIMP errno_t __cdecl _get_wpgmptr(_Outptr_result_z_ wchar_t **_Value);
 
 #ifdef _M_CEE_PURE
-  _CRTIMP int* __cdecl __p__fmode();
+  _CRTIMP int* __cdecl __p__fmode(void);
   #define _fmode (*__p__fmode())
 #else
   _CRTIMP extern int _fmode;
@@ -187,11 +187,11 @@ extern "C" {
   _CRTIMP errno_t __cdecl _get_fmode(_Out_ int *_PMode);
 
 #ifdef _M_CEE_PURE
-  _CRTIMP unsigned int* __cdecl __p__osplatform();
-  _CRTIMP unsigned int* __cdecl __p__osver();
-  _CRTIMP unsigned int* __cdecl __p__winver();
-  _CRTIMP unsigned int* __cdecl __p__winmajor();
-  _CRTIMP unsigned int* __cdecl __p__winminor();
+  _CRTIMP unsigned int* __cdecl __p__osplatform(void);
+  _CRTIMP unsigned int* __cdecl __p__osver(void);
+  _CRTIMP unsigned int* __cdecl __p__winver(void);
+  _CRTIMP unsigned int* __cdecl __p__winmajor(void);
+  _CRTIMP unsigned int* __cdecl __p__winminor(void);
 #define _osplatform  (*__p__osplatform())
 #define _osver       (*__p__osver())
 #define _winver      (*__p__winver())
@@ -1460,7 +1460,7 @@ extern "C" {
 
 /* Quick exit stubs for GCC 15 compatibility */
 #ifndef at_quick_exit
-static inline int at_quick_exit(void (*func)(void)) { return 0; }
+static inline int at_quick_exit(void (*func)(void)) { (void)func; return 0; }
 #endif
 
 #ifndef quick_exit  

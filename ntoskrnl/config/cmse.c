@@ -136,7 +136,7 @@ CmpHiveRootSecurityDescriptor(VOID)
     return SecurityDescriptor;
 }
 
-NTSTATUS
+static NTSTATUS
 CmpQuerySecurityDescriptor(IN PCM_KEY_CONTROL_BLOCK Kcb,
                            IN SECURITY_INFORMATION SecurityInformation,
                            OUT PSECURITY_DESCRIPTOR SecurityDescriptor,
@@ -236,7 +236,7 @@ CmpQuerySecurityDescriptor(IN PCM_KEY_CONTROL_BLOCK Kcb,
     return Status;
 }
 
-NTSTATUS
+static NTSTATUS
 CmpSetSecurityDescriptor(IN PCM_KEY_CONTROL_BLOCK Kcb,
                          IN PSECURITY_INFORMATION SecurityInformation,
                          IN PSECURITY_DESCRIPTOR SecurityDescriptor,
@@ -244,6 +244,11 @@ CmpSetSecurityDescriptor(IN PCM_KEY_CONTROL_BLOCK Kcb,
                          IN PGENERIC_MAPPING GenericMapping)
 {
     DPRINT("CmpSetSecurityDescriptor()\n");
+    UNREFERENCED_PARAMETER(Kcb);
+    UNREFERENCED_PARAMETER(SecurityInformation);
+    UNREFERENCED_PARAMETER(SecurityDescriptor);
+    UNREFERENCED_PARAMETER(PoolType);
+    UNREFERENCED_PARAMETER(GenericMapping);
     return STATUS_SUCCESS;
 }
 

@@ -14,6 +14,20 @@
 
 /* GLOBALS ******************************************************************/
 
+/* Forward declarations to satisfy -Wmissing-prototypes */
+NTSTATUS NTAPI ExpSystemErrorHandler(IN NTSTATUS ErrorStatus,
+                                     IN ULONG NumberOfParameters,
+                                     IN ULONG UnicodeStringParameterMask,
+                                     IN PULONG_PTR Parameters,
+                                     IN BOOLEAN Shutdown);
+NTSTATUS NTAPI ExpRaiseHardError(IN NTSTATUS ErrorStatus,
+                                 IN ULONG NumberOfParameters,
+                                 IN ULONG UnicodeStringParameterMask,
+                                 IN PULONG_PTR Parameters,
+                                 IN ULONG ValidResponseOptions,
+                                 OUT PULONG Response);
+void __cdecl _purecall(void);
+
 BOOLEAN ExReadyForErrors = FALSE;
 PVOID ExpDefaultErrorPort = NULL;
 PEPROCESS ExpDefaultErrorPortProcess = NULL;
@@ -56,6 +70,8 @@ ExpSystemErrorHandler(IN NTSTATUS ErrorStatus,
                       IN PULONG_PTR Parameters,
                       IN BOOLEAN Shutdown)
 {
+    UNREFERENCED_PARAMETER(UnicodeStringParameterMask);
+    UNREFERENCED_PARAMETER(Shutdown);
     ULONG_PTR BugCheckParameters[MAXIMUM_HARDERROR_PARAMETERS] = {0, 0, 0, 0};
     ULONG i;
 

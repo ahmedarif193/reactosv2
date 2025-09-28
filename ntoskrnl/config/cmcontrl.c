@@ -17,7 +17,7 @@
 /* FUNCTIONS *****************************************************************/
 
 CODE_SEG("INIT")
-LANGID
+static LANGID
 NTAPI
 CmpConvertLangId(IN LPWSTR Name,
                  IN ULONG NameLength)
@@ -68,7 +68,7 @@ CmpConvertLangId(IN LPWSTR Name,
 }
 
 CODE_SEG("INIT")
-HCELL_INDEX
+static HCELL_INDEX
 NTAPI
 CmpWalkPath(IN PHHIVE SystemHive,
             IN HCELL_INDEX ParentCell,

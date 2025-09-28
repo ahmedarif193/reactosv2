@@ -71,10 +71,8 @@ static char *alloc_buffer(size_t size)
 static void free_buffers(void)
 {
     int slot = find_thread_slot();
-    if (slot != -1)
-    {
-        return;
-    }
+    /* If no slot for this thread, nothing to free. */
+    if (slot == -1) return;
 
     void* buffer = s_alloactions[slot].allocations;
     while (buffer != NULL)
@@ -93,14 +91,18 @@ const char *wine_dbg_vsprintf(const char *format, va_list valist)
     char* buffer;
     int len;
 
-    len = vsnprintf(NULL, 0, format, valist);
+    /* First pass: compute formatted length without consuming the caller's va_list */
+    va_list tmp;
+    va_copy(tmp, valist);
+    len = vsnprintf(NULL, 0, format, tmp);
+    va_end(tmp);
     buffer = alloc_buffer(len + 1);
     if (buffer == NULL)
     {
         return "<allocation failed>";
     }
-    len = vsnprintf(buffer, len, format, valist);
-    buffer[len] = 0;
+    /* Second pass: actually format into the allocated buffer (include space for NUL) */
+    len = vsnprintf(buffer, len + 1, format, valist);
     return buffer;
 }
 

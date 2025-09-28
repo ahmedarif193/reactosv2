@@ -48,7 +48,7 @@ KiScanReadyQueues(IN PKDPC Dpc,
         do
         {
             /* Normalize the index */
-            if (Index > (THREAD_BOOST_PRIORITY - 1)) Index = 1;
+            if (Index > (ULONG)(THREAD_BOOST_PRIORITY - 1)) Index = 1;
 
             /* Loop for ready threads */
             if (Summary & PRIORITY_MASK(Index))
@@ -66,7 +66,7 @@ KiScanReadyQueues(IN PKDPC Dpc,
                     Thread = CONTAINING_RECORD(NextEntry,
                                                KTHREAD,
                                                WaitListEntry);
-                    ASSERT(Thread->Priority == Index);
+                    ASSERT((ULONG)Thread->Priority == Index);
 
                     /* Check if the thread has been waiting too long */
                     if (WaitLimit >= Thread->WaitTime)
@@ -126,7 +126,7 @@ KiScanReadyQueues(IN PKDPC Dpc,
 
     /* Increment the CPU number for next time and normalize to CPU count */
     ScanIndex++;
-    if (ScanIndex == KeNumberProcessors) ScanIndex = 0;
+    if (ScanIndex == (ULONG)KeNumberProcessors) ScanIndex = 0;
 
     /* Return the index */
     *ScanLast = ScanIndex;

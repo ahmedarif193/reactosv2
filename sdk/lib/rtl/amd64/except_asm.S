@@ -247,8 +247,8 @@ ReturnFar:
     /* Pop Eflags from the stack */
     popfq
 
-    /* Return far */
-    lretq
+    /* Return far: encode RETF (0xCB) directly to avoid GAS suffix warnings */
+    .byte 0xCB
 
 .ENDP
 
@@ -329,5 +329,3 @@ RaiseStatus:
 
 
 END
-
-

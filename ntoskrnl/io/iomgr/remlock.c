@@ -61,7 +61,7 @@ IoInitializeRemoveLockEx(IN PIO_REMOVE_LOCK RemoveLock,
             KeInitializeSpinLock(&(Lock->Dbg.Spin));
             Lock->Dbg.LowMemoryCount = 0;
             Lock->Dbg.Blocks = NULL;
-
+            /* fall through */
         case sizeof(IO_REMOVE_LOCK_COMMON_BLOCK):
             /* Setup a free block */
             Lock->Common.Removed = FALSE;

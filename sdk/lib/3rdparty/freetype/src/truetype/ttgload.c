@@ -1534,9 +1534,12 @@
     FT_Bool  opened_frame = 0;
 
 #ifdef FT_CONFIG_OPTION_INCREMENTAL
-    FT_StreamRec    inc_stream;
+    FT_Stream       inc_stream = NULL;   /* heap-allocated temporary stream */
     FT_Data         glyph_data;
     FT_Bool         glyph_data_loaded = 0;
+    /* Save original stream when using incremental interface to avoid
+       keeping a pointer to a local stream beyond this function. */
+    FT_Stream       saved_stream = NULL;
 #endif
 
 
@@ -1596,12 +1599,23 @@
       offset            = 0;
       loader->byte_len  = glyph_data.length;
 
-      FT_ZERO( &inc_stream );
-      FT_Stream_OpenMemory( &inc_stream,
-                            glyph_data.pointer,
-                            (FT_ULong)glyph_data.length );
-
-      loader->stream = &inc_stream;
+      /* Allocate a temporary stream on the heap to appease
+         -Wdangling-pointer analysis and avoid taking the address of
+         a local variable. */
+      {
+        FT_Memory memory = face->root.memory;
+        if ( FT_NEW( inc_stream ) )
+        {
+          error = FT_THROW( Out_Of_Memory );
+          goto Exit;
+        }
+        FT_Stream_OpenMemory( inc_stream,
+                              glyph_data.pointer,
+                              (FT_ULong)glyph_data.length );
+      }
+      /* Temporarily switch to the in-memory stream. */
+      saved_stream   = loader->stream;
+      loader->stream = inc_stream;
     }
     else
 
@@ -2111,6 +2125,20 @@
       face->forget_glyph_frame( loader );
 
 #ifdef FT_CONFIG_OPTION_INCREMENTAL
+
+    /* Restore original stream if we temporarily switched to a local one. */
+    if ( saved_stream )
+      loader->stream = saved_stream;
+
+    if ( inc_stream )
+    {
+      /* Close and free the temporary stream structure. */
+      FT_Stream_Close( inc_stream );
+      {
+        FT_Memory memory = face->root.memory;
+        FT_FREE( inc_stream );
+      }
+    }
 
     if ( glyph_data_loaded )
       face->root.internal->incremental_interface->funcs->free_glyph_data(

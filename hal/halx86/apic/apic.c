@@ -291,6 +291,7 @@ VOID
 NTAPI
 ApicInitializeLocalApic(ULONG Cpu)
 {
+    DPRINT1("HAL: ApicInitializeLocalApic CPU %lu\n", Cpu);
     APIC_BASE_ADDRESS_REGISTER BaseRegister;
     APIC_SPURIOUS_INERRUPT_REGISTER SpIntRegister;
     LVT_REGISTER LvtEntry;
@@ -300,6 +301,7 @@ ApicInitializeLocalApic(ULONG Cpu)
     BaseRegister.Enable = 1;
     BaseRegister.BootStrapCPUCore = (Cpu == 0);
     __writemsr(MSR_APIC_BASE, BaseRegister.LongLong);
+    DPRINT1("HAL: LAPIC MSR set\n");
 
     /* Set spurious vector and SoftwareEnable to 1 */
     SpIntRegister.Long = ApicRead(APIC_SIVR);
@@ -307,6 +309,7 @@ ApicInitializeLocalApic(ULONG Cpu)
     SpIntRegister.SoftwareEnable = 1;
     SpIntRegister.FocusCPUCoreChecking = 0;
     ApicWrite(APIC_SIVR, SpIntRegister.Long);
+    DPRINT1("HAL: LAPIC SIVR programmed\n");
 
     /* Read the version and save it globally */
     if (Cpu == 0) ApicVersion = ApicRead(APIC_VER);
@@ -317,8 +320,13 @@ ApicInitializeLocalApic(ULONG Cpu)
     /* Set logical apic ID */
     ApicWrite(APIC_LDR, ApicLogicalId(Cpu) << 24);
 
-    /* Set the spurious ISR */
+    /* Set the spurious ISR (skip on AMD64; IDT not ready yet) */
+#ifndef _M_AMD64
     KeRegisterInterruptHandler(APIC_SPURIOUS_VECTOR, ApicSpuriousService);
+    DPRINT1("HAL: Spurious ISR registered\n");
+#else
+    DPRINT1("HAL: Skipping spurious ISR registration on AMD64\n");
+#endif
 
     /* Create a template LVT */
     LvtEntry.Long = 0;
@@ -513,6 +521,7 @@ VOID
 NTAPI
 HalpInitializePICs(IN BOOLEAN EnableInterrupts)
 {
+    DPRINT1("HAL: HalpInitializePICs(EnableInterrupts=%d) begin\n", EnableInterrupts);
     ULONG_PTR EFlags;
 
     /* Save EFlags and disable interrupts */
@@ -533,11 +542,13 @@ HalpInitializePICs(IN BOOLEAN EnableInterrupts)
     HalpVectorToIndex[APIC_SPURIOUS_VECTOR] = APIC_RESERVED_VECTOR;
 
     /* Set interrupt handlers in the IDT */
+#ifndef _M_AMD64
     KeRegisterInterruptHandler(APIC_CLOCK_VECTOR, HalpClockInterrupt);
     KeRegisterInterruptHandler(CLOCK_IPI_VECTOR, HalpClockIpi);
-#ifndef _M_AMD64
     KeRegisterInterruptHandler(APC_VECTOR, HalpApcInterrupt);
     KeRegisterInterruptHandler(DISPATCH_VECTOR, HalpDispatchInterrupt);
+#else
+    /* On AMD64, defer IDT handler installation; kernel will set defaults. */
 #endif
 
     /* Register the vectors for APC and dispatch interrupts */
@@ -547,6 +558,7 @@ HalpInitializePICs(IN BOOLEAN EnableInterrupts)
     /* Restore interrupt state */
     if (EnableInterrupts) EFlags |= EFLAGS_INTERRUPT_MASK;
     __writeeflags(EFlags);
+    DPRINT1("HAL: HalpInitializePICs done\n");
 }
 
 
@@ -885,4 +897,3 @@ KeRaiseIrqlToSynchLevel(VOID)
 }
 
 #endif /* !_M_AMD64 */
-

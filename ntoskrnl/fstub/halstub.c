@@ -15,6 +15,11 @@
 
 /* GLOBALS *******************************************************************/
 
+/* Forward declaration for safe HalResetDisplay stub */
+BOOLEAN
+NTAPI
+xHalResetDisplayStub(VOID);
+
 HAL_DISPATCH HalDispatchTable =
 {
     HAL_DISPATCH_VERSION,
@@ -54,7 +59,8 @@ HAL_PRIVATE_DISPATCH HalPrivateDispatchTable =
     (pHalAssignSlotResources)xHalTranslateBusAddress,
     xHalHaltSystem,
     (pHalFindBusAddressTranslation)NULL,
-    (pHalResetDisplay)NULL,
+    /* Never expose a NULL HalResetDisplay pointer */
+    (pHalResetDisplay)xHalResetDisplayStub,
     xHalAllocateMapRegisters,
     xKdSetupPciDeviceForDebugging,
     xKdReleasePciDeviceForDebugging,
@@ -91,6 +97,17 @@ xHalEndOfBoot(VOID)
 
     /* Nothing */
     return;
+}
+
+/*
+ * Provide a safe default for HalResetDisplay in the stub dispatch table.
+ * Returning FALSE tells BootVID to use its internal VGA fallback.
+ */
+BOOLEAN
+NTAPI
+xHalResetDisplayStub(VOID)
+{
+    return FALSE;
 }
 
 VOID

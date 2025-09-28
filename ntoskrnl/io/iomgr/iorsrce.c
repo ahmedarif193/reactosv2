@@ -594,7 +594,7 @@ IopQueryBusDescription(
                 Query,
                 &RootKey, RootKeyHandle,
                 KeyIsRoot ? "TRUE" : "FALSE",
-                Bus, Bus ? *Bus : -1);
+                Bus, Bus ? (ULONG)*Bus : (ULONG)-1);
 
     /* Retrieve the necessary buffer space */
     Status = ZwQueryKey(RootKeyHandle,
@@ -1237,12 +1237,12 @@ IoQueryDeviceDescription(
                 "    CalloutRoutine:   0x%p\n"
                 "    Context:          0x%p\n"
                 "--> Query: 0x%p\n",
-                BusType, BusType ? *BusType : -1,
-                BusNumber, BusNumber ? *BusNumber : -1,
-                ControllerType, ControllerType ? *ControllerType : -1,
-                ControllerNumber, ControllerNumber ? *ControllerNumber : -1,
-                PeripheralType, PeripheralType ? *PeripheralType : -1,
-                PeripheralNumber, PeripheralNumber ? *PeripheralNumber : -1,
+                BusType, BusType ? (ULONG)*BusType : (ULONG)-1,
+                BusNumber, BusNumber ? (ULONG)*BusNumber : (ULONG)-1,
+                ControllerType, ControllerType ? (ULONG)*ControllerType : (ULONG)-1,
+                ControllerNumber, ControllerNumber ? (ULONG)*ControllerNumber : (ULONG)-1,
+                PeripheralType, PeripheralType ? (ULONG)*PeripheralType : (ULONG)-1,
+                PeripheralNumber, PeripheralNumber ? (ULONG)*PeripheralNumber : (ULONG)-1,
                 CalloutRoutine, Context,
                 &Query);
 

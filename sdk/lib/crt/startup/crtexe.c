@@ -25,13 +25,15 @@ _CRTIMP extern wchar_t** __winitenv;
 _CRTIMP extern char** __initenv;
 #endif
 
-/* Hack, for bug in ld.  Will be removed soon.  */
+/* Linker-provided module base symbol; declare as incomplete array for GCC
+   to avoid array-bounds assumptions when doing PE header pointer math. */
 #if defined(__GNUC__)
+extern const unsigned char __MINGW_LSYMBOL(_image_base__)[];
 #define __ImageBase __MINGW_LSYMBOL(_image_base__)
-#endif
-
+#else
 /* This symbol is defined by ld.  */
 extern IMAGE_DOS_HEADER __ImageBase;
+#endif
 
 extern void __cdecl _fpreset (void);
 #define SPACECHAR _T(' ')
@@ -290,7 +292,7 @@ __tmainCRTStartup (void)
 	while (*lpszCommandLine && (*lpszCommandLine <= SPACECHAR))
 	  lpszCommandLine++;
 
-	__mingw_winmain_hInstance = (HINSTANCE) &__ImageBase;
+	__mingw_winmain_hInstance = (HINSTANCE) __ImageBase;
 	__mingw_winmain_lpCmdLine = lpszCommandLine;
 	__mingw_winmain_nShowCmd = StartupInfo.dwFlags & STARTF_USESHOWWINDOW ?
 				    StartupInfo.wShowWindow : SW_SHOWDEFAULT;
@@ -343,8 +345,8 @@ check_managed_app (void)
   mingw_initltssuo_force=1;
   mingw_initcharmax=1;
 
-  /* __ImageBase is the base address of the module, cast to avoid warnings */
-  pDOSHeader = (PIMAGE_DOS_HEADER)(void *) &__ImageBase;
+  /* __ImageBase is the base address of the module */
+  pDOSHeader = (PIMAGE_DOS_HEADER) __ImageBase;
   if (pDOSHeader->e_magic != IMAGE_DOS_SIGNATURE)
     return 0;
 

@@ -206,6 +206,8 @@ PopShutdownSystem(IN POWER_ACTION SystemAction)
                 //PopPowerStateHandlers[PowerStateShutdownOff].Handler = PopShutdownHandler;
             }
 
+            /* fallthrough */
+
         case PowerActionShutdownOff:
 
             /* Call shutdown handler */
@@ -400,4 +402,3 @@ PoRequestShutdownEvent(OUT PVOID *Event)
     if (Event) *Event = &PopShutdownEvent;
     return STATUS_SUCCESS;
 }
-

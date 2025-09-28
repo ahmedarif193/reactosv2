@@ -13,6 +13,12 @@
 
 /* GLOBALS ********************************************************************/
 
+/* Forward declaration to satisfy -Wmissing-prototypes */
+VOID NTAPI CmpLazyFlushDpcRoutine(IN PKDPC Dpc,
+                                  IN PVOID DeferredContext,
+                                  IN PVOID SystemArgument1,
+                                  IN PVOID SystemArgument2);
+
 KTIMER CmpLazyFlushTimer;
 KDPC CmpLazyFlushDpc;
 WORK_QUEUE_ITEM CmpLazyWorkItem;
@@ -28,7 +34,7 @@ LONG CmpFlushStarveWriters;
 
 /* FUNCTIONS ******************************************************************/
 
-BOOLEAN
+static BOOLEAN
 NTAPI
 CmpDoFlushNextHive(_In_  BOOLEAN ForceFlush,
                    _Out_ PBOOLEAN Error,
@@ -124,13 +130,17 @@ CmpDoFlushNextHive(_In_  BOOLEAN ForceFlush,
 }
 
 _Function_class_(KDEFERRED_ROUTINE)
-VOID
+static VOID
 NTAPI
 CmpEnableLazyFlushDpcRoutine(IN PKDPC Dpc,
                              IN PVOID DeferredContext,
                              IN PVOID SystemArgument1,
                              IN PVOID SystemArgument2)
 {
+    UNREFERENCED_PARAMETER(Dpc);
+    UNREFERENCED_PARAMETER(DeferredContext);
+    UNREFERENCED_PARAMETER(SystemArgument1);
+    UNREFERENCED_PARAMETER(SystemArgument2);
     /* Don't stop lazy flushing from happening anymore */
     CmpHoldLazyFlush = FALSE;
 }
@@ -143,6 +153,10 @@ CmpLazyFlushDpcRoutine(IN PKDPC Dpc,
                        IN PVOID SystemArgument1,
                        IN PVOID SystemArgument2)
 {
+    UNREFERENCED_PARAMETER(Dpc);
+    UNREFERENCED_PARAMETER(DeferredContext);
+    UNREFERENCED_PARAMETER(SystemArgument1);
+    UNREFERENCED_PARAMETER(SystemArgument2);
     /* Check if we should queue the lazy flush worker */
     DPRINT("Flush pending: %s, Holding lazy flush: %s.\n", CmpLazyFlushPending ? "yes" : "no", CmpHoldLazyFlush ? "yes" : "no");
     if (!CmpLazyFlushPending && !CmpHoldLazyFlush)
@@ -170,10 +184,11 @@ CmpLazyFlush(VOID)
 }
 
 _Function_class_(WORKER_THREAD_ROUTINE)
-VOID
+static VOID
 NTAPI
 CmpLazyFlushWorker(IN PVOID Parameter)
 {
+    UNREFERENCED_PARAMETER(Parameter);
     BOOLEAN ForceFlush, Result, MoreWork = FALSE;
     ULONG DirtyCount = 0;
     PAGED_CODE();

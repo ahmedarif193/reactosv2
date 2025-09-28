@@ -199,6 +199,7 @@ KdpTrap(IN PKTRAP_FRAME TrapFrame,
 
                 /* Drop into the load case below, with the unload parameter */
                 Unload = TRUE;
+                /* fallthrough */
 
             /* DbgLoadImageSymbols */
             case BREAKPOINT_LOAD_SYMBOLS:

@@ -154,7 +154,7 @@ LpcpMoveMessage(IN PPORT_MESSAGE Destination,
 
     /* Set the Message Type */
     Destination->u2.s2.Type = !MessageType ?
-                              Origin->u2.s2.Type : MessageType & 0xFFFF;
+                              (CSHORT)Origin->u2.s2.Type : (CSHORT)(MessageType & 0xFFFF);
 
     /* Check if we have a Client ID */
     if (ClientId)

@@ -22,6 +22,25 @@ EX_PUSH_LOCK HandleTableListLock;
 
 /* PRIVATE FUNCTIONS *********************************************************/
 
+/* Forward prototypes to satisfy -Wmissing-prototypes for internal helpers */
+PHANDLE_TABLE_ENTRY NTAPI ExpLookupHandleTableEntry(IN PHANDLE_TABLE HandleTable,
+                                                   IN EXHANDLE Handle);
+PVOID NTAPI ExpAllocateTablePagedPool(IN PEPROCESS Process OPTIONAL, IN SIZE_T Size);
+PVOID NTAPI ExpAllocateTablePagedPoolNoZero(IN PEPROCESS Process OPTIONAL, IN SIZE_T Size);
+VOID NTAPI ExpFreeTablePagedPool(IN PEPROCESS Process OPTIONAL, IN PVOID Buffer, IN SIZE_T Size);
+VOID NTAPI ExpFreeLowLevelTable(IN PEPROCESS Process, IN PHANDLE_TABLE_ENTRY TableEntry);
+VOID NTAPI ExpFreeHandleTable(IN PHANDLE_TABLE HandleTable);
+VOID NTAPI ExpFreeHandleTableEntry(IN PHANDLE_TABLE HandleTable, IN EXHANDLE Handle, IN PHANDLE_TABLE_ENTRY HandleTableEntry);
+PHANDLE_TABLE NTAPI ExpAllocateHandleTable(IN PEPROCESS Process OPTIONAL, IN BOOLEAN NewTable);
+PHANDLE_TABLE_ENTRY NTAPI ExpAllocateLowLevelTable(IN PHANDLE_TABLE HandleTable, IN BOOLEAN DoInit);
+PHANDLE_TABLE_ENTRY* NTAPI ExpAllocateMidLevelTable(IN PHANDLE_TABLE HandleTable, IN BOOLEAN DoInit, OUT PHANDLE_TABLE_ENTRY *LowTableEntry);
+BOOLEAN NTAPI ExpAllocateHandleTableEntrySlow(IN PHANDLE_TABLE HandleTable, IN BOOLEAN DoInit);
+ULONG NTAPI ExpMoveFreeHandles(IN PHANDLE_TABLE HandleTable);
+PHANDLE_TABLE_ENTRY NTAPI ExpAllocateHandleTableEntry(IN PHANDLE_TABLE HandleTable, OUT PEXHANDLE NewHandle);
+VOID NTAPI ExpBlockOnLockedHandleEntry(IN PHANDLE_TABLE HandleTable, IN PHANDLE_TABLE_ENTRY HandleTableEntry);
+VOID NTAPI ExRemoveHandleTable(IN PHANDLE_TABLE HandleTable);
+
+
 #ifdef _WIN64
 #define strtoulptr strtoull
 #else
@@ -316,11 +335,11 @@ ExpFreeHandleTableEntry(IN PHANDLE_TABLE HandleTable,
         /* Get the current value and write */
         OldValue = *Free;
         HandleTableEntry->NextFreeTableEntry = OldValue;
-        if (InterlockedCompareExchange((PLONG)Free, Handle.AsULONG, OldValue) == OldValue)
+        if ((ULONG)InterlockedCompareExchange((PLONG)Free, Handle.AsULONG, (LONG)OldValue) == (ULONG)OldValue)
         {
             /* Break out, we're done. Make sure the handle value makes sense */
-            ASSERT((OldValue & FREE_HANDLE_MASK) <
-                   HandleTable->NextHandleNeedingPool);
+            ASSERT(((ULONG)(OldValue & FREE_HANDLE_MASK)) <
+                   (ULONG)HandleTable->NextHandleNeedingPool);
             break;
         }
     }
@@ -776,15 +795,15 @@ ExpAllocateHandleTableEntry(IN PHANDLE_TABLE HandleTable,
         if (NewValue1 == OldValue)
         {
             /* Make sure that the new handle is in range, and break out */
-            ASSERT((NewValue & FREE_HANDLE_MASK) <
-                   HandleTable->NextHandleNeedingPool);
+            ASSERT(((ULONG)(NewValue & (ULONG)FREE_HANDLE_MASK)) <
+                   (ULONG)HandleTable->NextHandleNeedingPool);
             break;
         }
         else
         {
             /* The compare failed, make sure we expected it */
-            ASSERT((NewValue1 & FREE_HANDLE_MASK) !=
-                   (OldValue & FREE_HANDLE_MASK));
+            ASSERT(((ULONG)(NewValue1 & (ULONG)FREE_HANDLE_MASK)) !=
+                   ((ULONG)(OldValue & (ULONG)FREE_HANDLE_MASK)));
         }
     }
 
@@ -1322,6 +1341,9 @@ ExEnumHandleTable(IN PHANDLE_TABLE HandleTable,
 #if DBG && defined(KDBG)
 
 #include <kdbg/kdb.h>
+
+/* Forward declaration to satisfy -Wmissing-prototypes */
+BOOLEAN ExpKdbgExtHandle(ULONG Argc, PCHAR Argv[]);
 
 BOOLEAN ExpKdbgExtHandle(ULONG Argc, PCHAR Argv[])
 {

@@ -45,9 +45,10 @@
 #define __MINGW_LSYMBOL(sym) sym
 #endif
 
-extern char __RUNTIME_PSEUDO_RELOC_LIST__;
-extern char __RUNTIME_PSEUDO_RELOC_LIST_END__;
-extern char __MINGW_LSYMBOL(_image_base__);
+/* Linker anchors; declare as incomplete arrays to avoid array-bounds warnings. */
+extern const char __RUNTIME_PSEUDO_RELOC_LIST__[];
+extern const char __RUNTIME_PSEUDO_RELOC_LIST_END__[];
+extern const char __MINGW_LSYMBOL(_image_base__)[];
 
 void _pei386_runtime_relocator (void);
 
@@ -295,12 +296,12 @@ __write_memory (void *addr, const void *src, size_t len)
 #define RP_VERSION_V2 1
 
 static void
-do_pseudo_reloc (void * start, void * end, void * base)
+do_pseudo_reloc (const void * start, const void * end, const void * base)
 {
   ptrdiff_t addr_imp, reldata;
-  ptrdiff_t reloc_target = (ptrdiff_t) ((char *)end - (char*)start);
-  runtime_pseudo_reloc_v2 *v2_hdr = (runtime_pseudo_reloc_v2 *) start;
-  runtime_pseudo_reloc_item_v2 *r;
+  ptrdiff_t reloc_target = (ptrdiff_t) ((const char *)end - (const char*)start);
+  const runtime_pseudo_reloc_v2 *v2_hdr = (const runtime_pseudo_reloc_v2 *) start;
+  const runtime_pseudo_reloc_item_v2 *r;
 
   /* A valid relocation list will contain at least one entry, and
    * one v1 data structure (the smallest one) requires two DWORDs.
@@ -348,9 +349,9 @@ do_pseudo_reloc (void * start, void * end, void * base)
       /*************************
        * Handle v1 relocations *
        *************************/
-      runtime_pseudo_reloc_item_v1 * o;
-      for (o = (runtime_pseudo_reloc_item_v1 *) v2_hdr;
-	   o < (runtime_pseudo_reloc_item_v1 *)end;
+      const runtime_pseudo_reloc_item_v1 * o;
+      for (o = (const runtime_pseudo_reloc_item_v1 *) v2_hdr;
+	   o < (const runtime_pseudo_reloc_item_v1 *)end;
            o++)
 	{
 	  DWORD newval;
@@ -378,7 +379,7 @@ do_pseudo_reloc (void * start, void * end, void * base)
   /* Walk over header. */
   r = (runtime_pseudo_reloc_item_v2 *) &v2_hdr[1];
 
-  for (; r < (runtime_pseudo_reloc_item_v2 *) end; r++)
+  for (; r < (const runtime_pseudo_reloc_item_v2 *) end; r++)
     {
       /* location where new address will be written */
       reloc_target = (ptrdiff_t) base + r->target;
@@ -468,10 +469,10 @@ _pei386_runtime_relocator (void)
   maxSections = 0;
 #endif /* __MINGW64_VERSION_MAJOR */
 
-  do_pseudo_reloc (&__RUNTIME_PSEUDO_RELOC_LIST__,
-		   &__RUNTIME_PSEUDO_RELOC_LIST_END__,
+  do_pseudo_reloc (__RUNTIME_PSEUDO_RELOC_LIST__,
+		   __RUNTIME_PSEUDO_RELOC_LIST_END__,
 #ifdef __GNUC__
-		   &__MINGW_LSYMBOL(_image_base__)
+		   __MINGW_LSYMBOL(_image_base__)
 #else
 		   &__ImageBase
 #endif

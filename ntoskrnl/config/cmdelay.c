@@ -206,13 +206,17 @@ CmpInitializeDelayedCloseTable(VOID)
 }
 
 _Function_class_(KDEFERRED_ROUTINE)
-VOID
+static VOID
 NTAPI
 CmpDelayDerefKCBDpcRoutine(IN PKDPC Dpc,
                            IN PVOID DeferredContext,
                            IN PVOID SystemArgument1,
                            IN PVOID SystemArgument2)
 {
+    UNREFERENCED_PARAMETER(Dpc);
+    UNREFERENCED_PARAMETER(DeferredContext);
+    UNREFERENCED_PARAMETER(SystemArgument1);
+    UNREFERENCED_PARAMETER(SystemArgument2);
     /* Sanity check */
     ASSERT(CmpDelayDerefKCBWorkItemActive);
 
@@ -221,10 +225,11 @@ CmpDelayDerefKCBDpcRoutine(IN PKDPC Dpc,
 }
 
 _Function_class_(WORKER_THREAD_ROUTINE)
-VOID
+static VOID
 NTAPI
 CmpDelayDerefKCBWorker(IN PVOID Context)
 {
+    UNREFERENCED_PARAMETER(Context);
     PCM_DELAY_DEREF_KCB_ITEM Entry;
     PAGED_CODE();
 
@@ -386,7 +391,7 @@ CmpAddToDelayedClose(IN PCM_KEY_CONTROL_BLOCK Kcb,
     NewRefCount = 1;
     if (InterlockedCompareExchange((PLONG)&Kcb->InDelayClose,
                                    NewRefCount,
-                                   OldRefCount) != OldRefCount)
+                                   OldRefCount) != (LONG)OldRefCount)
     {
         /* Sanity check */
         ASSERT(FALSE);
@@ -460,7 +465,7 @@ CmpRemoveFromDelayedClose(IN PCM_KEY_CONTROL_BLOCK Kcb)
     NewRefCount = 0;
     if (InterlockedCompareExchange((PLONG)&Kcb->InDelayClose,
                                    NewRefCount,
-                                   OldRefCount) != OldRefCount)
+                                   OldRefCount) != (LONG)OldRefCount)
     {
         /* Sanity check */
         ASSERT(FALSE);

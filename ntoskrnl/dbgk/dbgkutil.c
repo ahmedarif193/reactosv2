@@ -343,7 +343,7 @@ DbgkExitThread(IN NTSTATUS ExitStatus)
     PDBGKM_EXIT_THREAD ExitThread = &ApiMessage.ExitThread;
     PEPROCESS Process = PsGetCurrentProcess();
     PETHREAD Thread = PsGetCurrentThread();
-    BOOLEAN Suspended;
+    BOOLEAN WasSuspended;
     PAGED_CODE();
 
     /* Check if this thread is hidden, doesn't have a debug port, or died */
@@ -366,13 +366,13 @@ DbgkExitThread(IN NTSTATUS ExitStatus)
     ApiMessage.ApiNumber = DbgKmExitThreadApi;
 
     /* Suspend the process */
-    Suspended = DbgkpSuspendProcess();
+    WasSuspended = DbgkpSuspendProcess();
 
     /* Send the message */
     DbgkpSendApiMessage(&ApiMessage, FALSE);
 
     /* Resume the process if needed */
-    if (Suspended) DbgkpResumeProcess();
+    if (WasSuspended) DbgkpResumeProcess();
 }
 
 VOID
@@ -382,6 +382,8 @@ DbgkMapViewOfSection(IN PVOID Section,
                      IN ULONG SectionOffset,
                      IN ULONG_PTR ViewSize)
 {
+    UNREFERENCED_PARAMETER(SectionOffset);
+    UNREFERENCED_PARAMETER(ViewSize);
     DBGKM_MSG ApiMessage;
     PDBGKM_LOAD_DLL LoadDll = &ApiMessage.LoadDll;
     PEPROCESS Process = PsGetCurrentProcess();

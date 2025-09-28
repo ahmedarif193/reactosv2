@@ -3086,10 +3086,12 @@ RtlExtendedMagicDivide(
   ULONG64 ret64;
   BOOLEAN Pos;
   Pos = (Dividend.QuadPart >= 0);
-  ret64 = UnsignedMultiplyHigh(Pos ? Dividend.QuadPart : -Dividend.QuadPart,
-                               MagicDivisor.QuadPart);
+  /* Avoid signedness conversions by explicitly using unsigned types */
+  ret64 = UnsignedMultiplyHigh(
+              (ULONG64)(Pos ? (ULONG64)Dividend.QuadPart : (ULONG64)(-(LONG64)Dividend.QuadPart)),
+              (ULONG64)MagicDivisor.QuadPart);
   ret64 >>= ShiftCount;
-  ret.QuadPart = Pos ? ret64 : -(LONG64)ret64;
+  ret.QuadPart = (LONG64)(Pos ? (LONG64)ret64 : -(LONG64)ret64);
   return ret;
 }
 #endif

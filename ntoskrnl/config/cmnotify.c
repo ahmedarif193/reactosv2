@@ -22,6 +22,10 @@ CmpReportNotify(IN PCM_KEY_CONTROL_BLOCK Kcb,
                 IN ULONG Filter)
 {
     /* FIXME: TODO */
+    UNREFERENCED_PARAMETER(Kcb);
+    UNREFERENCED_PARAMETER(Hive);
+    UNREFERENCED_PARAMETER(Cell);
+    UNREFERENCED_PARAMETER(Filter);
     return;
 }
 
@@ -31,6 +35,7 @@ CmpFlushNotify(IN PCM_KEY_BODY KeyBody,
                IN BOOLEAN LockHeld)
 {
     /* FIXME: TODO */
+    UNREFERENCED_PARAMETER(KeyBody);
+    UNREFERENCED_PARAMETER(LockHeld);
     return;
 }
-

@@ -126,6 +126,15 @@ SepInitializationPhase0(VOID)
     /* Initialize the subject context lock */
     ExInitializeResource(&SepSubjectContextLock);
 
+    /* Initialize the system token source name to "*SYSTEM*" */
+    {
+        extern TOKEN_SOURCE SeSystemTokenSource;
+        static const CHAR _SysSrcName[8] = {'*','S','Y','S','T','E','M','*'};
+        RtlCopyMemory(SeSystemTokenSource.SourceName,
+                      _SysSrcName,
+                      sizeof(SeSystemTokenSource.SourceName));
+    }
+
     /* Initialize token objects */
     SepInitializeTokenImplementation();
 
