@@ -80,6 +80,10 @@ SpiConfigToResource(PSCSI_PORT_DEVICE_EXTENSION DeviceExtension,
                     PPORT_CONFIGURATION_INFORMATION PortConfig);
 
 static NTSTATUS
+SpiEnsureAdapterObject(PSCSI_PORT_DEVICE_EXTENSION DeviceExtension,
+                       PPORT_CONFIGURATION_INFORMATION ConfigInfo);
+
+static NTSTATUS
 SpiAllocateCommonBuffer(PSCSI_PORT_DEVICE_EXTENSION DeviceExtension, ULONG NonCachedSize);
 
 NTHALAPI ULONG NTAPI HalGetBusData(BUS_DATA_TYPE, ULONG, ULONG, PVOID, ULONG);
@@ -593,6 +597,71 @@ ScsiPortGetSrb(IN PVOID DeviceExtension,
 }
 
 
+static NTSTATUS
+SpiEnsureAdapterObject(PSCSI_PORT_DEVICE_EXTENSION DeviceExtension,
+                       PPORT_CONFIGURATION_INFORMATION ConfigInfo)
+{
+    DEVICE_DESCRIPTION DeviceDescription;
+    ULONG MapRegistersCount;
+    BOOLEAN NeedDma;
+
+    if (DeviceExtension->AdapterObject)
+        return STATUS_SUCCESS;
+
+    NeedDma = ConfigInfo->Master ||
+        ConfigInfo->DmaChannel != SP_UNINITIALIZED_VALUE ||
+        ConfigInfo->DmaChannel2 != SP_UNINITIALIZED_VALUE;
+
+    if (!NeedDma)
+        return STATUS_SUCCESS;
+
+    RtlZeroMemory(&DeviceDescription, sizeof(DeviceDescription));
+
+    DeviceDescription.Version = DEVICE_DESCRIPTION_VERSION;
+    DeviceDescription.Master = ConfigInfo->Master;
+    DeviceDescription.ScatterGather = ConfigInfo->ScatterGather;
+    DeviceDescription.DemandMode = ConfigInfo->DemandMode;
+    DeviceDescription.Dma32BitAddresses = ConfigInfo->Dma32BitAddresses;
+    DeviceDescription.Dma64BitAddresses = ConfigInfo->Dma64BitAddresses != 0;
+    DeviceDescription.BusNumber = ConfigInfo->SystemIoBusNumber;
+    DeviceDescription.DmaChannel = ConfigInfo->DmaChannel;
+    DeviceDescription.InterfaceType = ConfigInfo->AdapterInterfaceType;
+    DeviceDescription.DmaWidth = ConfigInfo->DmaWidth;
+    DeviceDescription.DmaSpeed = ConfigInfo->DmaSpeed;
+    DeviceDescription.MaximumLength = ConfigInfo->MaximumTransferLength;
+    DeviceDescription.DmaPort = ConfigInfo->DmaPort;
+
+    DeviceExtension->AdapterObject =
+        HalGetAdapter(&DeviceDescription, &MapRegistersCount);
+
+    if (DeviceExtension->AdapterObject == NULL)
+    {
+        DPRINT1("HalGetAdapter failed for bus %lu\n", ConfigInfo->SystemIoBusNumber);
+        ConfigInfo->Master = FALSE;
+        ConfigInfo->DmaChannel = SP_UNINITIALIZED_VALUE;
+        ConfigInfo->DmaChannel2 = SP_UNINITIALIZED_VALUE;
+        ConfigInfo->DmaPort = 0;
+        ConfigInfo->DmaPort2 = 0;
+        return STATUS_SUCCESS;
+    }
+
+    if (DeviceExtension->PortCapabilities.MaximumPhysicalPages == 0)
+    {
+        if (ConfigInfo->NumberOfPhysicalBreaks != 0 &&
+            MapRegistersCount > ConfigInfo->NumberOfPhysicalBreaks)
+        {
+            DeviceExtension->PortCapabilities.MaximumPhysicalPages =
+                ConfigInfo->NumberOfPhysicalBreaks;
+        }
+        else
+        {
+            DeviceExtension->PortCapabilities.MaximumPhysicalPages = MapRegistersCount;
+        }
+    }
+
+    return STATUS_SUCCESS;
+}
+
 /*
  * @implemented
  */
@@ -602,8 +671,6 @@ ScsiPortGetUncachedExtension(IN PVOID HwDeviceExtension,
                  IN ULONG NumberOfBytes)
 {
     PSCSI_PORT_DEVICE_EXTENSION DeviceExtension;
-    DEVICE_DESCRIPTION DeviceDescription;
-    ULONG MapRegistersCount;
     NTSTATUS Status;
 
     DPRINT("ScsiPortGetUncachedExtension(%p %p %lu)\n",
@@ -620,48 +687,9 @@ ScsiPortGetUncachedExtension(IN PVOID HwDeviceExtension,
         return NULL;
     }
 
-    /* Check for DMA adapter object */
-    if (DeviceExtension->AdapterObject == NULL)
-    {
-        /* Initialize DMA adapter description */
-        RtlZeroMemory(&DeviceDescription, sizeof(DEVICE_DESCRIPTION));
-
-        DeviceDescription.Version = DEVICE_DESCRIPTION_VERSION;
-        DeviceDescription.Master = ConfigInfo->Master;
-        DeviceDescription.ScatterGather = ConfigInfo->ScatterGather;
-        DeviceDescription.DemandMode = ConfigInfo->DemandMode;
-        DeviceDescription.Dma32BitAddresses = ConfigInfo->Dma32BitAddresses;
-        DeviceDescription.BusNumber = ConfigInfo->SystemIoBusNumber;
-        DeviceDescription.DmaChannel = ConfigInfo->DmaChannel;
-        DeviceDescription.InterfaceType = ConfigInfo->AdapterInterfaceType;
-        DeviceDescription.DmaWidth = ConfigInfo->DmaWidth;
-        DeviceDescription.DmaSpeed = ConfigInfo->DmaSpeed;
-        DeviceDescription.MaximumLength = ConfigInfo->MaximumTransferLength;
-        DeviceDescription.DmaPort = ConfigInfo->DmaPort;
-
-        /* Get a DMA adapter object */
-        DeviceExtension->AdapterObject =
-            HalGetAdapter(&DeviceDescription, &MapRegistersCount);
-
-        /* Fail in case of error */
-        if (DeviceExtension->AdapterObject == NULL)
-        {
-            DPRINT1("HalGetAdapter() failed\n");
-            return NULL;
-        }
-
-        /* Set number of physical breaks */
-        if (ConfigInfo->NumberOfPhysicalBreaks != 0 &&
-            MapRegistersCount > ConfigInfo->NumberOfPhysicalBreaks)
-        {
-            DeviceExtension->PortCapabilities.MaximumPhysicalPages =
-                ConfigInfo->NumberOfPhysicalBreaks;
-        }
-        else
-        {
-            DeviceExtension->PortCapabilities.MaximumPhysicalPages = MapRegistersCount;
-        }
-    }
+    Status = SpiEnsureAdapterObject(DeviceExtension, ConfigInfo);
+    if (!NT_SUCCESS(Status))
+        return NULL;
 
     /* Update auto request sense feature */
     DeviceExtension->SupportsAutoSense = ConfigInfo->AutoRequestSense;
@@ -1255,11 +1283,14 @@ CreatePortConfig:
         DeviceExtension->MapBuffers = PortConfig->MapBuffers;
         PortCapabilities->AdapterUsesPio = PortConfig->MapBuffers;
 
-        if (DeviceExtension->AdapterObject == NULL &&
-            (PortConfig->DmaChannel != SP_UNINITIALIZED_VALUE || PortConfig->Master))
+        if (PortConfig->DmaChannel != SP_UNINITIALIZED_VALUE || PortConfig->Master)
         {
-            DPRINT1("DMA is not supported yet\n");
-            ASSERT(FALSE);
+            Status = SpiEnsureAdapterObject(DeviceExtension, PortConfig);
+            if (!NT_SUCCESS(Status))
+            {
+                DPRINT1("Failed to acquire DMA adapter (Status 0x%08X)\n", Status);
+                break;
+            }
         }
 
         if (DeviceExtension->SrbExtensionBuffer == NULL &&

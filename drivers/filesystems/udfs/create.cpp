@@ -215,7 +215,7 @@ UDFCommonCreate(
 //  BOOLEAN                     FileOnlyRequested;
 //  BOOLEAN                     NoBufferingSpecified;
     BOOLEAN                     WriteThroughRequested = FALSE;
-    BOOLEAN                     DeleteOnCloseSpecified;
+    BOOLEAN                     DeleteOnCloseSpecified = FALSE;
 //  BOOLEAN                     NoExtAttrKnowledge;
 //  BOOLEAN                     CreateTreeConnection = FALSE;
 //  BOOLEAN                     OpenByFileId;
@@ -229,7 +229,7 @@ UDFCommonCreate(
 
     PtrUDFCCB                   PtrRelatedCCB = NULL, PtrNewCcb = NULL;
     PtrUDFFCB                   PtrRelatedFCB = NULL, PtrNewFcb = NULL;
-    PtrUDFNTRequiredFCB         NtReqFcb;
+    PtrUDFNTRequiredFCB         NtReqFcb = NULL;
 
     ULONG                       ReturnedInformation = 0;
 

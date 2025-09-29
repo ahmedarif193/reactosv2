@@ -222,7 +222,7 @@ typedef union _KTRAP_EXIT_SKIP_BITS
 /* Workaround for GCC warning about writing to address near 0
  * The compiler doesn't understand that KiNtVdmState points to a valid fixed address
  */
-extern const PULONG KiNtVdmState;
+extern const volatile PULONG KiNtVdmState;
 static inline void KiVdmSetVdmEFlags(ULONG x) {
     volatile LONG *ptr = (volatile LONG *)(ULONG_PTR)KiNtVdmState;
 #if defined(__GNUC__)

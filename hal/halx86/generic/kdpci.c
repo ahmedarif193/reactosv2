@@ -277,7 +277,7 @@ HalpFindMatchingDebuggingDevice(
                         BusNumber, DeviceNumber, FunctionNumber,
                         PciConfig.VendorID, PciConfig.DeviceID);
 
-                switch (PCI_CONFIGURATION_TYPE(&PciConfig))
+                switch (PciConfig.HeaderType & ~PCI_MULTIFUNCTION)
                 {
                     case PCI_DEVICE_TYPE:
                     {

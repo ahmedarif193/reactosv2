@@ -22,7 +22,7 @@ ULONG KeI386EFlagsAndMaskV86 = EFLAGS_USER_SANITIZE;
 ULONG KeI386EFlagsOrMaskV86 = EFLAGS_INTERRUPT_MASK;
 PVOID Ki386IopmSaveArea;
 BOOLEAN KeI386VirtualIntExtensions = FALSE;
-const PULONG KiNtVdmState = (PULONG)FIXED_NTVDMSTATE_LINEAR_PC_AT;
+const volatile PULONG KiNtVdmState = (volatile PULONG)FIXED_NTVDMSTATE_LINEAR_PC_AT;
 
 /* UNHANDLED OPCODES **********************************************************/
 
@@ -652,7 +652,7 @@ Ke386CallBios(IN ULONG Int,
     VdmTib->Size = sizeof(VDM_TIB);
 
     /* Set a blank VDM state */
-    *VdmState = 0;
+    *KiNtVdmState = 0;
 
     /* Copy the context */
     RtlCopyMemory(&VdmTib->VdmContext, Context, ContextSize);

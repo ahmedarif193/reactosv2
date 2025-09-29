@@ -96,7 +96,6 @@ KiInitializeContextThread(IN PKTHREAD Thread,
                           IN PCONTEXT ContextPointer)
 {
     PFX_SAVE_AREA FxSaveArea;
-    PFXSAVE_FORMAT FxSaveFormat;
     PKSTART_FRAME StartFrame;
     PKSWITCHFRAME CtxSwitchFrame;
     PKTRAP_FRAME TrapFrame;
@@ -127,18 +126,28 @@ KiInitializeContextThread(IN PKTHREAD Thread,
         /* Check if we support FXsr */
         if (KeI386FxsrPresent)
         {
-            /* Get the FX Save Format Area */
-            FxSaveFormat = (PFXSAVE_FORMAT)Context->ExtendedRegisters;
+            /* Zero the ExtendedRegisters area first */
+            RtlZeroMemory(Context->ExtendedRegisters, MAXIMUM_SUPPORTED_EXTENSION);
 
-            /* Set an initial state */
-            FxSaveFormat->ControlWord = 0x27F;
-            FxSaveFormat->StatusWord = 0;
-            FxSaveFormat->TagWord = 0;
-            FxSaveFormat->ErrorOffset = 0;
-            FxSaveFormat->ErrorSelector = 0;
-            FxSaveFormat->DataOffset = 0;
-            FxSaveFormat->DataSelector = 0;
-            FxSaveFormat->MXCsr = 0x1F80;
+            /* Initialize FX state directly in ExtendedRegisters
+             * We use offsets to avoid array bounds issues */
+            PUSHORT ControlWord = (PUSHORT)&Context->ExtendedRegisters[0];
+            PUSHORT StatusWord = (PUSHORT)&Context->ExtendedRegisters[2];
+            PUSHORT TagWord = (PUSHORT)&Context->ExtendedRegisters[4];
+            PULONG ErrorOffset = (PULONG)&Context->ExtendedRegisters[8];
+            PULONG ErrorSelector = (PULONG)&Context->ExtendedRegisters[12];
+            PULONG DataOffset = (PULONG)&Context->ExtendedRegisters[16];
+            PULONG DataSelector = (PULONG)&Context->ExtendedRegisters[20];
+            PULONG MXCsr = (PULONG)&Context->ExtendedRegisters[24];
+
+            *ControlWord = 0x27F;
+            *StatusWord = 0;
+            *TagWord = 0;
+            *ErrorOffset = 0;
+            *ErrorSelector = 0;
+            *DataOffset = 0;
+            *DataSelector = 0;
+            *MXCsr = 0x1F80;
         }
         else
         {

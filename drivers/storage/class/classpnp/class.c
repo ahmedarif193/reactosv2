@@ -12925,7 +12925,7 @@ ClasspGetInquiryVpdSupportInfo(
     PVPD_SUPPORTED_PAGES_PAGE supportedPages = NULL;
     UCHAR                     bufferLength = VPD_MAX_BUFFER_SIZE;
     ULONG                     allocationBufferLength = bufferLength;
-    UCHAR srbExBuffer[CLASS_SRBEX_SCSI_CDB16_BUFFER_SIZE] = {0};
+    UCHAR srbExBuffer[sizeof(STORAGE_REQUEST_BLOCK) + sizeof(STOR_ADDR_BTL8) + sizeof(SRBEX_DATA_SCSI_CDB32)] = {0};
     PSTORAGE_REQUEST_BLOCK_HEADER srbHeader;
 
 #if defined(_ARM_) || defined(_ARM64_)

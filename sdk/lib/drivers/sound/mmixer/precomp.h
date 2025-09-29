@@ -1,6 +1,10 @@
 #ifndef _MMIXER_PCH_
 #define _MMIXER_PCH_
 
+#ifndef NDEBUG
+#define NDEBUG
+#endif
+
 #include <wdm.h>
 #include <windef.h>
 #define NOBITMAP

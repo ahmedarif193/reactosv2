@@ -246,7 +246,7 @@ static DWORD	MIDI_mciReadNextEvent(WINE_MCIMIDI* wmm, MCI_MIDITRACK* mmt)
 {
     BYTE	b1, b2 = 0, b3;
     WORD	hw = 0;
-    DWORD	evtPulse;
+    DWORD	evtPulse = 0;
     DWORD	evtLength;
     DWORD	tmp;
 

@@ -4122,12 +4122,17 @@ static GpStatus load_wmf(IStream *stream, GpMetafile **metafile)
     HRESULT hr;
     UINT size;
     void *buf;
+    union {
+        METAHEADER mh;
+        WmfPlaceableFileHeader pfh;
+    } header;
 
-    hr = IStream_Read(stream, &mh, sizeof(mh), &size);
-    if (hr != S_OK || size != sizeof(mh))
+    hr = IStream_Read(stream, &header, sizeof(METAHEADER), &size);
+    if (hr != S_OK || size != sizeof(METAHEADER))
         return GenericError;
 
-    if (((WmfPlaceableFileHeader *)&mh)->Key == WMF_PLACEABLE_KEY)
+    mh = header.mh;
+    if (header.pfh.Key == WMF_PLACEABLE_KEY)
     {
         seek.QuadPart = 0;
         hr = IStream_Seek(stream, seek, STREAM_SEEK_SET, NULL);

@@ -281,11 +281,11 @@ void TConfig::init_varlist() {
 
 void TConfig::init(char *dirname, char *execname) {
 	// Copy temporary dirname to permanent startdir
-	strncpy(startdir, dirname, sizeof(startdir));
+	strncpy(startdir, dirname, sizeof(startdir) - 1);
 	startdir[sizeof(startdir) - 1] = 0;
 
 	// Copy temp execname to permanent exename (Thomas Briggs 12/7/98)
-	strncpy(exename, execname, sizeof(exename));
+	strncpy(exename, execname, sizeof(exename) - 1);
 	exename[sizeof(exename) - 1] = 0;
 
 	// Initialize INI file
@@ -527,7 +527,8 @@ void TConfig::inifile_init() {
 	// B. K. Oxley 9/16/98
 	char* env_telnet_ini = getenv (ENV_TELNET_INI);
 	if (env_telnet_ini && *env_telnet_ini) {
-		strncpy (inifile, env_telnet_ini, sizeof(inifile));
+		strncpy (inifile, env_telnet_ini, sizeof(inifile) - 1);
+		inifile[sizeof(inifile) - 1] = '\0';
 		return;
 	}
 
@@ -589,7 +590,8 @@ void TConfig::keyfile_init() {
 
 	} else {
 		// set the keyfile to the value of the environment variable
-		strncpy(keyfile, k, sizeof(keyfile));
+		strncpy(keyfile, k, sizeof(keyfile) - 1);
+		keyfile[sizeof(keyfile) - 1] = '\0';
 	}
 }
 
@@ -680,9 +682,9 @@ bool TConfig::Process_Params(int argc, char *argv[]) {
 }
 
 void TConfig::set_string(char *dest, const char *src, const int length) {
-   int l = length;
-   strncpy(dest, src, l);
- //  dest[length-1] = '\0';
+   if (length <= 0) return;
+   strncpy(dest, src, length - 1);
+   dest[length - 1] = '\0';
  // Ioannou : this messes strings - is this really needed ?
  // The target string, dest, might not be null-terminated
  // if the length of src is length or more.

@@ -2598,17 +2598,20 @@ Return Value:
 
 --*/
 {
-    ULONG               pciBuffer;
+    union {
+        ULONG AsULONG;
+        struct {
+            USHORT VendorID;
+            USHORT DeviceID;
+        } Fields;
+    } pciBuffer;
     ULONG               slotNumber;
     ULONG               functionNumber;
     PCI_SLOT_NUMBER     slotData;
-    PPCI_COMMON_CONFIG  pciData;
     UCHAR               vendorString[5];
     UCHAR               deviceString[5];
     PUCHAR              vendorStrPtr;
     PUCHAR              deviceStrPtr;
-
-    pciData = (PPCI_COMMON_CONFIG)&pciBuffer;
 
     slotData.u.AsULONG = 0;
 
@@ -2636,7 +2639,7 @@ Return Value:
                                     PCIConfiguration,
                                     BusNumber,
                                     slotData.u.AsULONG,
-                                    pciData,
+                                    &pciBuffer,
                                     sizeof(ULONG))) {
 
                 //
@@ -2647,7 +2650,7 @@ Return Value:
                 return FALSE;
             }
 
-            if (pciData->VendorID == PCI_INVALID_VENDORID) {
+            if (pciBuffer.Fields.VendorID == PCI_INVALID_VENDORID) {
 
                 //
                 // No PCI device, or no more functions on device
@@ -2663,8 +2666,8 @@ Return Value:
 
             vendorStrPtr = vendorString;
             deviceStrPtr = deviceString;
-            AtapiHexToString(pciData->VendorID, (PCHAR*)&vendorStrPtr);
-            AtapiHexToString(pciData->DeviceID, (PCHAR*)&deviceStrPtr);
+            AtapiHexToString(pciBuffer.Fields.VendorID, (PCHAR*)&vendorStrPtr);
+            AtapiHexToString(pciBuffer.Fields.DeviceID, (PCHAR*)&deviceStrPtr);
 
             DebugPrint((2,
                        "FindBrokenController: Bus %x Slot %x Function %x Vendor %s Product %s\n",

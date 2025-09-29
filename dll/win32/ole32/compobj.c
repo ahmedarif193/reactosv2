@@ -4588,7 +4588,7 @@ HRESULT WINAPI CoWaitForMultipleHandles(DWORD dwFlags, DWORD dwTimeout,
     BOOL message_loop = apt && !apt->multi_threaded;
     BOOL check_apc = (dwFlags & COWAIT_ALERTABLE) != 0;
     BOOL post_quit = FALSE;
-    UINT exit_code;
+    UINT exit_code = 0;
 
     TRACE("(0x%08x, 0x%08x, %d, %p, %p)\n", dwFlags, dwTimeout, cHandles,
         pHandles, lpdwindex);

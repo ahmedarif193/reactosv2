@@ -190,7 +190,7 @@ VdmpStartExecution(VOID)
     Interrupts = (BOOLEAN)(VdmTib->VdmContext.EFlags & EFLAGS_INTERRUPT_MASK);
 
     /* We don't support full VDM yet, this shouldn't happen */
-    ASSERT(*VdmState == 0);
+    ASSERT(*KiNtVdmState == 0);
     ASSERT(VdmTib->VdmContext.EFlags & EFLAGS_V86_MASK);
 
     /* Check if VME is supported and V86 mode was enabled */
@@ -217,12 +217,12 @@ VdmpStartExecution(VOID)
         if (VdmTib->VdmContext.EFlags & EFLAGS_INTERRUPT_MASK)
         {
             /* Enable them as well */
-            *VdmState |= EFLAGS_INTERRUPT_MASK;     /* was: InterlockedOr(...) */
+            *KiNtVdmState |= EFLAGS_INTERRUPT_MASK;     /* was: InterlockedOr(...) */
         }
         else
         {
             /* Disable them */
-            *VdmState &= ~EFLAGS_INTERRUPT_MASK;    /* was: InterlockedAnd(...) */
+            *KiNtVdmState &= ~EFLAGS_INTERRUPT_MASK;    /* was: InterlockedAnd(...) */
         }
 
 
@@ -299,7 +299,7 @@ VdmEndExecution(IN PKTRAP_FRAME TrapFrame,
         {
             /* Set the EFLAGS based on our software copy of EFLAGS */
             VdmTib->VdmContext.EFlags = (VdmTib->VdmContext.EFlags & ~EFLAGS_INTERRUPT_MASK) |
-                                        (*VdmState & EFLAGS_INTERRUPT_MASK);
+                                        (*KiNtVdmState & EFLAGS_INTERRUPT_MASK);
         }
     }
 

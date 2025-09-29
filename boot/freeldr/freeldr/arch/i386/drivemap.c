@@ -187,14 +187,20 @@ VOID DriveMapInstallInt13Handler(PDRIVE_MAP_LIST DriveMap)
 
     if (!DriveMapInstalled)
     {
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
         // Get the old INT 13h handler address from the vector table
         OldInt13HandlerAddress = RealModeIVT[0x13];
 
         // Decrease the size of low memory
         (*BiosLowMemorySize)--;
+#pragma GCC diagnostic pop
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
         // Get linear address for drive map handler
         DriveMapHandlerAddress = (ULONG)(*BiosLowMemorySize) << 10;
+#pragma GCC diagnostic pop
 
         // Convert to segment:offset style address
         DriveMapHandlerSegOff = (DriveMapHandlerAddress << 12) & 0xffff0000;
@@ -211,8 +217,11 @@ VOID DriveMapInstallInt13Handler(PDRIVE_MAP_LIST DriveMap)
                   &DriveMapInt13HandlerStart,
                   ((PUCHAR)&DriveMapInt13HandlerEnd - (PUCHAR)&DriveMapInt13HandlerStart));
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
     // Update the IVT
     RealModeIVT[0x13] = DriveMapHandlerSegOff;
+#pragma GCC diagnostic pop
 
     CacheInvalidateCacheData();
     DriveMapInstalled = TRUE;

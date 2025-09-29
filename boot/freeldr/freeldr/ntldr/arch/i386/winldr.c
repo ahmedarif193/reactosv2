@@ -350,6 +350,8 @@ WinLdrMapSpecialPages(void)
 static
 void WinLdrSetupSpecialDataPointers(VOID)
 {
+    ULONG BiosDataArea, BiosDataSize;
+
     /* Get the address of the BIOS ROM fonts. Win 2003 videoprt reads these
        values from address 0x700 .. 0x718 and store them in the registry
        in HKLM\System\CurrentControlSet\Control\Wow\RomFontPointers */
@@ -358,13 +360,17 @@ void WinLdrSetupSpecialDataPointers(VOID)
     /* Store address of the extended BIOS data area in 0x740 */
     MachGetExtendedBIOSData(ExtendedBIOSDataArea, ExtendedBIOSDataSize);
 
-    if (*ExtendedBIOSDataArea == 0 && *ExtendedBIOSDataSize == 0)
+    /* Use volatile to force the compiler to read from the specific addresses */
+    BiosDataArea = *(volatile ULONG *)0x740;
+    BiosDataSize = *(volatile ULONG *)0x744;
+
+    if (BiosDataArea == 0 && BiosDataSize == 0)
     {
         WARN("Couldn't get address of extended BIOS data area\n");
     }
     else
     {
-        TRACE("*ExtendedBIOSDataArea = 0x%lx\n", *ExtendedBIOSDataArea);
+        TRACE("ExtendedBIOSDataArea = 0x%lx\n", BiosDataArea);
     }
 }
 

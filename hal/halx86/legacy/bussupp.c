@@ -369,7 +369,7 @@ HalpIsValidPCIDevice(IN PBUS_HANDLER BusHandler,
                      IN PCI_SLOT_NUMBER Slot)
 {
     UCHAR DataBuffer[PCI_COMMON_HDR_LENGTH];
-    PPCI_COMMON_CONFIG PciHeader = (PVOID)DataBuffer;
+    PPCI_COMMON_HEADER PciHeader = (PVOID)DataBuffer;
     ULONG i;
     ULONG_PTR Address;
 
@@ -378,7 +378,7 @@ HalpIsValidPCIDevice(IN PBUS_HANDLER BusHandler,
 
     /* Make sure it's a valid device */
     if ((PciHeader->VendorID == PCI_INVALID_VENDORID) ||
-        (PCI_CONFIGURATION_TYPE(PciHeader) != PCI_DEVICE_TYPE))
+        ((PciHeader->HeaderType & ~PCI_MULTIFUNCTION) != PCI_DEVICE_TYPE))
     {
         /* Bail out */
         return FALSE;
@@ -644,8 +644,11 @@ HalpGetPciBridgeConfig(IN ULONG PciType,
 {
     PCI_SLOT_NUMBER PciSlot;
     ULONG i, j, k;
-    UCHAR DataBuffer[PCI_COMMON_HDR_LENGTH];
-    PPCI_COMMON_CONFIG PciData = (PPCI_COMMON_CONFIG)DataBuffer;
+    union {
+        PCI_COMMON_HEADER Header;
+        PCI_COMMON_CONFIG Config;
+    } PciBuffer;
+    PPCI_COMMON_CONFIG PciData = &PciBuffer.Config;
     PBUS_HANDLER BusHandler;
 
     /* Loop PCI buses */
@@ -1030,8 +1033,11 @@ HalpInitializePciBus(VOID)
     UCHAR PciType;
     PCI_SLOT_NUMBER PciSlot;
     ULONG i, j, k;
-    UCHAR DataBuffer[PCI_COMMON_HDR_LENGTH];
-    PPCI_COMMON_CONFIG PciData = (PPCI_COMMON_CONFIG)DataBuffer;
+    union {
+        PCI_COMMON_HEADER Header;
+        PCI_COMMON_CONFIG Config;
+    } PciBuffer;
+    PPCI_COMMON_CONFIG PciData = &PciBuffer.Config;
     PBUS_HANDLER BusHandler;
     ULONG HackFlags;
     BOOLEAN ExtendedAddressDecoding = FALSE;
