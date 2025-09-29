@@ -108,6 +108,7 @@ static struct expr * EXPR_wildcard( void *info );
 %left TK_EQ TK_NE TK_LT TK_GT TK_LE TK_GE TK_LIKE
 %right TK_NEGATION
 
+
 %%
 
 query:

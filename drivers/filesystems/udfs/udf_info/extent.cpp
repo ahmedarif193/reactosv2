@@ -2595,7 +2595,9 @@ tail_cached:;
         if(!AlwaysInIcb) {
             // remove 1st entry pointing to FileEntry
             s = UDFGetMappingLength(ExtInfo->Mapping);
-            RtlMoveMemory(&(ExtInfo->Mapping[0]), &(ExtInfo->Mapping[1]), s - sizeof(EXTENT_MAP));
+            if (s > sizeof(EXTENT_MAP)) {
+                RtlMoveMemory(&(ExtInfo->Mapping[0]), &(ExtInfo->Mapping[1]), s - sizeof(EXTENT_MAP));
+            }
             if(!MyReallocPool__((int8*)(ExtInfo->Mapping), s,
                           (int8**)&(ExtInfo->Mapping), s - sizeof(EXTENT_MAP) )) {
                 // This must never happen on truncate !!!

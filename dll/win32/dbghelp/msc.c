@@ -707,11 +707,16 @@ static BOOL codeview_add_type_enum_field_list(struct module* module,
         case LF_ENUMERATE_V3:
         {
             int value, vlen = numeric_leaf(&value, &type->enumerate_v3.value);
-            const char* name = (const char*)&type->enumerate_v3.value + vlen;
+            size_t name_len;
+            /* Cast the entire type structure to byte pointer for safe offset calculation */
+            const unsigned char* raw_ptr = (const unsigned char*)type;
+            /* Name follows immediately after the numeric leaf data */
+            const char* name = (const char*)(raw_ptr + offsetof(union codeview_fieldtype, enumerate_v3.value) + vlen);
 
             symt_add_enum_element(module, symt, name, value);
-            /* name points to variable-length data after the structure */
-            ptr += 2 + 2 + vlen + (name ? 1 + strlen(name) : 1);
+            /* Calculate string length safely */
+            name_len = name ? strlen(name) : 0;
+            ptr += 2 + 2 + vlen + (name_len + 1);
             break;
         }
 
@@ -855,12 +860,20 @@ static int codeview_add_type_struct_field_list(struct codeview_type_parse* ctp,
             break;
 
         case LF_MEMBER_V3:
+        {
+            size_t name_len;
             leaf_len = numeric_leaf(&value, &type->member_v3.offset);
-            c_name = (const char*)&type->member_v3.offset + leaf_len;
+            /* Cast the entire type structure to byte pointer for safe offset calculation */
+            const unsigned char* raw_ptr = (const unsigned char*)type;
+            /* Name follows immediately after the numeric leaf data */
+            c_name = (const char*)(raw_ptr + offsetof(union codeview_fieldtype, member_v3.offset) + leaf_len);
 
             codeview_add_udt_element(ctp, symt, c_name, value, type->member_v3.type);
 
-            ptr += 2 + 2 + 4 + leaf_len + (strlen(c_name) + 1);
+            /* Calculate string length safely */
+            name_len = strlen(c_name);
+            ptr += 2 + 2 + 4 + leaf_len + (name_len + 1);
+        }
             break;
 
         case LF_STMEMBER_V1:

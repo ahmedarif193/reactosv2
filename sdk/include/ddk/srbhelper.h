@@ -340,29 +340,33 @@ SrbGetScsiData(
             if (SrbEx->SrbExDataOffset[i] + sizeof(SRBEX_DATA_SCSI_CDB32) <= SrbEx->SrbLength)
             {
               FoundEntry = TRUE;
+              /* Access CDB32 fields via byte offsets to avoid false array-bounds warnings. */
+              PUCHAR __base = (PUCHAR)SrbExData;
               if (CdbLength8)
               {
-                *CdbLength8 = ((PSRBEX_DATA_SCSI_CDB32)SrbExData)->CdbLength;
+                *CdbLength8 = *(PUCHAR)(__base + FIELD_OFFSET(SRBEX_DATA_SCSI_CDB32, CdbLength));
               }
 
-              if (((PSRBEX_DATA_SCSI_CDB32)SrbExData)->CdbLength > 0)
+              if (*(PUCHAR)(__base + FIELD_OFFSET(SRBEX_DATA_SCSI_CDB32, CdbLength)) > 0)
               {
-                Cdb = (PCDB)((PSRBEX_DATA_SCSI_CDB32)SrbExData)->Cdb;
+                Cdb = (PCDB)(__base + FIELD_OFFSET(SRBEX_DATA_SCSI_CDB32, Cdb));
               }
 
               if (ScsiStatus)
               {
-                *ScsiStatus = ((PSRBEX_DATA_SCSI_CDB32)SrbExData)->ScsiStatus;
+                *ScsiStatus = *(PUCHAR)(__base + FIELD_OFFSET(SRBEX_DATA_SCSI_CDB32, ScsiStatus));
               }
 
               if (SenseInfoBuffer)
               {
-                *SenseInfoBuffer = ((PSRBEX_DATA_SCSI_CDB32)SrbExData)->SenseInfoBuffer;
+                PVOID __ptr;
+                memcpy(&__ptr, __base + FIELD_OFFSET(SRBEX_DATA_SCSI_CDB32, SenseInfoBuffer), sizeof(__ptr));
+                *SenseInfoBuffer = __ptr;
               }
 
               if (SenseInfoBufferLength)
               {
-                *SenseInfoBufferLength = ((PSRBEX_DATA_SCSI_CDB32)SrbExData)->SenseInfoBufferLength;
+                *SenseInfoBufferLength = *(PUCHAR)(__base + FIELD_OFFSET(SRBEX_DATA_SCSI_CDB32, SenseInfoBufferLength));
               }
             }
             else
@@ -513,24 +517,27 @@ SrbSetScsiData(
             if (SrbEx->SrbExDataOffset[i] + sizeof(SRBEX_DATA_SCSI_CDB32) <= SrbEx->SrbLength)
             {
               FoundEntry = TRUE;
+              /* Access CDB32 fields via byte offsets to avoid false array-bounds warnings. */
+              PUCHAR __base = (PUCHAR)SrbExData;
               if (CdbLength8)
               {
-                ((PSRBEX_DATA_SCSI_CDB32)SrbExData)->CdbLength = *CdbLength8;
+                *(PUCHAR)(__base + FIELD_OFFSET(SRBEX_DATA_SCSI_CDB32, CdbLength)) = *CdbLength8;
               }
 
               if (ScsiStatus)
               {
-                ((PSRBEX_DATA_SCSI_CDB32)SrbExData)->ScsiStatus = *ScsiStatus;
+                *(PUCHAR)(__base + FIELD_OFFSET(SRBEX_DATA_SCSI_CDB32, ScsiStatus)) = *ScsiStatus;
               }
 
               if (SenseInfoBuffer)
               {
-                ((PSRBEX_DATA_SCSI_CDB32)SrbExData)->SenseInfoBuffer = *SenseInfoBuffer;
+                PVOID __ptr = *SenseInfoBuffer;
+                memcpy(__base + FIELD_OFFSET(SRBEX_DATA_SCSI_CDB32, SenseInfoBuffer), &__ptr, sizeof(__ptr));
               }
 
               if (SenseInfoBufferLength)
               {
-                ((PSRBEX_DATA_SCSI_CDB32)SrbExData)->SenseInfoBufferLength = *SenseInfoBufferLength;
+                *(PUCHAR)(__base + FIELD_OFFSET(SRBEX_DATA_SCSI_CDB32, SenseInfoBufferLength)) = *SenseInfoBufferLength;
               }
             }
             else

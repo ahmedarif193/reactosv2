@@ -347,6 +347,13 @@ WinLdrMapSpecialPages(void)
 #define ExtendedBIOSDataSize ((PULONG)0x744)
 #define RomFontPointers ((PULONG)0x700)
 
+/* Helper function to read ULONG from a fixed memory address */
+static ULONG __attribute__((noinline))
+ReadMemoryULONG(ULONG_PTR Address)
+{
+    return *(volatile ULONG *)Address;
+}
+
 static
 void WinLdrSetupSpecialDataPointers(VOID)
 {
@@ -360,9 +367,9 @@ void WinLdrSetupSpecialDataPointers(VOID)
     /* Store address of the extended BIOS data area in 0x740 */
     MachGetExtendedBIOSData(ExtendedBIOSDataArea, ExtendedBIOSDataSize);
 
-    /* Use volatile to force the compiler to read from the specific addresses */
-    BiosDataArea = *(volatile ULONG *)0x740;
-    BiosDataSize = *(volatile ULONG *)0x744;
+    /* Read BIOS data using helper function */
+    BiosDataArea = ReadMemoryULONG(0x740);
+    BiosDataSize = ReadMemoryULONG(0x744);
 
     if (BiosDataArea == 0 && BiosDataSize == 0)
     {

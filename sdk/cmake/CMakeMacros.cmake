@@ -865,6 +865,14 @@ function(create_registry_hives)
         DESTINATION reactos/system32/config
         FOR livecd)
 
+    # provide an alternate SYSTEM hive copy as SYSTEM.ALT for WinLdr fallback
+    add_cd_file(
+        FILE ${CMAKE_BINARY_DIR}/boot/bootdata/system
+        TARGET livecd_hives
+        DESTINATION reactos/system32/config
+        NAME_ON_CD SYSTEM.ALT
+        FOR livecd)
+
     # BCD Hive
     add_custom_command(
         OUTPUT ${CMAKE_BINARY_DIR}/boot/bootdata/BCD
