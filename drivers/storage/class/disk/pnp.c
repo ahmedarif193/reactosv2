@@ -85,6 +85,12 @@ Return Value:
 
     PAGED_CODE();
 
+    KdPrintEx((DPFLTR_DISK_ID,
+               DPFLTR_INFO_LEVEL,
+               "DiskAddDevice: Driver %p PDO %p\n",
+               DriverObject,
+               PhysicalDeviceObject));
+
     //
     // See if we should be allowing file systems to mount on partition zero.
     //
@@ -1107,4 +1113,3 @@ Return Value:
     return STATUS_SUCCESS;
 
 } // end DiskStartFdo()
-

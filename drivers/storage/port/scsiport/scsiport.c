@@ -1088,6 +1088,14 @@ CreatePortConfig:
 
         PortConfig = DeviceExtension->PortConfig;
 
+        DPRINT1("Adapter %p: InterfaceType=%lu BusNumber=%lu MaxBus=%lu MaxTarget=%lu NumberOfAccessRanges=%lu\n",
+                DeviceExtension,
+                HwInitializationData->AdapterInterfaceType,
+                ConfigInfo.BusNumber,
+                PortConfig->NumberOfBuses,
+                PortConfig->MaximumNumberOfTargets,
+                HwInitializationData->NumberOfAccessRanges);
+
         /* Copy extension sizes into the PortConfig */
         PortConfig->SpecificLuExtensionSize = DeviceExtension->LunExtensionSize;
         PortConfig->SrbExtensionSize = DeviceExtension->SrbExtensionSize;
@@ -1101,6 +1109,72 @@ CreatePortConfig:
             RtlCopyMemory(PortConfig->AccessRanges,
                           ConfigInfo.AccessRanges,
                           HwInitializationData->NumberOfAccessRanges * sizeof(ACCESS_RANGE));
+
+            PACCESS_RANGE accessArray = *PortConfig->AccessRanges;
+            for (ULONG rangeIndex = 0;
+                 rangeIndex < HwInitializationData->NumberOfAccessRanges;
+                 rangeIndex++)
+            {
+                PACCESS_RANGE range = &accessArray[rangeIndex];
+
+                DPRINT1("  AccessRange[%lu]: RangeStart=0x%I64x RangeLength=0x%lx InMemory=%lu\n",
+                        rangeIndex,
+                        range->RangeStart.QuadPart,
+                        range->RangeLength,
+                        range->RangeInMemory);
+            }
+
+            BOOLEAN HasValidRange = FALSE;
+            for (ULONG rangeIndex = 0;
+                 rangeIndex < HwInitializationData->NumberOfAccessRanges;
+                 rangeIndex++)
+            {
+                PACCESS_RANGE range = &accessArray[rangeIndex];
+                if (range->RangeLength != 0)
+                {
+                    HasValidRange = TRUE;
+                    break;
+                }
+            }
+
+            if (!HasValidRange && HwInitializationData->AdapterInterfaceType == PCIBus)
+            {
+                DPRINT1("No access ranges discovered from registry, trying PCI fallback\n");
+                if (!SpiGetPciConfigData(DriverObject,
+                                         PortDeviceObject,
+                                         HwInitializationData,
+                                         PortConfig,
+                                         RegistryPath,
+                                         PortConfig->SystemIoBusNumber,
+                                         &SlotNumber))
+                {
+                    DPRINT1("SpiGetPciConfigData did not find matching device\n");
+                }
+                else
+                {
+                    accessArray = *PortConfig->AccessRanges;
+                    for (ULONG rangeIndex = 0;
+                         rangeIndex < HwInitializationData->NumberOfAccessRanges;
+                         rangeIndex++)
+                    {
+                        PACCESS_RANGE range = &accessArray[rangeIndex];
+                        if (range->RangeLength == 0)
+                            continue;
+
+                        DPRINT1("  (PCI) AccessRange[%lu]: start=0x%I64x len=0x%lx inMem=%lu\n",
+                                rangeIndex,
+                                range->RangeStart.QuadPart,
+                                range->RangeLength,
+                                range->RangeInMemory);
+                        HasValidRange = TRUE;
+                    }
+                }
+            }
+
+            if (!HasValidRange)
+            {
+                DPRINT1("WARNING: Adapter %p still has no valid access ranges\n", DeviceExtension);
+            }
         }
 
         /* Search for matching PCI device */

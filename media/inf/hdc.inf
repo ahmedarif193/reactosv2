@@ -326,7 +326,7 @@ HKR, , Installer32,    0, "syssetup.dll,HdcClassInstaller"
 %PCI\CC_0101.DeviceDesc%=PciIde_Inst,PCI\CC_0101                       ; Device ID for generic Dual PCI IDE  (UNKNOWN_PCI_IDE)
 %PCI\CC_0104.DeviceDesc%=uniata_Inst,PCI\CC_0104                       ; Device ID for generic Dual PCI IDE  (UNKNOWN_PCI_IDE)
 %PCI\CC_0105.DeviceDesc%=uniata_Inst,PCI\CC_0105                       ; Device ID for generic Dual PCI IDE  (UNKNOWN_PCI_IDE)
-%PCI\CC_0106.DeviceDesc%=uniata_Inst,PCI\CC_0106                       ; Device ID for generic Dual PCI IDE  (UNKNOWN_PCI_IDE)
+;%PCI\CC_0106.DeviceDesc%=uniata_Inst,PCI\CC_0106                       ; Device ID for generic Dual PCI IDE  (UNKNOWN_PCI_IDE)
 %*PNP0600.PriDeviceDesc%=uniata_Inst, Primary_IDE_Channel
 %*PNP0600.SecDeviceDesc%=uniata_Inst, Secondary_IDE_Channel
 %*PNP0600.DeviceDesc%=uniata_Inst, *PNP0600                            ; Generic_ESDI_Hard_Disk_Controller   (BAD_IDE)

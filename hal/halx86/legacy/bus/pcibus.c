@@ -12,6 +12,114 @@
 #define NDEBUG
 #include <debug.h>
 
+#define HALP_PCI_DEFAULT_IO_BASE          0x0ULL
+#define HALP_PCI_DEFAULT_IO_LIMIT         0xFFFFULL
+#define HALP_PCI_DEFAULT_MEM_BASE         0xC0000000ULL
+#define HALP_PCI_DEFAULT_MEM_LIMIT        0xFEBFFFFFULL
+
+static __inline ULONGLONG
+HalpAlignUp(ULONGLONG Value,
+            ULONGLONG Alignment)
+{
+    return (Value + (Alignment - 1)) & ~(Alignment - 1);
+}
+
+static VOID
+HalpPciEnsureRangeInitialized(
+    PPCIPBUSDATA BusData)
+{
+    ASSERT(BusData != NULL);
+
+    if (!BusData->ResourcesInitialized)
+    {
+        BusData->IoBase = HALP_PCI_DEFAULT_IO_BASE;
+        BusData->IoLimit = HALP_PCI_DEFAULT_IO_LIMIT;
+        BusData->IoNext = BusData->IoBase;
+        BusData->MemoryBase = HALP_PCI_DEFAULT_MEM_BASE;
+        BusData->MemoryLimit = HALP_PCI_DEFAULT_MEM_LIMIT;
+        BusData->MemoryNext = BusData->MemoryBase;
+        BusData->IoWindowBase = (ULONGLONG)-1;
+        BusData->IoWindowLimit = 0;
+        BusData->MemoryWindowBase = (ULONGLONG)-1;
+        BusData->MemoryWindowLimit = 0;
+        BusData->PrefetchWindowBase = (ULONGLONG)-1;
+        BusData->PrefetchWindowLimit = 0;
+        BusData->ResourcesInitialized = TRUE;
+    }
+}
+
+static ULONGLONG
+HalpPciAllocateIoRange(
+    PPCIPBUSDATA BusData,
+    ULONGLONG Length)
+{
+    ULONGLONG Base;
+    ULONGLONG Alignment;
+
+    HalpPciEnsureRangeInitialized(BusData);
+
+    Alignment = (Length < 4) ? 4 : Length;
+    Base = HalpAlignUp(BusData->IoNext, Alignment);
+    if ((Base + Length - 1) > BusData->IoLimit)
+    {
+        DPRINT1("HAL: Exhausted PCI I/O aperture allocating 0x%I64x bytes\n", Length);
+        return 0;
+    }
+
+    BusData->IoNext = Base + Length;
+    return Base;
+}
+
+static ULONGLONG
+HalpPciAllocateMemoryRange(
+    PPCIPBUSDATA BusData,
+    ULONGLONG Length)
+{
+    ULONGLONG Base;
+
+    HalpPciEnsureRangeInitialized(BusData);
+
+    Base = HalpAlignUp(BusData->MemoryNext, Length);
+    if ((Base + Length - 1) > BusData->MemoryLimit)
+    {
+        DPRINT1("HAL: Exhausted PCI MMIO aperture allocating 0x%I64x bytes\n", Length);
+        return 0;
+    }
+
+    BusData->MemoryNext = Base + Length;
+    return Base;
+}
+
+static ULONGLONG
+HalpPciBarLength(
+    ULONGLONG Mask,
+    BOOLEAN IsIo)
+{
+    ULONGLONG AddressMask;
+    ULONGLONG Size;
+
+    AddressMask = IsIo ? (ULONGLONG)PCI_ADDRESS_IO_ADDRESS_MASK
+                       : 0xFFFFFFFFFFFFFFF0ULL;
+
+    Size = Mask & AddressMask;
+    if (!Size) return 0;
+
+    Size = Size & ~(Size - 1);
+    return Size;
+}
+
+static VOID
+HalpPciPropagateUsage(
+    PBUS_HANDLER BusHandler,
+    BOOLEAN IsIo,
+    BOOLEAN IsPrefetch,
+    ULONGLONG Base,
+    ULONGLONG Limit);
+
+static VOID
+HalpPciUpdateBridgeHierarchy(
+    PBUS_HANDLER BusHandler);
+
 /* GLOBALS *******************************************************************/
 
 extern BOOLEAN HalpPciLockSettings;
@@ -688,7 +796,23 @@ HalpPCIPin2ISALine(IN PBUS_HANDLER BusHandler,
                    IN PCI_SLOT_NUMBER SlotNumber,
                    IN PPCI_COMMON_CONFIG PciData)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    static const UCHAR DefaultIrqMap[4] = {10, 11, 9, 5};
+    UCHAR Pin;
+
+    UNREFERENCED_PARAMETER(BusHandler);
+    UNREFERENCED_PARAMETER(RootHandler);
+
+    Pin = PciData->u.type0.InterruptPin;
+    if (!Pin || Pin > 4) return;
+
+    if ((PciData->u.type0.InterruptLine == 0) ||
+        (PciData->u.type0.InterruptLine == 0xFF))
+    {
+        UCHAR VectorIndex;
+
+        VectorIndex = (UCHAR)((SlotNumber.u.bits.DeviceNumber + Pin - 1) & 0x3);
+        PciData->u.type0.InterruptLine = DefaultIrqMap[VectorIndex];
+    }
 }
 
 VOID
@@ -699,7 +823,8 @@ HalpPCIISALine2Pin(IN PBUS_HANDLER BusHandler,
                    IN PPCI_COMMON_CONFIG PciNewData,
                    IN PPCI_COMMON_CONFIG PciOldData)
 {
-    UNIMPLEMENTED_DBGBREAK();
+    UNREFERENCED_PARAMETER(PciOldData);
+    HalpPCIPin2ISALine(BusHandler, RootHandler, SlotNumber, PciNewData);
 }
 
 #ifndef _MINIHAL_
@@ -750,12 +875,224 @@ HalpGetISAFixedPCIIrq(IN PBUS_HANDLER BusHandler,
 }
 #endif // _MINIHAL_
 
-static ULONG NTAPI
-PciSize(ULONG Base, ULONG Mask)
+static VOID
+HalpPciPropagateUsage(PBUS_HANDLER BusHandler,
+                      BOOLEAN IsIo,
+                      BOOLEAN IsPrefetch,
+                      ULONGLONG Base,
+                      ULONGLONG Limit)
 {
-    ULONG Size = Mask & Base; /* Find the significant bits */
-    Size = Size & ~(Size - 1); /* Get the lowest of them to find the decode size */
-    return Size;
+    PBUS_HANDLER CurrentBus = BusHandler;
+
+    while (CurrentBus && (CurrentBus->InterfaceType == PCIBus))
+    {
+        PPCIPBUSDATA BusData = (PPCIPBUSDATA)CurrentBus->BusData;
+
+        HalpPciEnsureRangeInitialized(BusData);
+
+        if (IsIo)
+        {
+            if (Base < BusData->IoWindowBase) BusData->IoWindowBase = Base;
+            if (Limit > BusData->IoWindowLimit) BusData->IoWindowLimit = Limit;
+        }
+        else if (IsPrefetch)
+        {
+            if (Base < BusData->PrefetchWindowBase) BusData->PrefetchWindowBase = Base;
+            if (Limit > BusData->PrefetchWindowLimit) BusData->PrefetchWindowLimit = Limit;
+        }
+        else
+        {
+            if (Base < BusData->MemoryWindowBase) BusData->MemoryWindowBase = Base;
+            if (Limit > BusData->MemoryWindowLimit) BusData->MemoryWindowLimit = Limit;
+        }
+
+        CurrentBus = CurrentBus->ParentHandler;
+    }
+}
+
+static VOID
+HalpPciWriteBridgeWindow(IN PBUS_HANDLER ParentBus,
+                         IN PCI_SLOT_NUMBER BridgeSlot,
+                         IN PPCI_COMMON_CONFIG BridgeConfig)
+{
+    HalpWritePCIConfig(ParentBus,
+                       BridgeSlot,
+                       &BridgeConfig->u.type1.IOBase,
+                       FIELD_OFFSET(PCI_COMMON_CONFIG, u.type1.IOBase),
+                       sizeof(BridgeConfig->u.type1.IOBase));
+    HalpWritePCIConfig(ParentBus,
+                       BridgeSlot,
+                       &BridgeConfig->u.type1.IOLimit,
+                       FIELD_OFFSET(PCI_COMMON_CONFIG, u.type1.IOLimit),
+                       sizeof(BridgeConfig->u.type1.IOLimit));
+    HalpWritePCIConfig(ParentBus,
+                       BridgeSlot,
+                       &BridgeConfig->u.type1.IOBaseUpper16,
+                       FIELD_OFFSET(PCI_COMMON_CONFIG, u.type1.IOBaseUpper16),
+                       sizeof(BridgeConfig->u.type1.IOBaseUpper16));
+    HalpWritePCIConfig(ParentBus,
+                       BridgeSlot,
+                       &BridgeConfig->u.type1.IOLimitUpper16,
+                       FIELD_OFFSET(PCI_COMMON_CONFIG, u.type1.IOLimitUpper16),
+                       sizeof(BridgeConfig->u.type1.IOLimitUpper16));
+    HalpWritePCIConfig(ParentBus,
+                       BridgeSlot,
+                       &BridgeConfig->u.type1.MemoryBase,
+                       FIELD_OFFSET(PCI_COMMON_CONFIG, u.type1.MemoryBase),
+                       sizeof(BridgeConfig->u.type1.MemoryBase));
+    HalpWritePCIConfig(ParentBus,
+                       BridgeSlot,
+                       &BridgeConfig->u.type1.MemoryLimit,
+                       FIELD_OFFSET(PCI_COMMON_CONFIG, u.type1.MemoryLimit),
+                       sizeof(BridgeConfig->u.type1.MemoryLimit));
+    HalpWritePCIConfig(ParentBus,
+                       BridgeSlot,
+                       &BridgeConfig->u.type1.PrefetchBase,
+                       FIELD_OFFSET(PCI_COMMON_CONFIG, u.type1.PrefetchBase),
+                       sizeof(BridgeConfig->u.type1.PrefetchBase));
+    HalpWritePCIConfig(ParentBus,
+                       BridgeSlot,
+                       &BridgeConfig->u.type1.PrefetchLimit,
+                       FIELD_OFFSET(PCI_COMMON_CONFIG, u.type1.PrefetchLimit),
+                       sizeof(BridgeConfig->u.type1.PrefetchLimit));
+    HalpWritePCIConfig(ParentBus,
+                       BridgeSlot,
+                       &BridgeConfig->u.type1.PrefetchBaseUpper32,
+                       FIELD_OFFSET(PCI_COMMON_CONFIG, u.type1.PrefetchBaseUpper32),
+                       sizeof(BridgeConfig->u.type1.PrefetchBaseUpper32));
+    HalpWritePCIConfig(ParentBus,
+                       BridgeSlot,
+                       &BridgeConfig->u.type1.PrefetchLimitUpper32,
+                       FIELD_OFFSET(PCI_COMMON_CONFIG, u.type1.PrefetchLimitUpper32),
+                       sizeof(BridgeConfig->u.type1.PrefetchLimitUpper32));
+    HalpWritePCIConfig(ParentBus,
+                       BridgeSlot,
+                       &BridgeConfig->Command,
+                       FIELD_OFFSET(PCI_COMMON_CONFIG, Command),
+                       sizeof(BridgeConfig->Command));
+    HalpWritePCIConfig(ParentBus,
+                       BridgeSlot,
+                       &BridgeConfig->u.type1.BridgeControl,
+                       FIELD_OFFSET(PCI_COMMON_CONFIG, u.type1.BridgeControl),
+                       sizeof(BridgeConfig->u.type1.BridgeControl));
+}
+
+static VOID
+HalpPciUpdateBridge(IN PBUS_HANDLER ChildBus)
+{
+    PPCIPBUSDATA ChildData = (PPCIPBUSDATA)ChildBus->BusData;
+    PCI_SLOT_NUMBER BridgeSlot;
+    PBUS_HANDLER ParentBus;
+    PCI_COMMON_CONFIG BridgeConfig;
+    BOOLEAN IoDecode = FALSE;
+    BOOLEAN MemoryDecode = FALSE;
+
+    ParentBus = ChildBus->ParentHandler;
+    if (!ParentBus || (ParentBus->InterfaceType != PCIBus)) return;
+
+    BridgeSlot = ChildData->CommonData.ParentSlot;
+    if (BridgeSlot.u.AsULONG == 0)
+    {
+        return;
+    }
+
+    RtlZeroMemory(&BridgeConfig, sizeof(BridgeConfig));
+    HalpReadPCIConfig(ParentBus,
+                      BridgeSlot,
+                      &BridgeConfig,
+                      0,
+                      sizeof(BridgeConfig));
+
+    if ((BridgeConfig.HeaderType & ~PCI_MULTIFUNCTION) != PCI_BRIDGE_TYPE)
+    {
+        return;
+    }
+
+    if (ChildData->IoWindowBase <= ChildData->IoWindowLimit)
+    {
+        ULONGLONG Base = ChildData->IoWindowBase & ~0xFFFULL;
+        ULONGLONG Limit = ChildData->IoWindowLimit | 0xFFFULL;
+
+        BridgeConfig.u.type1.IOBase = (UCHAR)((Base >> 8) & 0xF0);
+        BridgeConfig.u.type1.IOLimit = (UCHAR)((Limit >> 8) & 0xF0);
+        BridgeConfig.u.type1.IOBaseUpper16 = (USHORT)((Base >> 16) & 0xFFFF);
+        BridgeConfig.u.type1.IOLimitUpper16 = (USHORT)((Limit >> 16) & 0xFFFF);
+        IoDecode = TRUE;
+    }
+    else
+    {
+        BridgeConfig.u.type1.IOBase = 0xF0;
+        BridgeConfig.u.type1.IOLimit = 0x0;
+        BridgeConfig.u.type1.IOBaseUpper16 = 0;
+        BridgeConfig.u.type1.IOLimitUpper16 = 0;
+    }
+
+    if (ChildData->MemoryWindowBase <= ChildData->MemoryWindowLimit)
+    {
+        ULONGLONG Base = ChildData->MemoryWindowBase & ~0xFFFFFULL;
+        ULONGLONG Limit = ChildData->MemoryWindowLimit | 0xFFFFFULL;
+
+        BridgeConfig.u.type1.MemoryBase = (USHORT)((Base >> 16) & 0xFFF0);
+        BridgeConfig.u.type1.MemoryLimit = (USHORT)((Limit >> 16) & 0xFFF0);
+        MemoryDecode = TRUE;
+    }
+    else
+    {
+        BridgeConfig.u.type1.MemoryBase = 0xFFF0;
+        BridgeConfig.u.type1.MemoryLimit = 0;
+    }
+
+    if (ChildData->PrefetchWindowBase <= ChildData->PrefetchWindowLimit)
+    {
+        ULONGLONG Base = ChildData->PrefetchWindowBase & ~0xFFFFFULL;
+        ULONGLONG Limit = ChildData->PrefetchWindowLimit | 0xFFFFFULL;
+
+        BridgeConfig.u.type1.PrefetchBase = (USHORT)((Base >> 16) & 0xFFF0);
+        BridgeConfig.u.type1.PrefetchLimit = (USHORT)((Limit >> 16) & 0xFFF0);
+        BridgeConfig.u.type1.PrefetchBaseUpper32 = (ULONG)(Base >> 32);
+        BridgeConfig.u.type1.PrefetchLimitUpper32 = (ULONG)(Limit >> 32);
+        MemoryDecode = TRUE;
+    }
+    else
+    {
+        BridgeConfig.u.type1.PrefetchBase = 0xFFF0;
+        BridgeConfig.u.type1.PrefetchLimit = 0;
+        BridgeConfig.u.type1.PrefetchBaseUpper32 = 0;
+        BridgeConfig.u.type1.PrefetchLimitUpper32 = 0;
+    }
+
+    if (IoDecode)
+    {
+        BridgeConfig.Command |= PCI_ENABLE_IO_SPACE;
+    }
+    else
+    {
+        BridgeConfig.Command &= ~PCI_ENABLE_IO_SPACE;
+    }
+
+    if (MemoryDecode)
+    {
+        BridgeConfig.Command |= PCI_ENABLE_MEMORY_SPACE | PCI_ENABLE_BUS_MASTER;
+    }
+    else
+    {
+        BridgeConfig.Command &= ~PCI_ENABLE_MEMORY_SPACE;
+    }
+
+    HalpPciWriteBridgeWindow(ParentBus, BridgeSlot, &BridgeConfig);
+}
+
+static VOID
+HalpPciUpdateBridgeHierarchy(PBUS_HANDLER BusHandler)
+{
+    PBUS_HANDLER Current = BusHandler;
+
+    while (Current && Current->ParentHandler &&
+           (Current->ParentHandler->InterfaceType == PCIBus))
+    {
+        HalpPciUpdateBridge(Current);
+        Current = Current->ParentHandler;
+    }
 }
 
 NTSTATUS
@@ -766,37 +1103,98 @@ HalpAdjustPCIResourceList(IN PBUS_HANDLER BusHandler,
 {
     PPCIPBUSDATA BusData;
     PCI_SLOT_NUMBER SlotNumber;
-    PSUPPORTED_RANGE Interrupt;
+    PSUPPORTED_RANGE Interrupt = NULL;
     NTSTATUS Status;
+    ULONG AltIndex, DescriptorIndex;
 
-    /* Get PCI bus data */
-    BusData = BusHandler->BusData;
+    BusData = (PPCIPBUSDATA)BusHandler->BusData;
     SlotNumber.u.AsULONG = (*pResourceList)->SlotNumber;
 
-    /* Get the IRQ supported range */
     Status = BusData->GetIrqRange(BusHandler, RootHandler, SlotNumber, &Interrupt);
-    if (!NT_SUCCESS(Status)) return Status;
+    if (!NT_SUCCESS(Status) && (Status != STATUS_UNSUCCESSFUL))
+        return Status;
+
+    if (Interrupt) ExFreePool(Interrupt);
+
 #ifndef _MINIHAL_
-    /* Handle the /PCILOCK feature */
     if (HalpPciLockSettings)
     {
-        /* /PCILOCK is not yet supported */
         UNIMPLEMENTED_DBGBREAK("/PCILOCK boot switch is not yet supported.");
     }
 #endif
-    /* Now create the correct resource list based on the supported bus ranges */
-#if 0
-    Status = HaliAdjustResourceListRange(BusHandler->BusAddresses,
-                                         Interrupt,
-                                         pResourceList);
-#else
-    DPRINT1("HAL: No PCI Resource Adjustment done! Hardware may malfunction\n");
-    Status = STATUS_SUCCESS;
-#endif
 
-    /* Return to caller */
-    ExFreePool(Interrupt);
-    return Status;
+    HalpPciEnsureRangeInitialized(BusData);
+
+    for (AltIndex = 0; AltIndex < (*pResourceList)->AlternativeLists; AltIndex++)
+    {
+        PIO_RESOURCE_LIST ResourceList = &(*pResourceList)->List[AltIndex];
+
+        for (DescriptorIndex = 0; DescriptorIndex < ResourceList->Count; DescriptorIndex++)
+        {
+            PIO_RESOURCE_DESCRIPTOR Descriptor = &ResourceList->Descriptors[DescriptorIndex];
+
+            switch (Descriptor->Type)
+            {
+                case CmResourceTypePort:
+                {
+                    ULONGLONG Minimum, Maximum, Length, Alignment;
+
+                    Minimum = Descriptor->u.Port.MinimumAddress.QuadPart;
+                    Maximum = Descriptor->u.Port.MaximumAddress.QuadPart;
+                    Length = Descriptor->u.Port.Length;
+                    Alignment = Descriptor->u.Port.Alignment ? Descriptor->u.Port.Alignment : 1;
+
+                    if (Minimum < BusData->IoBase) Minimum = BusData->IoBase;
+                    if (!Maximum || (Maximum > BusData->IoLimit)) Maximum = BusData->IoLimit;
+                    if (Alignment < Length) Alignment = Length;
+
+                    if ((Minimum + Length - 1) > Maximum)
+                    {
+                        DPRINT1("HAL: PCI port requirement outside bus range (%I64x-%I64x len %I64x)\n",
+                                Minimum, Maximum, Length);
+                        return STATUS_CONFLICTING_ADDRESSES;
+                    }
+
+                    Descriptor->u.Port.MinimumAddress.QuadPart = Minimum;
+                    Descriptor->u.Port.MaximumAddress.QuadPart = Maximum;
+                    Descriptor->u.Port.Alignment = Alignment;
+                    break;
+                }
+
+                case CmResourceTypeMemory:
+                case CmResourceTypeMemoryLarge:
+                {
+                    ULONGLONG Minimum, Maximum, Length, Alignment;
+
+                    Minimum = Descriptor->u.Memory.MinimumAddress.QuadPart;
+                    Maximum = Descriptor->u.Memory.MaximumAddress.QuadPart;
+                    Length = Descriptor->u.Memory.Length;
+                    Alignment = Descriptor->u.Memory.Alignment ? Descriptor->u.Memory.Alignment : 0x10;
+
+                    if (Minimum < BusData->MemoryBase) Minimum = BusData->MemoryBase;
+                    if (!Maximum || (Maximum > BusData->MemoryLimit)) Maximum = BusData->MemoryLimit;
+                    if (Alignment < Length) Alignment = Length;
+
+                    if ((Minimum + Length - 1) > Maximum)
+                    {
+                        DPRINT1("HAL: PCI memory requirement outside bus range (%I64x-%I64x len %I64x)\n",
+                                Minimum, Maximum, Length);
+                        return STATUS_CONFLICTING_ADDRESSES;
+                    }
+
+                    Descriptor->u.Memory.MinimumAddress.QuadPart = Minimum;
+                    Descriptor->u.Memory.MaximumAddress.QuadPart = Maximum;
+                    Descriptor->u.Memory.Alignment = Alignment;
+                    break;
+                }
+
+                default:
+                    break;
+            }
+        }
+    }
+
+    return STATUS_SUCCESS;
 }
 
 NTSTATUS
@@ -810,129 +1208,483 @@ HalpAssignPCISlotResources(IN PBUS_HANDLER BusHandler,
                            IN ULONG Slot,
                            IN OUT PCM_RESOURCE_LIST *AllocatedResources)
 {
-    PCI_COMMON_CONFIG PciConfig;
-    SIZE_T Address;
-    ULONG ResourceCount;
-    ULONG Size[PCI_TYPE0_ADDRESSES];
-    NTSTATUS Status = STATUS_SUCCESS;
-    UCHAR Offset;
-    PCM_PARTIAL_RESOURCE_DESCRIPTOR Descriptor;
-    PCI_SLOT_NUMBER SlotNumber;
-    ULONG WriteBuffer;
-    DPRINT1("WARNING: PCI Slot Resource Assignment is FOOBAR\n");
-
-    /* FIXME: Should handle 64-bit addresses */
-
-    /* Read configuration data */
-    SlotNumber.u.AsULONG = Slot;
-    HalpReadPCIConfig(BusHandler, SlotNumber, &PciConfig, 0, PCI_COMMON_HDR_LENGTH);
-
-    /* Check if we read it correctly */
-    if (PciConfig.VendorID == PCI_INVALID_VENDORID)
-        return STATUS_NO_SUCH_DEVICE;
-
-    /* Read the PCI configuration space for the device and store base address and
-    size information in temporary storage. Count the number of valid base addresses */
-    ResourceCount = 0;
-    for (Address = 0; Address < PCI_TYPE0_ADDRESSES; Address++)
+    typedef struct _HALP_PCI_BAR_INFO
     {
-        if (0xffffffff == PciConfig.u.type0.BaseAddresses[Address])
-            PciConfig.u.type0.BaseAddresses[Address] = 0;
+        BOOLEAN Present;
+        BOOLEAN IsIo;
+        BOOLEAN IsPrefetch;
+        BOOLEAN Is64Bit;
+        UCHAR Index;
+        ULONGLONG Base;
+        ULONGLONG Length;
+        ULONG Attributes;
+    } HALP_PCI_BAR_INFO, *PHALP_PCI_BAR_INFO;
 
-        /* Memory resource */
-        if (0 != PciConfig.u.type0.BaseAddresses[Address])
+    HALP_PCI_BAR_INFO BarInfo[PCI_TYPE0_ADDRESSES];
+    PCI_COMMON_CONFIG PciConfig;
+    PCI_SLOT_NUMBER SlotNumber;
+    PPCIPBUSDATA BusData;
+    ULONG BarLimit, BarNumber, DescriptorCount, SlotBit;
+    BOOLEAN IoSpacePresent = FALSE, MemorySpacePresent = FALSE;
+    ULONG Command;
+    BOOLEAN Prefetch;
+    ULONG Attributes;
+
+    RtlZeroMemory(BarInfo, sizeof(BarInfo));
+
+    if (!AllocatedResources)
+    {
+        DPRINT1("HAL: HalpAssignPCISlotResources missing resource list for bus %p\n",
+                BusHandler);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (!BusHandler)
+    {
+        DPRINT1("HAL: HalpAssignPCISlotResources called with NULL BusHandler\n");
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (!BusHandler->BusData)
+    {
+        DPRINT1("HAL: BusHandler %p on bus %lu has no BusData\n",
+                BusHandler,
+                BusHandler->BusNumber);
+        return STATUS_DEVICE_CONFIGURATION_ERROR;
+    }
+
+    BusData = (PPCIPBUSDATA)BusHandler->BusData;
+
+    if (!BusData->DeviceConfigured.Buffer ||
+        BusData->DeviceConfigured.SizeOfBitMap == 0)
+    {
+        DPRINT1("HAL: PCI bus %lu DeviceConfigured bitmap is not initialised\n",
+                BusHandler->BusNumber);
+        return STATUS_DEVICE_CONFIGURATION_ERROR;
+    }
+
+    SlotNumber.u.AsULONG = Slot;
+
+    HalpReadPCIConfig(BusHandler, SlotNumber, &PciConfig, 0, PCI_COMMON_HDR_LENGTH);
+    if (PciConfig.VendorID == PCI_INVALID_VENDORID) return STATUS_NO_SUCH_DEVICE;
+
+    HalpPciEnsureRangeInitialized(BusData);
+
+    switch (PciConfig.HeaderType & ~PCI_MULTIFUNCTION)
+    {
+        case PCI_DEVICE_TYPE:
+            BarLimit = PCI_TYPE0_ADDRESSES;
+            break;
+
+        case PCI_BRIDGE_TYPE:
+            BarLimit = PCI_TYPE1_ADDRESSES;
+            break;
+
+        case PCI_CARDBUS_BRIDGE_TYPE:
+        default:
+            BarLimit = 0;
+            break;
+    }
+
+    SlotBit = (SlotNumber.u.bits.DeviceNumber * PCI_MAX_FUNCTION) +
+              SlotNumber.u.bits.FunctionNumber;
+
+    if (SlotBit >= BusData->DeviceConfigured.SizeOfBitMap)
+    {
+        DPRINT1("HAL: SlotBit %lu outside bitmap bounds %lu on bus %lu\n",
+                SlotBit,
+                BusData->DeviceConfigured.SizeOfBitMap,
+                BusHandler->BusNumber);
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    Command = PciConfig.Command;
+
+    for (BarNumber = 0; BarNumber < BarLimit; BarNumber++)
+    {
+        ULONG Offset;
+        ULONG OriginalValue;
+        ULONG MaskLow;
+        ULONGLONG Mask;
+        ULONGLONG Length;
+        ULONGLONG Base;
+        BOOLEAN IsIo, Is64Bit;
+        ULONG OriginalHigh = 0;
+
+        Offset = FIELD_OFFSET(PCI_COMMON_CONFIG, u.type0.BaseAddresses[BarNumber]);
+        OriginalValue = PciConfig.u.type0.BaseAddresses[BarNumber];
+
+        MaskLow = 0xFFFFFFFF;
+        HalpWritePCIConfig(BusHandler, SlotNumber, &MaskLow, Offset, sizeof(ULONG));
+        HalpReadPCIConfig(BusHandler, SlotNumber, &MaskLow, Offset, sizeof(ULONG));
+
+        IsIo = (MaskLow & PCI_ADDRESS_IO_SPACE) ? TRUE : FALSE;
+        Is64Bit = FALSE;
+        Prefetch = FALSE;
+        Mask = MaskLow;
+
+        if (!IsIo)
         {
-            ResourceCount++;
+            Prefetch = (MaskLow & PCI_ADDRESS_MEMORY_PREFETCHABLE) ? TRUE : FALSE;
+            if ((MaskLow & PCI_ADDRESS_MEMORY_TYPE_MASK) == PCI_TYPE_64BIT)
+            {
+                ULONG MaskHigh = 0xFFFFFFFF;
+                HalpWritePCIConfig(BusHandler,
+                                   SlotNumber,
+                                   &MaskHigh,
+                                   Offset + sizeof(ULONG),
+                                   sizeof(ULONG));
+                HalpReadPCIConfig(BusHandler,
+                                  SlotNumber,
+                                  &MaskHigh,
+                                  Offset + sizeof(ULONG),
+                                  sizeof(ULONG));
+                Mask |= ((ULONGLONG)MaskHigh << 32);
+                Is64Bit = TRUE;
+            }
+        }
 
-            Offset = (UCHAR)FIELD_OFFSET(PCI_COMMON_CONFIG, u.type0.BaseAddresses[Address]);
+        /* Restore original BAR value */
+        HalpWritePCIConfig(BusHandler, SlotNumber, &OriginalValue, Offset, sizeof(ULONG));
 
-            /* Write 0xFFFFFFFF there */
-            WriteBuffer = 0xffffffff;
-            HalpWritePCIConfig(BusHandler, SlotNumber, &WriteBuffer, Offset, sizeof(ULONG));
+        if (Is64Bit)
+        {
+            OriginalHigh = PciConfig.u.type0.BaseAddresses[BarNumber + 1];
+            HalpWritePCIConfig(BusHandler,
+                               SlotNumber,
+                               &OriginalHigh,
+                               Offset + sizeof(ULONG),
+                               sizeof(ULONG));
+        }
 
-            /* Read that figure back from the config space */
-            HalpReadPCIConfig(BusHandler, SlotNumber, &Size[Address], Offset, sizeof(ULONG));
+        Length = HalpPciBarLength(Mask, IsIo);
+        if (!Length)
+        {
+            if (Is64Bit) BarNumber++;
+            continue;
+        }
 
-            /* Write back initial value */
-            HalpWritePCIConfig(BusHandler, SlotNumber, &PciConfig.u.type0.BaseAddresses[Address], Offset, sizeof(ULONG));
+        if (IsIo)
+        {
+            Base = OriginalValue & PCI_ADDRESS_IO_ADDRESS_MASK;
+            Attributes = (OriginalValue & ~PCI_ADDRESS_IO_ADDRESS_MASK) | PCI_ADDRESS_IO_SPACE;
+
+            if (!Base)
+            {
+                Base = HalpPciAllocateIoRange(BusData, Length);
+                if (!Base) return STATUS_INSUFFICIENT_RESOURCES;
+
+                ASSERT((Base + Length - 1) <= BusData->IoLimit);
+                ASSERT((Base & (Length - 1)) == 0);
+
+                PciConfig.u.type0.BaseAddresses[BarNumber] = (ULONG)(Base | Attributes);
+                HalpWritePCIConfig(BusHandler,
+                                   SlotNumber,
+                                   &PciConfig.u.type0.BaseAddresses[BarNumber],
+                                   Offset,
+                                   sizeof(ULONG));
+                DPRINT1("HAL: Assigned IO BAR %lu -> %I64x len %I64x\n", BarNumber, Base, Length);
+            }
+
+            IoSpacePresent = TRUE;
+        }
+        else
+        {
+            Base = OriginalValue & PCI_ADDRESS_MEMORY_ADDRESS_MASK;
+            Attributes = (OriginalValue & ~PCI_ADDRESS_MEMORY_ADDRESS_MASK);
+            if (!Attributes)
+            {
+                Attributes = MaskLow & (PCI_ADDRESS_MEMORY_TYPE_MASK |
+                                         PCI_ADDRESS_MEMORY_PREFETCHABLE);
+            }
+
+            if (Is64Bit)
+            {
+                Base |= ((ULONGLONG)OriginalHigh << 32);
+            }
+
+            if (!Base)
+            {
+                Base = HalpPciAllocateMemoryRange(BusData, Length);
+                if (!Base) return STATUS_INSUFFICIENT_RESOURCES;
+
+                ASSERT((Base + Length - 1) <= BusData->MemoryLimit);
+                ASSERT((Base & (Length - 1)) == 0);
+
+                PciConfig.u.type0.BaseAddresses[BarNumber] =
+                    (ULONG)((Base & PCI_ADDRESS_MEMORY_ADDRESS_MASK) | Attributes);
+                HalpWritePCIConfig(BusHandler,
+                                   SlotNumber,
+                                   &PciConfig.u.type0.BaseAddresses[BarNumber],
+                                   Offset,
+                                   sizeof(ULONG));
+
+                if (Is64Bit)
+                {
+                    ULONG HighPart = (ULONG)(Base >> 32);
+                    PciConfig.u.type0.BaseAddresses[BarNumber + 1] = HighPart;
+                    HalpWritePCIConfig(BusHandler,
+                                       SlotNumber,
+                                       &HighPart,
+                                       Offset + sizeof(ULONG),
+                                       sizeof(ULONG));
+                }
+
+                DPRINT1("HAL: Assigned MMIO BAR %lu -> %I64x len %I64x%s\n",
+                        BarNumber,
+                        Base,
+                        Length,
+                        Prefetch ? " (prefetch)" : "");
+            }
+
+            MemorySpacePresent = TRUE;
+        }
+
+        BarInfo[BarNumber].Present = TRUE;
+        BarInfo[BarNumber].IsIo = IsIo;
+        BarInfo[BarNumber].IsPrefetch = Prefetch;
+        BarInfo[BarNumber].Is64Bit = Is64Bit;
+        BarInfo[BarNumber].Index = (UCHAR)BarNumber;
+        BarInfo[BarNumber].Base = Base;
+        BarInfo[BarNumber].Length = Length;
+        BarInfo[BarNumber].Attributes = Attributes;
+
+        HalpPciPropagateUsage(BusHandler,
+                              IsIo,
+                              Prefetch,
+                              Base,
+                              Base + Length - 1);
+
+        if (Is64Bit) BarNumber++;
+    }
+
+    if (IoSpacePresent)
+        Command |= PCI_ENABLE_IO_SPACE;
+    else
+        Command &= ~PCI_ENABLE_IO_SPACE;
+
+    if (MemorySpacePresent)
+        Command |= PCI_ENABLE_MEMORY_SPACE;
+    else
+        Command &= ~PCI_ENABLE_MEMORY_SPACE;
+
+    if (IoSpacePresent || MemorySpacePresent)
+        Command |= PCI_ENABLE_BUS_MASTER;
+    else
+        Command &= ~PCI_ENABLE_BUS_MASTER;
+
+    if (Command != PciConfig.Command)
+    {
+        HalpWritePCIConfig(BusHandler,
+                           SlotNumber,
+                           &Command,
+                           FIELD_OFFSET(PCI_COMMON_CONFIG, Command),
+                           sizeof(Command));
+        PciConfig.Command = Command;
+    }
+
+    HalpPciUpdateBridgeHierarchy(BusHandler);
+
+    DescriptorCount = 0;
+    for (BarNumber = 0; BarNumber < BarLimit; BarNumber++)
+    {
+        if (BarInfo[BarNumber].Present) DescriptorCount++;
+    }
+
+    /* Special-case legacy IDE compatibility mode I/O ports (PIIX/compat) */
+    if ((PciConfig.BaseClass == PCI_CLASS_MASS_STORAGE_CTLR) &&
+        (PciConfig.SubClass == PCI_SUBCLASS_MSC_IDE_CTLR))
+    {
+        /* If primary channel is in compatibility mode (ProgIf bit0 == 0) */
+        if (!(PciConfig.ProgIf & 0x01))
+        {
+            DescriptorCount += 2; /* Primary Cmd + Ctl */
+        }
+
+        /* If secondary channel is in compatibility mode (ProgIf bit2 == 0) */
+        if (!(PciConfig.ProgIf & 0x04))
+        {
+            DescriptorCount += 2; /* Secondary Cmd + Ctl */
         }
     }
 
-    /* Interrupt resource */
-    if (0 != PciConfig.u.type0.InterruptPin &&
-        0 != PciConfig.u.type0.InterruptLine &&
-        0xFF != PciConfig.u.type0.InterruptLine)
-        ResourceCount++;
+    if (PciConfig.u.type0.InterruptPin &&
+        PciConfig.u.type0.InterruptLine &&
+        (PciConfig.u.type0.InterruptLine != 0xFF))
+    {
+        DescriptorCount++;
+    }
 
-    /* Allocate output buffer and initialize */
+    /* Add legacy IDE IRQs in compatibility mode */
+    if ((PciConfig.BaseClass == PCI_CLASS_MASS_STORAGE_CTLR) &&
+        (PciConfig.SubClass == PCI_SUBCLASS_MSC_IDE_CTLR))
+    {
+        if (!(PciConfig.ProgIf & 0x01)) DescriptorCount++; /* IRQ14 */
+        if (!(PciConfig.ProgIf & 0x04)) DescriptorCount++; /* IRQ15 */
+    }
+
+    if (DescriptorCount == 0)
+        DescriptorCount = 1;
+
     *AllocatedResources = ExAllocatePoolWithTag(
         PagedPool,
         sizeof(CM_RESOURCE_LIST) +
-        (ResourceCount - 1) * sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR),
+        (DescriptorCount - 1) * sizeof(CM_PARTIAL_RESOURCE_DESCRIPTOR),
         TAG_HAL);
 
-    if (NULL == *AllocatedResources)
-        return STATUS_NO_MEMORY;
+    if (!*AllocatedResources) return STATUS_NO_MEMORY;
 
     (*AllocatedResources)->Count = 1;
     (*AllocatedResources)->List[0].InterfaceType = PCIBus;
     (*AllocatedResources)->List[0].BusNumber = BusHandler->BusNumber;
     (*AllocatedResources)->List[0].PartialResourceList.Version = 1;
     (*AllocatedResources)->List[0].PartialResourceList.Revision = 1;
-    (*AllocatedResources)->List[0].PartialResourceList.Count = ResourceCount;
-    Descriptor = (*AllocatedResources)->List[0].PartialResourceList.PartialDescriptors;
+    (*AllocatedResources)->List[0].PartialResourceList.Count = 0;
 
-    /* Store configuration information */
-    for (Address = 0; Address < PCI_TYPE0_ADDRESSES; Address++)
     {
-        if (0 != PciConfig.u.type0.BaseAddresses[Address])
+        PCM_PARTIAL_RESOURCE_DESCRIPTOR Descriptor;
+        ULONG Filled = 0;
+
+        Descriptor = (*AllocatedResources)->List[0].PartialResourceList.PartialDescriptors;
+
+        for (BarNumber = 0; BarNumber < BarLimit; BarNumber++)
         {
-            if (PCI_ADDRESS_MEMORY_SPACE ==
-                (PciConfig.u.type0.BaseAddresses[Address] & 0x1))
+            PHALP_PCI_BAR_INFO Info = &BarInfo[BarNumber];
+
+            if (!Info->Present) continue;
+
+            Descriptor[Filled].ShareDisposition = CmResourceShareDeviceExclusive;
+
+            if (Info->IsIo)
             {
-                Descriptor->Type = CmResourceTypeMemory;
-                Descriptor->ShareDisposition = CmResourceShareDeviceExclusive; /* FIXME I have no idea... */
-                Descriptor->Flags = CM_RESOURCE_MEMORY_READ_WRITE;             /* FIXME Just a guess */
-                Descriptor->u.Memory.Start.QuadPart = (PciConfig.u.type0.BaseAddresses[Address] & PCI_ADDRESS_MEMORY_ADDRESS_MASK);
-                Descriptor->u.Memory.Length = PciSize(Size[Address], PCI_ADDRESS_MEMORY_ADDRESS_MASK);
-            }
-            else if (PCI_ADDRESS_IO_SPACE ==
-                (PciConfig.u.type0.BaseAddresses[Address] & 0x1))
-            {
-                Descriptor->Type = CmResourceTypePort;
-                Descriptor->ShareDisposition = CmResourceShareDeviceExclusive; /* FIXME I have no idea... */
-                Descriptor->Flags = CM_RESOURCE_PORT_IO;                       /* FIXME Just a guess */
-                Descriptor->u.Port.Start.QuadPart = PciConfig.u.type0.BaseAddresses[Address] &= PCI_ADDRESS_IO_ADDRESS_MASK;
-                Descriptor->u.Port.Length = PciSize(Size[Address], PCI_ADDRESS_IO_ADDRESS_MASK & 0xffff);
+                Descriptor[Filled].Type = CmResourceTypePort;
+                Descriptor[Filled].Flags = CM_RESOURCE_PORT_IO;
+                ASSERT(Info->Length <= MAXULONG);
+                Descriptor[Filled].u.Port.Length = (ULONG)Info->Length;
+                Descriptor[Filled].u.Port.Start.QuadPart = Info->Base;
+                DPRINT1("HAL: Bus %lu Slot %lu BAR %u IO @ %I64x len %lu\n",
+                        BusHandler->BusNumber,
+                        SlotNumber.u.AsULONG,
+                        Info->Index,
+                        Info->Base,
+                        (ULONG)Info->Length);
             }
             else
             {
-                ASSERT(FALSE);
-                return STATUS_UNSUCCESSFUL;
+                Descriptor[Filled].Type = CmResourceTypeMemory;
+                Descriptor[Filled].Flags = CM_RESOURCE_MEMORY_READ_WRITE;
+                if (Info->IsPrefetch)
+                    Descriptor[Filled].Flags |= CM_RESOURCE_MEMORY_PREFETCHABLE;
+
+                ASSERT(Info->Length <= MAXULONG);
+                Descriptor[Filled].u.Memory.Length = (ULONG)Info->Length;
+                Descriptor[Filled].u.Memory.Start.QuadPart = Info->Base;
+                DPRINT1("HAL: Bus %lu Slot %lu BAR %u MEM @ %I64x len %lu%s\n",
+                        BusHandler->BusNumber,
+                        SlotNumber.u.AsULONG,
+                        Info->Index,
+                        Info->Base,
+                        (ULONG)Info->Length,
+                        Info->IsPrefetch ? " prefetch" : "");
             }
-            Descriptor++;
+
+            Filled++;
         }
+
+        /* Add legacy IDE compatibility ranges if applicable */
+        if ((PciConfig.BaseClass == PCI_CLASS_MASS_STORAGE_CTLR) &&
+            (PciConfig.SubClass == PCI_SUBCLASS_MSC_IDE_CTLR))
+        {
+            if (!(PciConfig.ProgIf & 0x01))
+            {
+                /* Primary Command: 0x1F0-0x1F7 (8 bytes) */
+                Descriptor[Filled].ShareDisposition = CmResourceShareDeviceExclusive;
+                Descriptor[Filled].Type = CmResourceTypePort;
+                Descriptor[Filled].Flags = CM_RESOURCE_PORT_IO;
+                Descriptor[Filled].u.Port.Start.QuadPart = 0x1F0;
+                Descriptor[Filled].u.Port.Length = 8;
+                DPRINT1("HAL: IDE compat Primary Cmd IO @ 0x1F0 len 8\n");
+                Filled++;
+
+                /* Primary Control: 0x3F6 (1 byte) */
+                Descriptor[Filled].ShareDisposition = CmResourceShareDeviceExclusive;
+                Descriptor[Filled].Type = CmResourceTypePort;
+                Descriptor[Filled].Flags = CM_RESOURCE_PORT_IO;
+                Descriptor[Filled].u.Port.Start.QuadPart = 0x3F6;
+                Descriptor[Filled].u.Port.Length = 1;
+                DPRINT1("HAL: IDE compat Primary Ctl IO @ 0x3F6 len 1\n");
+                Filled++;
+            }
+
+            if (!(PciConfig.ProgIf & 0x04))
+            {
+                /* Secondary Command: 0x170-0x177 (8 bytes) */
+                Descriptor[Filled].ShareDisposition = CmResourceShareDeviceExclusive;
+                Descriptor[Filled].Type = CmResourceTypePort;
+                Descriptor[Filled].Flags = CM_RESOURCE_PORT_IO;
+                Descriptor[Filled].u.Port.Start.QuadPart = 0x170;
+                Descriptor[Filled].u.Port.Length = 8;
+                DPRINT1("HAL: IDE compat Secondary Cmd IO @ 0x170 len 8\n");
+                Filled++;
+
+                /* Secondary Control: 0x376 (1 byte) */
+                Descriptor[Filled].ShareDisposition = CmResourceShareDeviceExclusive;
+                Descriptor[Filled].Type = CmResourceTypePort;
+                Descriptor[Filled].Flags = CM_RESOURCE_PORT_IO;
+                Descriptor[Filled].u.Port.Start.QuadPart = 0x376;
+                Descriptor[Filled].u.Port.Length = 1;
+                DPRINT1("HAL: IDE compat Secondary Ctl IO @ 0x376 len 1\n");
+                Filled++;
+            }
+        }
+
+        if (PciConfig.u.type0.InterruptPin &&
+            PciConfig.u.type0.InterruptLine &&
+            (PciConfig.u.type0.InterruptLine != 0xFF))
+        {
+            Descriptor[Filled].Type = CmResourceTypeInterrupt;
+            Descriptor[Filled].ShareDisposition = CmResourceShareShared;
+            Descriptor[Filled].Flags = CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE;
+            Descriptor[Filled].u.Interrupt.Level = PciConfig.u.type0.InterruptLine;
+            Descriptor[Filled].u.Interrupt.Vector = PciConfig.u.type0.InterruptLine;
+            Descriptor[Filled].u.Interrupt.Affinity = (KAFFINITY)-1;
+            Filled++;
+        }
+
+        /* Add fixed IDE IRQs (compatibility mode) */
+        if ((PciConfig.BaseClass == PCI_CLASS_MASS_STORAGE_CTLR) &&
+            (PciConfig.SubClass == PCI_SUBCLASS_MSC_IDE_CTLR))
+        {
+            if (!(PciConfig.ProgIf & 0x01))
+            {
+                Descriptor[Filled].Type = CmResourceTypeInterrupt;
+                Descriptor[Filled].ShareDisposition = CmResourceShareShared;
+                Descriptor[Filled].Flags = CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE;
+                Descriptor[Filled].u.Interrupt.Level = 14;
+                Descriptor[Filled].u.Interrupt.Vector = 14;
+                Descriptor[Filled].u.Interrupt.Affinity = (KAFFINITY)-1;
+                DPRINT1("HAL: IDE compat Primary IRQ 14 added\n");
+                Filled++;
+            }
+            if (!(PciConfig.ProgIf & 0x04))
+            {
+                Descriptor[Filled].Type = CmResourceTypeInterrupt;
+                Descriptor[Filled].ShareDisposition = CmResourceShareShared;
+                Descriptor[Filled].Flags = CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE;
+                Descriptor[Filled].u.Interrupt.Level = 15;
+                Descriptor[Filled].u.Interrupt.Vector = 15;
+                Descriptor[Filled].u.Interrupt.Affinity = (KAFFINITY)-1;
+                DPRINT1("HAL: IDE compat Secondary IRQ 15 added\n");
+                Filled++;
+            }
+        }
+
+        (*AllocatedResources)->List[0].PartialResourceList.Count = Filled;
     }
 
-    if (0 != PciConfig.u.type0.InterruptPin &&
-        0 != PciConfig.u.type0.InterruptLine &&
-        0xFF != PciConfig.u.type0.InterruptLine)
-    {
-        Descriptor->Type = CmResourceTypeInterrupt;
-        Descriptor->ShareDisposition = CmResourceShareShared;          /* FIXME Just a guess */
-        Descriptor->Flags = CM_RESOURCE_INTERRUPT_LEVEL_SENSITIVE;     /* FIXME Just a guess */
-        Descriptor->u.Interrupt.Level = PciConfig.u.type0.InterruptLine;
-        Descriptor->u.Interrupt.Vector = PciConfig.u.type0.InterruptLine;
-        Descriptor->u.Interrupt.Affinity = 0xFFFFFFFF;
+    RtlSetBits(&BusData->DeviceConfigured, SlotBit, 1);
 
-        Descriptor++;
-    }
-
-    ASSERT(Descriptor == (*AllocatedResources)->List[0].PartialResourceList.PartialDescriptors + ResourceCount);
-
-    /* FIXME: Should store the resources in the registry resource map */
-
-    return Status;
+    return STATUS_SUCCESS;
 }
 
 ULONG
@@ -1203,6 +1955,17 @@ HalpInitializePciStubs(VOID)
     ULONG VendorId = 0;
     ULONG MaxPciBusNumber;
 
+    if (!BusData)
+    {
+        DPRINT1("HAL: HalpInitializePciStubs has no bus data for fake PCI handler\n");
+        return;
+    }
+
+    RtlZeroMemory(BusData->ConfiguredBits, sizeof(BusData->ConfiguredBits));
+    RtlInitializeBitMap(&BusData->DeviceConfigured,
+                        BusData->ConfiguredBits,
+                        sizeof(BusData->ConfiguredBits) * 8);
+
     /* Query registry information */
     PciRegistryInfo = HalpQueryPciRegistryInfo();
     if (!PciRegistryInfo)
@@ -1310,4 +2073,3 @@ HalpInitializePciStubs(VOID)
 }
 
 /* EOF */
-

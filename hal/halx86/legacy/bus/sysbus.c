@@ -25,6 +25,7 @@ HalpTranslateSystemBusAddress(IN PBUS_HANDLER BusHandler,
                               OUT PPHYSICAL_ADDRESS TranslatedAddress)
 {
     PSUPPORTED_RANGE Range = NULL;
+    ULONG OriginalAddressSpace = *AddressSpace;
 
     /* Check what kind of address space this is */
     switch (*AddressSpace)
@@ -88,6 +89,41 @@ HalpTranslateSystemBusAddress(IN PBUS_HANDLER BusHandler,
             break;
     }
 
+    if (!Range && (OriginalAddressSpace == 1))
+    {
+        /* Retry the lookup against memory windows in case the caller mislabeled a BAR */
+        for (Range = &BusHandler->BusAddresses->PrefetchMemory;
+             Range;
+             Range = Range->Next)
+        {
+            if ((BusAddress.QuadPart >= Range->Base) &&
+                (BusAddress.QuadPart <= Range->Limit))
+            {
+                break;
+            }
+        }
+
+        if (!Range)
+        {
+            for (Range = &BusHandler->BusAddresses->Memory;
+                 Range;
+                 Range = Range->Next)
+            {
+                if ((BusAddress.QuadPart >= Range->Base) &&
+                    (BusAddress.QuadPart <= Range->Limit))
+                {
+                    break;
+                }
+            }
+        }
+
+        if (Range)
+        {
+            DPRINT1("Bus address %I64x requested as I/O, treating as memory window\n",
+                    BusAddress.QuadPart);
+        }
+    }
+
     /* Check if we found a range */
     if (Range)
     {
@@ -105,9 +141,11 @@ HalpTranslateSystemBusAddress(IN PBUS_HANDLER BusHandler,
         return TRUE;
     }
 
-    /* Nothing found */
-    DPRINT1("Translation of %I64x failed!\n", BusAddress.QuadPart);
-    return FALSE;
+    /* Nothing found: be permissive and identity-map */
+    DPRINT1("Translation of %I64x failed (AS=%lu), using identity mapping\n",
+            BusAddress.QuadPart, *AddressSpace);
+    TranslatedAddress->QuadPart = BusAddress.QuadPart;
+    return TRUE;
 }
 
 ULONG

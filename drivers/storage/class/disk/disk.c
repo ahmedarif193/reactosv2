@@ -180,6 +180,12 @@ Return Value:
     //
     WPP_INIT_TRACING(DriverObject, RegistryPath);
 
+    KdPrintEx((DPFLTR_DISK_ID,
+               DPFLTR_INFO_LEVEL,
+               "Disk DriverEntry: DriverObject %p RegistryPath %wZ\n",
+               DriverObject,
+               RegistryPath));
+
 #if defined(_X86_) || defined(_AMD64_)
 
     //
@@ -6196,5 +6202,3 @@ Return Value:
 
     return;
 }
-
-

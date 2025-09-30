@@ -614,6 +614,12 @@ PdoDispatchPnp(
     {
         case IRP_MN_START_DEVICE:
         {
+            DPRINT1("PDO START_DEVICE Path %u Target %u Lun %u Type %u Qualifier %u\n",
+                    lunExt->PathId,
+                    lunExt->TargetId,
+                    lunExt->Lun,
+                    lunExt->InquiryData.DeviceType,
+                    lunExt->InquiryData.DeviceTypeQualifier);
             RegistryInitLunKey(lunExt);
             status = STATUS_SUCCESS;
             break;

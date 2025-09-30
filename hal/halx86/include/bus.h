@@ -110,12 +110,25 @@ typedef struct _PCIPBUSDATA
     ULONG MaxDevice;
     PciIrqRange GetIrqRange;
     BOOLEAN BridgeConfigRead;
+    BOOLEAN ResourcesInitialized;
     UCHAR ParentBus;
     UCHAR Subtractive;
     UCHAR reserved[1];
     UCHAR SwizzleIn[4];
     RTL_BITMAP DeviceConfigured;
     ULONG ConfiguredBits[PCI_MAX_DEVICES * PCI_MAX_FUNCTION / 32];
+    ULONGLONG IoBase;
+    ULONGLONG IoLimit;
+    ULONGLONG IoNext;
+    ULONGLONG MemoryBase;
+    ULONGLONG MemoryLimit;
+    ULONGLONG MemoryNext;
+    ULONGLONG IoWindowBase;
+    ULONGLONG IoWindowLimit;
+    ULONGLONG MemoryWindowBase;
+    ULONGLONG MemoryWindowLimit;
+    ULONGLONG PrefetchWindowBase;
+    ULONGLONG PrefetchWindowLimit;
 } PCIPBUSDATA, *PPCIPBUSDATA;
 
 typedef ULONG

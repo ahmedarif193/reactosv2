@@ -12,6 +12,70 @@
 #define NDEBUG
 #include <debug.h>
 
+static
+VOID
+FdoDumpResourceList(
+    _In_ PCSTR ListName,
+    _In_opt_ PCM_RESOURCE_LIST ResourceList)
+{
+    if (!ResourceList)
+    {
+        DPRINT1("%s: (null)\n", ListName);
+        return;
+    }
+
+    for (ULONG i = 0; i < ResourceList->Count; i++)
+    {
+        PCM_FULL_RESOURCE_DESCRIPTOR full = &ResourceList->List[i];
+        DPRINT1("%s[%lu]: Interface %lu Bus %lu Count %lu\n",
+                ListName,
+                i,
+                full->InterfaceType,
+                full->BusNumber,
+                full->PartialResourceList.Count);
+
+        for (ULONG j = 0; j < full->PartialResourceList.Count; j++)
+        {
+            PCM_PARTIAL_RESOURCE_DESCRIPTOR partial =
+                &full->PartialResourceList.PartialDescriptors[j];
+
+            switch (partial->Type)
+            {
+                case CmResourceTypePort:
+                    DPRINT1("  PORT  start=0x%I64x len=0x%lx flags=0x%x\n",
+                            partial->u.Port.Start.QuadPart,
+                            partial->u.Port.Length,
+                            partial->Flags);
+                    break;
+                case CmResourceTypeMemory:
+                    DPRINT1("  MEM   start=0x%I64x len=0x%lx flags=0x%x\n",
+                            partial->u.Memory.Start.QuadPart,
+                            partial->u.Memory.Length,
+                            partial->Flags);
+                    break;
+                case CmResourceTypeInterrupt:
+                    DPRINT1("  IRQ   level=%lu vector=%lu affinity=0x%I64x flags=0x%x\n",
+                            partial->u.Interrupt.Level,
+                            partial->u.Interrupt.Vector,
+                            partial->u.Interrupt.Affinity,
+                            partial->Flags);
+                    break;
+                case CmResourceTypeDma:
+                    DPRINT1("  DMA   channel=%lu port=%lu\n",
+                            partial->u.Dma.Channel,
+                            partial->u.Dma.Port);
+                    break;
+                default:
+                    DPRINT1("  TYPE %u raw[0]=0x%I64x raw[1]=0x%I64x\n",
+                            partial->Type,
+                            partial->u.DevicePrivate.Data[0],
+                            partial->u.DevicePrivate.Data[1]);
+                    break;
+            }
+        }
+    }
+}
+
 
 static
 NTSTATUS
@@ -31,11 +95,14 @@ FdoSendInquiry(
     SCSI_REQUEST_BLOCK Srb;
     PCDB Cdb;
 
-    DPRINT("FdoSendInquiry() called\n");
-
     PSCSI_PORT_LUN_EXTENSION LunExtension = DeviceObject->DeviceExtension;
     PSCSI_PORT_DEVICE_EXTENSION DeviceExtension =
         LunExtension->Common.LowerDevice->DeviceExtension;
+
+    DPRINT1("FdoSendInquiry: Path %u Target %u Lun %u\n",
+            LunExtension->PathId,
+            LunExtension->TargetId,
+            LunExtension->Lun);
 
     InquiryBuffer = ExAllocatePoolWithTag(NonPagedPool, INQUIRYDATABUFFERSIZE, TAG_SCSIPORT);
     if (InquiryBuffer == NULL)
@@ -119,7 +186,9 @@ FdoSendInquiry(
             Status = IoStatusBlock.Status;
         }
 
-        DPRINT("FdoSendInquiry(): Request processed by driver, status = 0x%08X\n", Status);
+        DPRINT1("FdoSendInquiry: SRB completed with status 0x%08X (SrbStatus 0x%02X)\n",
+                Status,
+                Srb.SrbStatus);
 
         if (SRB_STATUS(Srb.SrbStatus) == SRB_STATUS_SUCCESS)
         {
@@ -128,13 +197,39 @@ FdoSendInquiry(
                           InquiryBuffer,
                           INQUIRYDATABUFFERSIZE);
 
+            CHAR vendorId[9] = {0};
+            CHAR productId[17] = {0};
+            RtlCopyMemory(vendorId, LunExtension->InquiryData.VendorId, 8);
+            RtlCopyMemory(productId, LunExtension->InquiryData.ProductId, 16);
+
+            DPRINT1("FdoSendInquiry: DeviceType=%u Removable=%u Vendor='%s' Product='%s'\n",
+                    LunExtension->InquiryData.DeviceType,
+                    LunExtension->InquiryData.RemovableMedia,
+                    vendorId,
+                    productId);
+
             /* Quit the loop */
             Status = STATUS_SUCCESS;
             KeepTrying = FALSE;
             continue;
         }
 
-        DPRINT("Inquiry SRB failed with SrbStatus 0x%08X\n", Srb.SrbStatus);
+        UCHAR senseKey = 0;
+        UCHAR asc = 0;
+        UCHAR ascq = 0;
+
+        if (Srb.SrbStatus & SRB_STATUS_AUTOSENSE_VALID)
+        {
+            senseKey = SenseBuffer->SenseKey;
+            asc = SenseBuffer->AdditionalSenseCode;
+            ascq = SenseBuffer->AdditionalSenseCodeQualifier;
+        }
+
+        DPRINT1("FdoSendInquiry: Inquiry failed SrbStatus 0x%02X SenseKey 0x%02X ASC 0x%02X ASCQ 0x%02X\n",
+                Srb.SrbStatus,
+                senseKey,
+                asc,
+                ascq);
 
         /* Check if the queue is frozen */
         if (Srb.SrbStatus & SRB_STATUS_QUEUE_FROZEN)
@@ -614,6 +709,11 @@ FdoStartAdapter(
     UNICODE_STRING dosDeviceName;
     NTSTATUS status;
 
+    DPRINT1("FdoStartAdapter: Port %u Buses %u Requests %u\n",
+            PortExtension->PortNumber,
+            PortExtension->NumberOfBuses,
+            PortExtension->RequestsNumber);
+
     // Start our timer
     IoStartTimer(PortExtension->Common.DeviceObject);
 
@@ -648,6 +748,9 @@ FdoStartAdapter(
     }
 
     PortExtension->DeviceStarted = TRUE;
+
+    DPRINT1("FdoStartAdapter: Port %u started successfully\n",
+            PortExtension->PortNumber);
 
     return STATUS_SUCCESS;
 }
@@ -773,10 +876,23 @@ FdoDispatchPnp(
     {
         case IRP_MN_START_DEVICE:
         {
+            PCM_RESOURCE_LIST rawResources = ioStack->Parameters.StartDevice.AllocatedResources;
+            PCM_RESOURCE_LIST translatedResources =
+                ioStack->Parameters.StartDevice.AllocatedResourcesTranslated;
+
+            DPRINT1("FDO START_DEVICE for %p raw=%p translated=%p\n",
+                    DeviceObject,
+                    rawResources,
+                    translatedResources);
+
+            FdoDumpResourceList("  RAW ", rawResources);
+            FdoDumpResourceList("  XLAT", translatedResources);
+
             // as we don't support PnP yet, this is a no-op for us
             // (FdoStartAdapter is being called during initialization for legacy miniports)
             status = STATUS_SUCCESS;
             // status = FdoStartAdapter(DeviceExtension);
+            DPRINT1("FDO START_DEVICE complete with status 0x%08X\n", status);
             break;
         }
         case IRP_MN_QUERY_DEVICE_RELATIONS:

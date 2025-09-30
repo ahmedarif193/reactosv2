@@ -1,0 +1,42 @@
+ReactOS USB 2.0 Stack Stabilization Roadmap
+===========================================
+
+Missing Implementations
+-----------------------
+- Complete isochronous support across the stack:
+  * Implement URB handling in `drivers/usb/usbport/iso.c` and `drivers/usb/usbport/urb.c`.
+  * Provide HS/FS budget management in `drivers/usb/usbport/usb2.c` and related helpers.
+  * Flesh out EHCI iso entry points (`EHCI_OpenHsIsoEndpoint`, `EHCI_OpenIsoEndpoint`, `EHCI_SubmitIsoTransfer`,
+    `EHCI_AbortIsoTransfer`, `EHCI_PollIsoEndpoint`).
+- Finish USBD interface coverage in `drivers/usb/usbport/iface.c` (`USBDI_GetUSBDIVersion`, `USBDI_QueryBusInformation`,
+  `USBDI_QueryBusTime`, `USBDI_SubmitIsoOutUrb`, `USBDI_EnumLogEntry`).
+- Implement IOCTL paths and PDO device control in `drivers/usb/usbport/ioctl.c`
+  (notably `USBPORT_PdoDeviceControl` and `IOCTL_USB_USER_REQUEST`).
+- Add EHCI miniport extensions: endpoint state queries, rebalance logic, pass-through routines,
+  registry parameter fetch, and one-shot packet helpers in `drivers/usb/usbehci/usbehci.c`.
+- Support Microsoft OS feature descriptor URBs in `drivers/usb/usbhub/ioctl.c` and complete
+  `USBH_SystemControl` + unload paths in `drivers/usb/usbhub/usbhub.c`.
+- Bring `drivers/usb/usbd/usbd.c` closer to the Windows USBD contract to unblock upper-layer clients.
+
+PnP and Power Gaps
+------------------
+- Implement `IRP_MN_STOP_DEVICE` and `IRP_MN_REMOVE_DEVICE` handling in `drivers/usb/usbport/pnp.c`
+  (including the root-hub PDO tear-down).
+- Provide real logic for `USBPORT_StopDevice`, `USBPORT_Unload`, and
+  `USBPORT_InvalidateControllerHandler` surprise/remove/reset cases.
+- Complete power management paths in `drivers/usb/usbport/power.c`
+  (`USBPORT_HcWake`, `USBPORT_DevicePowerState`, `USBPORT_SystemPowerState`).
+- Ensure hub FDO idle/stop sequences cover selective suspend transitions once core power support lands.
+
+Bug Fixes / Technical Debt
+--------------------------
+- Fix the companion controller allocation bug in `USBPORT_FindCompanionControllers`
+  (allocate `sizeof(DEVICE_RELATIONS) + (N-1)*sizeof(PDEVICE_OBJECT)`).
+- Reject STOP/REMOVE success until cleanup executes to avoid leaking active root-hub state.
+- Audit timer DPC stubs (`USBPORT_TimeoutAllEndpoints`, `USBPORT_CheckIdleEndpoints`) and
+  either implement or guard them to prevent silent failures.
+
+Follow-Up Validation
+--------------------
+- Add regression tests for iso transfers, PnP stop/remove, and user IOCTL paths once implemented.
+- Exercise selective suspend and system sleep with instrumentation to validate new power handling.

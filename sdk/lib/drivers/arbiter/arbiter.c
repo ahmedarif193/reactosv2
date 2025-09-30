@@ -219,9 +219,61 @@ ArbAddOrdering(
     _In_ UINT64 MaximumAddress)
 {
     PAGED_CODE();
+    PARBITER_ORDERING Orderings;
+    USHORT Index;
 
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    if (!OrderList)
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    if (MaximumAddress < MinimumAddress)
+    {
+        UINT64 Temp = MaximumAddress;
+        MaximumAddress = MinimumAddress;
+        MinimumAddress = Temp;
+    }
+
+    if (OrderList->Count == OrderList->Maximum)
+    {
+        USHORT NewMaximum;
+        SIZE_T Size;
+        PVOID Buffer;
+
+        NewMaximum = (OrderList->Maximum == 0) ? 4 : OrderList->Maximum * 2;
+        Size = sizeof(ARBITER_ORDERING) * NewMaximum;
+        Buffer = ExAllocatePoolWithTag(PagedPool, Size, TAG_ARBITER);
+        if (!Buffer)
+        {
+            return STATUS_INSUFFICIENT_RESOURCES;
+        }
+
+        if (OrderList->Orderings)
+        {
+            RtlCopyMemory(Buffer,
+                          OrderList->Orderings,
+                          sizeof(ARBITER_ORDERING) * OrderList->Count);
+            ExFreePoolWithTag(OrderList->Orderings, TAG_ARBITER);
+        }
+
+        OrderList->Orderings = Buffer;
+        OrderList->Maximum = NewMaximum;
+    }
+
+    Orderings = OrderList->Orderings;
+    Index = OrderList->Count;
+
+    while (Index > 0 && Orderings[Index - 1].Start > MinimumAddress)
+    {
+        Orderings[Index] = Orderings[Index - 1];
+        Index--;
+    }
+
+    Orderings[Index].Start = MinimumAddress;
+    Orderings[Index].End = MaximumAddress;
+    OrderList->Count++;
+
+    return STATUS_SUCCESS;
 }
 
 CODE_SEG("PAGE")
@@ -233,9 +285,54 @@ ArbPruneOrdering(
     _In_ UINT64 MaximumAddress)
 {
     PAGED_CODE();
+    USHORT i = 0;
 
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    if (!OrderingList || MaximumAddress < MinimumAddress)
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    while (i < OrderingList->Count)
+    {
+        PARBITER_ORDERING Entry = &OrderingList->Orderings[i];
+
+        if (Entry->End < MinimumAddress || Entry->Start > MaximumAddress)
+        {
+            if (i + 1 < OrderingList->Count)
+            {
+                RtlMoveMemory(&OrderingList->Orderings[i],
+                              &OrderingList->Orderings[i + 1],
+                              sizeof(ARBITER_ORDERING) * (OrderingList->Count - (i + 1)));
+            }
+            OrderingList->Count--;
+            continue;
+        }
+
+        if (Entry->Start < MinimumAddress)
+        {
+            Entry->Start = MinimumAddress;
+        }
+        if (Entry->End > MaximumAddress)
+        {
+            Entry->End = MaximumAddress;
+        }
+
+        if (Entry->End < Entry->Start)
+        {
+            if (i + 1 < OrderingList->Count)
+            {
+                RtlMoveMemory(&OrderingList->Orderings[i],
+                              &OrderingList->Orderings[i + 1],
+                              sizeof(ARBITER_ORDERING) * (OrderingList->Count - (i + 1)));
+            }
+            OrderingList->Count--;
+            continue;
+        }
+
+        i++;
+    }
+
+    return STATUS_SUCCESS;
 }
 
 CODE_SEG("PAGE")
@@ -246,8 +343,13 @@ ArbInitializeOrderingList(
 {
     PAGED_CODE();
 
-    UNIMPLEMENTED;
-    return STATUS_NOT_IMPLEMENTED;
+    if (!OrderList)
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    RtlZeroMemory(OrderList, sizeof(*OrderList));
+    return STATUS_SUCCESS;
 }
 
 CODE_SEG("PAGE")
@@ -258,7 +360,19 @@ ArbFreeOrderingList(
 {
     PAGED_CODE();
 
-    UNIMPLEMENTED;
+    if (!OrderList)
+    {
+        return;
+    }
+
+    if (OrderList->Orderings)
+    {
+        ExFreePoolWithTag(OrderList->Orderings, TAG_ARBITER);
+        OrderList->Orderings = NULL;
+    }
+
+    OrderList->Count = 0;
+    OrderList->Maximum = 0;
 }
 
 CODE_SEG("PAGE")
@@ -270,9 +384,52 @@ ArbBuildAssignmentOrdering(
     _In_ PCWSTR ReservedOrderName,
     _In_ PARB_TRANSLATE_ORDERING TranslateOrderingFunction)
 {
+    NTSTATUS Status;
+    UINT64 MaxAddress;
+
     PAGED_CODE();
 
-    UNIMPLEMENTED;
+    if (!ArbInstance)
+    {
+        return STATUS_INVALID_PARAMETER;
+    }
+
+    ArbFreeOrderingList(&ArbInstance->OrderingList);
+    ArbFreeOrderingList(&ArbInstance->ReservedList);
+
+    Status = ArbInitializeOrderingList(&ArbInstance->OrderingList);
+    if (!NT_SUCCESS(Status))
+    {
+        return Status;
+    }
+
+    Status = ArbInitializeOrderingList(&ArbInstance->ReservedList);
+    if (!NT_SUCCESS(Status))
+    {
+        ArbFreeOrderingList(&ArbInstance->OrderingList);
+        return Status;
+    }
+
+    if (ArbInstance->ResourceType == CmResourceTypePort)
+    {
+        MaxAddress = 0xFFFFFFFFULL;
+    }
+    else
+    {
+        MaxAddress = 0xFFFFFFFFFFFFFFFFULL;
+    }
+
+    Status = ArbAddOrdering(&ArbInstance->OrderingList, 0, MaxAddress);
+    if (!NT_SUCCESS(Status))
+    {
+        ArbFreeOrderingList(&ArbInstance->OrderingList);
+        ArbFreeOrderingList(&ArbInstance->ReservedList);
+        return Status;
+    }
+
+    UNREFERENCED_PARAMETER(OrderName);
+    UNREFERENCED_PARAMETER(ReservedOrderName);
+    UNREFERENCED_PARAMETER(TranslateOrderingFunction);
     return STATUS_SUCCESS;
 }
 

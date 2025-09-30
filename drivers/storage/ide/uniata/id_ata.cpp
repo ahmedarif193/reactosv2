@@ -8381,8 +8381,24 @@ default_no_prep:
             // Zero INQUIRY data structure.
             RtlZeroMemory((PCHAR)(Srb->DataBuffer), Srb->DataTransferLength);
 
-            // Standard IDE interface only supports disks.
-            inquiryData->DeviceType = DIRECT_ACCESS_DEVICE;
+            // Decide INQUIRY DeviceType based on device kind.
+            // Default: disk; ATAPI CD/DVD must report CdRom.
+            if (LunExt->DeviceFlags & DFLAGS_ATAPI_DEVICE)
+            {
+                UCHAR atapiType = identifyData->DeviceType;
+                if ((atapiType == ATAPI_TYPE_CDROM) || (atapiType == ATAPI_TYPE_OPTICAL))
+                {
+                    inquiryData->DeviceType = READ_ONLY_DIRECT_ACCESS_DEVICE; // CdRom
+                }
+                else
+                {
+                    inquiryData->DeviceType = DIRECT_ACCESS_DEVICE; // fallback
+                }
+            }
+            else
+            {
+                inquiryData->DeviceType = DIRECT_ACCESS_DEVICE;
+            }
 
             // Set the removable bit, if applicable.
             if (LunExt->DeviceFlags & DFLAGS_REMOVABLE_DRIVE) {
@@ -8398,6 +8414,12 @@ default_no_prep:
             }
             // Set the CommandQueue bit
             inquiryData->CommandQueue = 1;
+
+            KdPrint(("UNIATA: INQUIRY synth DevType=%u ATAPI=%d IdType=%u Flags=%#x\n",
+                     inquiryData->DeviceType,
+                     (LunExt->DeviceFlags & DFLAGS_ATAPI_DEVICE) ? 1 : 0,
+                     identifyData->DeviceType,
+                     LunExt->DeviceFlags));
 
             // Fill in vendor identification fields.
 #ifdef __REACTOS__
@@ -9362,18 +9384,17 @@ wrong_buffer_size:
 
                 PINQUIRYDATA    inquiryData  = (PINQUIRYDATA)(Srb->DataBuffer);
 
-                KdPrint2((PRINT_PREFIX
-                           "  INQUIRY\n"));
-                // Zero INQUIRY data structure.
-                RtlZeroMemory((PCHAR)(Srb->DataBuffer), Srb->DataTransferLength);
+            KdPrint(("UNIATA: comm-port INQUIRY filtered\n"));
+            // Zero INQUIRY data structure (for possible diagnostics).
+            RtlZeroMemory((PCHAR)(Srb->DataBuffer), Srb->DataTransferLength);
 
-                inquiryData->DeviceType = COMMUNICATION_DEVICE;
+            inquiryData->DeviceType = COMMUNICATION_DEVICE;
+            inquiryData->DeviceTypeQualifier = DEVICE_QUALIFIER_NOT_SUPPORTED;
 
-                // Fill in vendor identification fields.
-                RtlCopyMemory(&inquiryData->VendorId, &uniata_comm_name, 28);
+            RtlCopyMemory(&inquiryData->VendorId, &uniata_comm_name, 28);
 
-                status = SRB_STATUS_SUCCESS;
-                goto complete_req;
+            status = SRB_STATUS_SELECTION_TIMEOUT;
+            goto complete_req;
             }
             commPort = TRUE;
             /* Pass IOCTL request down */
@@ -9398,7 +9419,8 @@ reject_srb:
         } else
         if((deviceExtension->HwFlags & UNIATA_AHCI) &&
            !UniataAhciChanImplemented(deviceExtension, lChannel)) {
-            chan = NULL;
+            KdPrint(("UNIATA: AtapiStartIo port %d not implemented\n", lChannel));
+            goto reject_srb;
         }
 
         if(!commPort) {
@@ -11714,4 +11736,3 @@ _PrintNtConsole(
     va_end(ap);
 
 } // end PrintNtConsole()
-
