@@ -1,0 +1,53 @@
+# Uefinity Third-Party Dependencies Configuration
+# ==============================================
+#
+# This file defines all third-party libraries used by the Uefinity bootloader.
+# Each library entry supports the following fields:
+#
+# repository: Git repository URL (required)
+# branch:     Branch name to checkout (optional, default: master)
+# tag:        Tag name to checkout (optional, overrides branch)
+# commit:     Specific commit hash (optional, overrides branch/tag)
+# directory:  Target directory name in 3rdparty/ (optional, default: library name)
+#
+# Examples:
+# - Use latest master:     branch: master (or omit branch)
+# - Use specific branch:   branch: feature-branch
+# - Use tagged release:    tag: v1.2.3
+# - Use specific commit:   commit: abc123def456...
+#
+# Note: Only one of branch/tag/commit should be specified per library.
+
+thirdpartylibs:
+  # rapidyaml - Fast YAML parser/emitter library
+  # Used for configuration file parsing and bootloader settings
+  rapidyaml:
+    repository: "https://github.com/biojppm/rapidyaml.git"
+    branch: "master"
+    directory: "rapidyaml"
+
+  # Example configurations for potential future dependencies:
+
+  # # JSON parsing library
+  # cjson:
+  #   repository: "https://github.com/DaveGamble/cJSON.git"
+  #   tag: "v1.7.16"
+  #   directory: "cjson"
+
+  # # Compression library
+  # zlib:
+  #   repository: "https://github.com/madler/zlib.git"
+  #   tag: "v1.3"
+  #   directory: "zlib"
+
+  # # Cryptographic library (for secure boot support)
+  # mbedtls:
+  #   repository: "https://github.com/Mbed-TLS/mbedtls.git"
+  #   branch: "development"
+  #   directory: "mbedtls"
+
+  # # Example using specific commit hash
+  # some_library:
+  #   repository: "https://github.com/example/library.git"
+  #   commit: "abc123def456789012345678901234567890abcd"
+  #   directory: "library"

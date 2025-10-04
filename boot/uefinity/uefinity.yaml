@@ -1,0 +1,185 @@
+# Uefinity ARM64 UEFI Bootloader Configuration
+# YAML format for ReactOS ARM64 Boot Manager v1.0
+# Converted from uefinity.ini for improved structure and maintainability
+
+# Main bootloader configuration
+bootloader:
+  name: "Uefinity ARM64 UEFI Bootloader"
+  version: "1.0"
+  description: "Advanced ReactOS ARM64 Boot Manager"
+  message_box: |
+    Uefinity ARM64 UEFI Bootloader
+    Advanced ReactOS ARM64 Boot Manager
+    Version 1.0
+
+    Press any key to continue...
+
+  # Boot behavior settings
+  boot:
+    default_os: "ReactOS"
+    timeout: 15  # seconds
+    boot_logo: true
+    global_debug_options: "/DEBUG /DEBUGPORT=SERIAL /BAUDRATE=115200"
+
+# ARM64-specific architecture settings
+architecture:
+  type: "arm64"
+  features:
+    - "NEON"
+    - "CRC32"
+    - "AES"
+    - "SHA1"
+    - "SHA2"
+
+  # ARM64 platform configuration
+  platform:
+    serial_debug: true
+    serial_baud_rate: 115200
+    efi_chainload: true
+    uefi_gop_mode: 0
+
+# Display and user interface configuration
+display:
+  title: "Uefinity - ReactOS ARM64 UEFI Bootloader v1.0"
+  minimal_ui: false
+  show_progress: true
+  show_memory_info: true
+  show_system_info: true
+
+  # Color scheme
+  colors:
+    menu_text: "White"
+    menu_background: "Blue"
+    text: "Yellow"
+    background: "DarkBlue"
+    title: "Cyan"
+    status: "Green"
+
+# Operating system entries
+operating_systems:
+  ReactOS:
+    name: "ReactOS ARM64 (Development Build)"
+    boot_type: "Windows"
+    system_path: "multi(0)disk(0)rdisk(0)partition(1)\\reactos"
+    kernel: "\\reactos\\system32\\ntoskrnl.exe"
+    hal: "\\reactos\\system32\\hal.dll"
+    options: "/DEBUGPORT=SCREEN /SOS"
+    boot_sector: true
+
+  ReactOSSetup:
+    name: "ReactOS ARM64 Setup & Installation"
+    boot_type: "ReactOSSetup"
+    system_path: "multi(0)disk(0)rdisk(0)partition(1)\\reactos"
+    setup_path: "\\reactos\\system32\\setup.exe"
+    kernel: "\\reactos\\system32\\ntoskrnl.exe"
+    options: "/SETUP /DEBUGPORT=SCREEN"
+
+  ReactOSDebug:
+    name: "ReactOS ARM64 (Debug Mode)"
+    boot_type: "Windows"
+    system_path: "multi(0)disk(0)rdisk(0)partition(1)\\reactos"
+    kernel: "\\reactos\\system32\\ntoskrnl.exe"
+    hal: "\\reactos\\system32\\hal.dll"
+    options: "/DEBUG /DEBUGPORT=SERIAL /BAUDRATE=115200 /SOS /NOGUIBOOT"
+
+  ReactOSRecovery:
+    name: "ReactOS ARM64 (Recovery Console)"
+    boot_type: "Windows"
+    system_path: "multi(0)disk(0)rdisk(0)partition(1)\\reactos"
+    kernel: "\\reactos\\system32\\ntoskrnl.exe"
+    hal: "\\reactos\\system32\\hal.dll"
+    options: "/MININT /DEBUGPORT=SCREEN"
+
+  EfiShell:
+    name: "UEFI Shell"
+    boot_type: "EfiApplication"
+    efi_app_path: "\\EFI\\BOOT\\Shell.efi"
+    description: "UEFI Shell for system diagnostics"
+    options: ""
+
+  EfiApp:
+    name: "Test EFI Application"
+    boot_type: "EfiApplication"
+    efi_app_path: "\\test.efi"
+    description: "Test EFI Application"
+    options: ""
+
+  WindowsARM:
+    name: "Windows on ARM (if available)"
+    boot_type: "Windows2003"
+    system_path: "multi(0)disk(0)rdisk(0)partition(2)\\windows"
+    kernel: "\\windows\\system32\\ntoskrnl.exe"
+    hal: "\\windows\\system32\\hal.dll"
+    options: "/DEBUGPORT=SCREEN"
+
+# Filesystem support configuration
+filesystems:
+  supported_types:
+    - "FAT32"
+    - "NTFS"
+    - "EXT4"
+    - "BTRFS"
+    - "ISO9660"
+  primary_fs: "FAT32"
+  secondary_fs: "NTFS"
+  write_support: true
+  cache_size: "64MB"
+
+# Hardware detection and support
+hardware:
+  memory:
+    max_memory: "8GB"
+
+  display:
+    video_mode: "Auto"
+
+  peripherals:
+    serial_port: "COM1"
+    keyboard_layout: "US"
+    mouse_support: true
+    usb_support: true
+    network_support: true
+
+# Advanced bootloader features
+advanced:
+  testing:
+    memory_test: false
+    disk_check: false
+
+  diagnostics:
+    verbose_logging: true
+    show_boot_time: true
+    profiling: false
+
+  modes:
+    safe_mode: false
+
+# Security configuration
+security:
+  secure_boot: false  # "Disabled" -> false
+  verify_signatures: false
+  trusted_boot_path: "\\EFI\\BOOT\\"
+  allow_unsigned_drivers: true
+
+# Debugging configuration
+debugging:
+  kernel_debugger: true
+  debugger_type: "Serial"
+  break_on_start: false
+  log_level: "Warning"  # Options: Error, Warning, Info, Debug, Verbose
+  debug_buffer_size: "1MB"
+
+# Configuration metadata
+metadata:
+  config_version: "1.0"
+  created_from: "uefinity.ini"
+  target_architecture: "ARM64"
+  compatible_uefi_versions:
+    - "2.0"
+    - "2.1"
+    - "2.3"
+    - "2.4"
+    - "2.5"
+    - "2.6"
+    - "2.7"
+    - "2.8"

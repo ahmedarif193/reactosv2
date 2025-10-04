@@ -1,0 +1,475 @@
+/*
+ *  FreeLoader
+ *  Copyright (C) 1998-2003  Brian Palmer  <brianp@sginet.com>
+ *
+ *  This program is free software; you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation; either version 2 of the License, or
+ *  (at your option) any later version.
+ *
+ *  This program is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License along
+ *  with this program; if not, write to the Free Software Foundation, Inc.,
+ *  51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ */
+
+/* INCLUDES *******************************************************************/
+
+#include <freeldr.h>
+
+#include <debug.h>
+
+DBG_DEFAULT_CHANNEL(WARNING);
+
+/* GLOBALS ********************************************************************/
+
+typedef VOID
+(*EDIT_OS_ENTRY_PROC)(
+    _Inout_ OperatingSystemItem* OperatingSystem);
+
+static VOID
+EditCustomBootReactOSSetup(
+    _Inout_ OperatingSystemItem* OperatingSystem)
+{
+    EditCustomBootReactOS(OperatingSystem, TRUE);
+}
+
+static VOID
+EditCustomBootNTOS(
+    _Inout_ OperatingSystemItem* OperatingSystem)
+{
+    EditCustomBootReactOS(OperatingSystem, FALSE);
+}
+
+typedef struct _OS_LOADING_METHOD
+{
+    PCSTR BootType;
+    EDIT_OS_ENTRY_PROC EditOsEntry;
+    ARC_ENTRY_POINT OsLoader;
+} OS_LOADING_METHOD, *POS_LOADING_METHOD;
+
+// Forward declarations for ARM64/UEFI-only bootloader
+ARC_STATUS LoadAndBootEfiApp(IN ULONG Argc, IN PCHAR Argv[], IN PCHAR Envp[]);
+VOID EditCustomBootEfiApp(_Inout_ OperatingSystemItem* OperatingSystem);
+
+// OS Loading methods for ARM64 UEFI-only bootloader
+static const OS_LOADING_METHOD OSLoadingMethods[] = {
+    {"EfiApplication", EditCustomBootEfiApp, LoadAndBootEfiApp},
+    {"ReactOSSetup", EditCustomBootReactOSSetup, LoadReactOSSetup},
+    {"Windows", EditCustomBootNTOS, LoadAndBootWindows},
+    {"Windows2003", EditCustomBootNTOS, LoadAndBootWindows},
+    {"WindowsVista", EditCustomBootNTOS, LoadAndBootWindows},
+};
+
+/* FUNCTIONS ******************************************************************/
+
+#ifdef HAS_DEPRECATED_OPTIONS
+/**
+ * @brief   Helper for dealing with DEPRECATED features.
+ **/
+VOID
+WarnDeprecated(
+    _In_ PCSTR MsgFmt,
+    ...)
+{
+    va_list ap;
+    CHAR msgString[300];
+
+    /* If the user didn't cancel the timeout, don't display the warning */
+    if (GetBootMgrInfo()->TimeOut >= 0)
+        return;
+
+    va_start(ap, MsgFmt);
+    RtlStringCbVPrintfA(msgString, sizeof(msgString),
+                        MsgFmt, ap);
+    va_end(ap);
+
+    UiMessageBox(
+        "                           WARNING!\n"
+        "\n"
+        "%s\n"
+        "\n"
+        "Should you need assistance, please contact ReactOS developers\n"
+        "on the official ReactOS Mattermost server <chat.reactos.org>.",
+        msgString);
+}
+#endif // HAS_DEPRECATED_OPTIONS
+
+static const OS_LOADING_METHOD*
+GetOSLoadingMethod(
+    _In_ ULONG_PTR SectionId)
+{
+    ULONG i;
+    CHAR BootType[80];
+
+    /* The operating system section has been opened by InitOperatingSystemList() */
+    ASSERT(SectionId != 0);
+
+    /* Try to read the boot type. We must have the value (it
+     * has been possibly added by InitOperatingSystemList()) */
+    *BootType = ANSI_NULL;
+    IniReadSettingByName(SectionId, "BootType", BootType, sizeof(BootType));
+    ASSERT(*BootType);
+
+    TRACE("[BOOTMGR] Section %s boot type '%s'\n",
+          ((PINI_SECTION)SectionId)->SectionName,
+          BootType);
+
+////
+#ifdef HAS_DEPRECATED_OPTIONS
+    if ((_stricmp(BootType, "Drive") == 0) ||
+        (_stricmp(BootType, "Partition") == 0))
+    {
+        /* Display the deprecation warning message */
+        WarnDeprecated(
+            "The '%s' configuration you are booting into is no longer\n"
+            "supported and will be removed in future FreeLoader versions.\n"
+            "\n"
+            "Please edit FREELDR.INI to replace all occurrences of\n"
+            "\n"
+            "             %*s        to:\n"
+            "    BootType=%s      ------>     BootType=BootSector",
+            BootType,
+            strlen(BootType), "", // Indentation
+            BootType);
+
+        /* Type fixup */
+        strcpy(BootType, "BootSector");
+        if (!IniModifySettingValue(SectionId, "BootType", BootType))
+        {
+            ERR("Could not fixup the BootType entry for OS '%s', ignoring.\n",
+                ((PINI_SECTION)SectionId)->SectionName);
+        }
+    }
+#endif // HAS_DEPRECATED_OPTIONS
+////
+
+    /* Find the suitable OS loading method */
+    for (i = 0; ; ++i)
+    {
+        if (i >= RTL_NUMBER_OF(OSLoadingMethods))
+        {
+            UiMessageBox("Unknown boot entry type '%s'", BootType);
+            return NULL;
+        }
+        if (_stricmp(BootType, OSLoadingMethods[i].BootType) == 0)
+        {
+            TRACE("[BOOTMGR] Resolved boot type '%s' to loader %s\n",
+                  BootType, OSLoadingMethods[i].BootType);
+            return &OSLoadingMethods[i];
+        }
+    }
+    UNREACHABLE;
+}
+
+/**
+ * @brief
+ * This function converts the list of Key=Value options in the given operating
+ * system section into an ARC-compatible argument vector, providing in addition
+ * the extra mandatory Software Loading Environment Variables, following the
+ * ARC specification.
+ **/
+static PCHAR*
+BuildArgvForOsLoader(
+    _In_ PCSTR LoadIdentifier,
+    _In_ ULONG_PTR SectionId,
+    _Out_ PULONG pArgc)
+{
+    SIZE_T Size;
+    ULONG Count;
+    ULONG i;
+    ULONG Argc;
+    PCHAR* Argv;
+    PCHAR* Args;
+    PCHAR SettingName, SettingValue;
+    PCCHAR BootPath = FrLdrGetBootPath();
+
+    *pArgc = 0;
+
+    ASSERT(SectionId != 0);
+
+    /* Normalize LoadIdentifier to make subsequent tests simpler */
+    if (LoadIdentifier && !*LoadIdentifier)
+        LoadIdentifier = NULL;
+
+    /* Count the number of operating systems in the section */
+    Count = IniGetNumSectionItems(SectionId);
+
+    /*
+     * The argument vector contains the program name, the SystemPartition,
+     * the LoadIdentifier (optional), and the items in the OS section.
+     * For POSIX compliance, a terminating NULL pointer (not counted in Argc)
+     * is appended, such that Argv[Argc] == NULL.
+     */
+    Argc = 2 + (LoadIdentifier ? 1 : 0) + Count;
+
+    /* Calculate the total size needed for the string buffer of the argument vector */
+    Size = 0;
+    /* i == 0: Program name */
+    // TODO: Provide one in the future...
+    /* i == 1: SystemPartition : from where FreeLdr has been started */
+    Size += (strlen("SystemPartition=") + strlen(BootPath) + 1) * sizeof(CHAR);
+    /* i == 2: LoadIdentifier  : ASCII string that may be used
+     * to associate an identifier with a set of load parameters */
+    if (LoadIdentifier)
+    {
+        Size += (strlen("LoadIdentifier=") + strlen(LoadIdentifier) + 1) * sizeof(CHAR);
+    }
+    /* The section items */
+    for (i = 0; i < Count; ++i)
+    {
+        Size += IniGetSectionSettingNameSize(SectionId, i);  // Counts also the NULL-terminator, that we transform into the '=' sign separator.
+        Size += IniGetSectionSettingValueSize(SectionId, i); // Counts also the NULL-terminator.
+    }
+    Size += sizeof(ANSI_NULL); // Final NULL-terminator.
+
+    /* Allocate memory to hold the argument vector: pointers and string buffer */
+    Argv = FrLdrHeapAlloc((Argc + 1) * sizeof(PCHAR) + Size, TAG_STRING);
+    if (!Argv)
+        return NULL;
+
+    /* Initialize the argument vector: loop through the section and copy the Key=Value options */
+    SettingName = (PCHAR)((ULONG_PTR)Argv + ((Argc + 1) * sizeof(PCHAR)));
+    Args = Argv;
+    /* i == 0: Program name */
+    *Args++ = NULL; // TODO: Provide one in the future...
+    /* i == 1: SystemPartition */
+    {
+        strcpy(SettingName, "SystemPartition=");
+        strcat(SettingName, BootPath);
+
+        *Args++ = SettingName;
+        SettingName += (strlen(SettingName) + 1);
+    }
+    /* i == 2: LoadIdentifier */
+    if (LoadIdentifier)
+    {
+        strcpy(SettingName, "LoadIdentifier=");
+        strcat(SettingName, LoadIdentifier);
+
+        *Args++ = SettingName;
+        SettingName += (strlen(SettingName) + 1);
+    }
+    /* The section items */
+    for (i = 0; i < Count; ++i)
+    {
+        Size = IniGetSectionSettingNameSize(SectionId, i);
+        SettingValue = SettingName + Size;
+        IniReadSettingByNumber(SectionId, i,
+                               SettingName, Size,
+                               SettingValue, IniGetSectionSettingValueSize(SectionId, i));
+        SettingName[Size - 1] = '=';
+
+        *Args++ = SettingName;
+        SettingName += (strlen(SettingName) + 1);
+    }
+    /* Terminating NULL pointer */
+    *Args = NULL;
+
+    /* Dump the argument vector */
+    for (i = 0; i < Argc; ++i)
+    {
+        TRACE("[BOOTMGR] Argv[%lu]='%s'\n", i, Argv[i]);
+    }
+
+    *pArgc = Argc;
+    return Argv;
+}
+
+VOID
+LoadOperatingSystem(
+    _In_ OperatingSystemItem* OperatingSystem)
+{
+    ULONG_PTR SectionId = OperatingSystem->SectionId;
+    const OS_LOADING_METHOD* OSLoadingMethod;
+    ULONG Argc;
+    PCHAR* Argv;
+
+    TRACE("[BOOTMGR] LoadOperatingSystem: Section=%p Identifier='%s'\n",
+          (PVOID)SectionId,
+          OperatingSystem->LoadIdentifier ? OperatingSystem->LoadIdentifier : "<unnamed>");
+
+    /* Find the suitable OS loader to start */
+    OSLoadingMethod = GetOSLoadingMethod(SectionId);
+    if (!OSLoadingMethod)
+    {
+        ERR("No OS loading method for section %p\n", (PVOID)SectionId);
+        return;
+    }
+    ASSERT(OSLoadingMethod->OsLoader);
+
+    TRACE("[BOOTMGR] Selected loader '%s'\n", OSLoadingMethod->BootType);
+
+    /* Build the ARC-compatible argument vector */
+    Argv = BuildArgvForOsLoader(OperatingSystem->LoadIdentifier, SectionId, &Argc);
+    if (!Argv)
+    {
+        ERR("BuildArgvForOsLoader failed for section %p\n", (PVOID)SectionId);
+        return; // Unexpected failure.
+    }
+
+    TRACE("[BOOTMGR] Argument vector built (argc=%lu)\n", Argc);
+
+#ifdef _M_IX86
+#ifndef UEFIBOOT
+    /* Install the drive mapper according to this section drive mappings */
+    DriveMapMapDrivesInSection(SectionId);
+#endif
+#endif
+
+    /* Start the OS loader */
+    TRACE("[BOOTMGR] Invoking OS loader entry point\n");
+    OSLoadingMethod->OsLoader(Argc, Argv, NULL);
+    TRACE("[BOOTMGR] OS loader returned\n");
+    FrLdrHeapFree(Argv, TAG_STRING);
+}
+
+#ifdef HAS_OPTION_MENU_EDIT_CMDLINE
+VOID
+EditOperatingSystemEntry(
+    _Inout_ OperatingSystemItem* OperatingSystem)
+{
+    /* Find the suitable OS entry editor and open it */
+    const OS_LOADING_METHOD* OSLoadingMethod =
+        GetOSLoadingMethod(OperatingSystem->SectionId);
+    if (OSLoadingMethod)
+    {
+        ASSERT(OSLoadingMethod->EditOsEntry);
+        OSLoadingMethod->EditOsEntry(OperatingSystem);
+    }
+}
+#endif // HAS_OPTION_MENU_EDIT_CMDLINE
+
+BOOLEAN
+MainBootMenuKeyPressFilter(
+    IN ULONG KeyPress,
+    IN ULONG SelectedMenuItem,
+    IN PVOID Context OPTIONAL)
+{
+    /* Any key-press cancels the global timeout */
+    GetBootMgrInfo()->TimeOut = -1;
+
+    switch (KeyPress)
+    {
+    case KEY_F8:
+        DoOptionsMenu(&((OperatingSystemItem*)Context)[SelectedMenuItem]);
+        DisplayBootTimeOptions();
+        return TRUE;
+
+#ifdef HAS_OPTION_MENU_EDIT_CMDLINE
+    case KEY_F10:
+        EditOperatingSystemEntry(&((OperatingSystemItem*)Context)[SelectedMenuItem]);
+        return TRUE;
+#endif
+
+    default:
+        /* We didn't handle the key */
+        return FALSE;
+    }
+}
+
+VOID RunLoader(VOID)
+{
+    OperatingSystemItem* OperatingSystemList;
+    ULONG OperatingSystemCount;
+    ULONG DefaultOperatingSystem;
+    ULONG SelectedOperatingSystem;
+
+    TRACE("[BOOTMGR] RunLoader begin\n");
+
+#ifdef _M_IX86
+#ifndef UEFIBOOT
+    /* Load additional SCSI driver (if any) */
+    if (LoadBootDeviceDriver() != ESUCCESS)
+    {
+        UiMessageBoxCritical("Unable to load additional boot device drivers.");
+    }
+#endif
+#endif
+
+    /* Open FREELDR.INI and load the global FreeLoader settings */
+    TRACE("[BOOTMGR] Initializing freeldr.ini parser\n");
+    if (!IniFileInitialize())
+    {
+        ERR("IniFileInitialize failed\n");
+        UiMessageBoxCritical("Error initializing .ini file.");
+        return;
+    }
+    TRACE("[BOOTMGR] freeldr.ini parsed successfully\n");
+    LoadSettings(NULL);
+#if 0
+    if (FALSE)
+    {
+        UiMessageBoxCritical("Could not load global FreeLoader settings.");
+        return;
+    }
+#endif
+
+    /* Debugger main initialization */
+    DebugInit(GetBootMgrInfo()->DebugString);
+
+    /* UI main initialization */
+    TRACE("[BOOTMGR] UiInitialize(TRUE)\n");
+    if (!UiInitialize(TRUE))
+    {
+        UiMessageBoxCritical("Unable to initialize UI.");
+        return;
+    }
+    TRACE("[BOOTMGR] UI ready\n");
+
+    OperatingSystemList = InitOperatingSystemList(&OperatingSystemCount,
+                                                  &DefaultOperatingSystem);
+    if (!OperatingSystemList)
+    {
+        ERR("InitOperatingSystemList failed\n");
+        UiMessageBox("Unable to read operating systems section in freeldr.ini.\nPress ENTER to reboot.");
+        goto Reboot;
+    }
+    if (OperatingSystemCount == 0)
+    {
+        ERR("No operating systems found in freeldr.ini\n");
+        UiMessageBox("There were no operating systems listed in freeldr.ini.\nPress ENTER to reboot.");
+        goto Reboot;
+    }
+
+    /* Find all the message box settings and run them */
+    UiShowMessageBoxesInSection(GetBootMgrInfo()->FrLdrSection);
+
+    /* Choose the default operating system without presenting a menu */
+    if (DefaultOperatingSystem >= OperatingSystemCount)
+    {
+        TRACE("Default operating system index %lu out of range, using first entry\n",
+              DefaultOperatingSystem);
+        SelectedOperatingSystem = 0;
+    }
+    else
+    {
+        SelectedOperatingSystem = DefaultOperatingSystem;
+    }
+
+    TRACE("Auto-booting OS entry %lu (%s)\n",
+          SelectedOperatingSystem,
+          OperatingSystemList[SelectedOperatingSystem].LoadIdentifier);
+
+    UiDrawBackdrop(UiGetScreenHeight() - 2);
+    UiDrawStatusText("Booting default entry...");
+
+    /* Launch the default operating system directly */
+    TRACE("[BOOTMGR] Launching loader for '%s'\n",
+          OperatingSystemList[SelectedOperatingSystem].LoadIdentifier ?
+          OperatingSystemList[SelectedOperatingSystem].LoadIdentifier : "<unnamed>");
+    LoadOperatingSystem(&OperatingSystemList[SelectedOperatingSystem]);
+
+    /* If execution continues past the loader, treat as a failure */
+    ERR("Boot loader returned unexpectedly\n");
+    UiMessageBox("Boot loader returned unexpectedly.\nPress ENTER to reboot.");
+
+Reboot:
+    UiUnInitialize("Rebooting...");
+    IniCleanup();
+    return;
+}

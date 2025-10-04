@@ -1,0 +1,5 @@
+add_host_tool(png2bgra png2bgra.c ${REACTOS_SOURCE_DIR}/libspng/spng/spng.c)
+target_include_directories(png2bgra PRIVATE ${REACTOS_SOURCE_DIR}/libspng/spng)
+if (UNIX)
+    target_link_libraries(png2bgra PRIVATE z m)
+endif()
