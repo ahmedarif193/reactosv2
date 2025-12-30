@@ -444,6 +444,9 @@ function(set_entrypoint MODULE ENTRYPOINT)
         if(_t_arch STREQUAL "arm64")
             target_link_options(${MODULE} PRIVATE "-Wl,--entry=__ReactOSNoEntry")
             target_sources(${MODULE} PRIVATE ${REACTOS_SOURCE_DIR}/sdk/lib/crt/startup/noentry_arm64.c)
+        elseif(_t_arch STREQUAL "amd64")
+            target_link_options(${MODULE} PRIVATE "-Wl,--entry=__ReactOSNoEntry")
+            target_sources(${MODULE} PRIVATE ${REACTOS_SOURCE_DIR}/sdk/lib/crt/startup/noentry_amd64.c)
         endif()
     elseif(_t_arch STREQUAL "i386")
         set(_entrysymbol _${ENTRYPOINT})
@@ -582,6 +585,61 @@ if(NOT DLLTOOL_EXTRA_ARGS)
     set(DLLTOOL_EXTRA_ARGS -m i386:x86-64)
 endif()
 
+set(DLLTOOL_DELAYLIB ${CMAKE_DLLTOOL})
+if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND NOT CMAKE_HOST_WIN32)
+    get_filename_component(_dlltool_real "${CMAKE_DLLTOOL}" REALPATH)
+    get_filename_component(_dlltool_real_name "${_dlltool_real}" NAME)
+    if(_dlltool_real_name MATCHES "^llvm-")
+        set(_delay_dlltool_name "dlltool")
+        if(MINGW_TOOLCHAIN_PREFIX)
+            set(_delay_dlltool_name "${MINGW_TOOLCHAIN_PREFIX}dlltool")
+        endif()
+        set(_delay_dlltool_candidate)
+        if(DEFINED ROS_GNU_MINGW_TOOLCHAIN_PATH AND NOT ROS_GNU_MINGW_TOOLCHAIN_PATH STREQUAL "")
+            set(_delay_dlltool_path "${ROS_GNU_MINGW_TOOLCHAIN_PATH}/${_delay_dlltool_name}")
+            if(EXISTS "${_delay_dlltool_path}")
+                set(_delay_dlltool_candidate "${_delay_dlltool_path}")
+            endif()
+            unset(_delay_dlltool_path)
+        endif()
+        set(_delay_dlltool_hints)
+        if(DEFINED ROS_GNU_MINGW_TOOLCHAIN_PATH AND NOT ROS_GNU_MINGW_TOOLCHAIN_PATH STREQUAL "")
+            list(APPEND _delay_dlltool_hints ${ROS_GNU_MINGW_TOOLCHAIN_PATH})
+        endif()
+        if(DEFINED ENV{ROS_GNU_MINGW_TOOLCHAIN_PATH} AND NOT "$ENV{ROS_GNU_MINGW_TOOLCHAIN_PATH}" STREQUAL "")
+            list(APPEND _delay_dlltool_hints "$ENV{ROS_GNU_MINGW_TOOLCHAIN_PATH}")
+        endif()
+        list(APPEND _delay_dlltool_hints /usr/bin /usr/local/bin)
+        if(NOT _delay_dlltool_candidate)
+            find_program(_delay_dlltool_candidate
+                NAMES ${_delay_dlltool_name}
+                HINTS ${_delay_dlltool_hints}
+                NO_DEFAULT_PATH)
+        endif()
+        if(NOT _delay_dlltool_candidate)
+            find_program(_delay_dlltool_candidate
+                NAMES ${_delay_dlltool_name})
+        endif()
+        if(_delay_dlltool_candidate)
+            get_filename_component(_delay_dlltool_real "${_delay_dlltool_candidate}" REALPATH)
+            get_filename_component(_delay_dlltool_real_name "${_delay_dlltool_real}" NAME)
+            if(NOT _delay_dlltool_real_name STREQUAL "llvm-dlltool")
+                set(DLLTOOL_DELAYLIB ${_delay_dlltool_candidate})
+            endif()
+        endif()
+        if("${DLLTOOL_DELAYLIB}" STREQUAL "${CMAKE_DLLTOOL}")
+            message(WARNING "llvm-dlltool lacks --output-delaylib; install binutils dlltool to build delay import libs.")
+        endif()
+        unset(_delay_dlltool_candidate)
+        unset(_delay_dlltool_hints)
+        unset(_delay_dlltool_name)
+        unset(_delay_dlltool_real)
+        unset(_delay_dlltool_real_name)
+    endif()
+    unset(_dlltool_real)
+    unset(_dlltool_real_name)
+endif()
+
 function(fixup_load_config _target)
     add_custom_command(TARGET ${_target} POST_BUILD
         COMMAND native-pefixup --loadconfig "$<TARGET_FILE:${_target}>"
@@ -699,7 +757,7 @@ function(generate_import_lib _libname _dllname _spec_file __version_arg __dbg_ar
             OUTPUT ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
             # Delete any existing file in the private directory before creating new one
             COMMAND ${CMAKE_COMMAND} -E rm -f ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
-            COMMAND ${CMAKE_DLLTOOL} ${_dlltool_args} --def ${_implib_def} ${_dlltool_killat_flag} --output-delaylib=${_libname}_delayed.a -t ${_libname}_delayed
+            COMMAND ${DLLTOOL_DELAYLIB} ${_dlltool_args} --def ${_implib_def} ${_dlltool_killat_flag} --output-delaylib=${_libname}_delayed.a -t ${_libname}_delayed
             COMMAND ${CMAKE_RANLIB} ${_libname}_delayed.a
             DEPENDS ${_implib_def}
             WORKING_DIRECTORY ${LIBRARY_PRIVATE_DIR})
@@ -713,7 +771,7 @@ function(generate_import_lib _libname _dllname _spec_file __version_arg __dbg_ar
             OUTPUT ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
             # Delete any existing file in the private directory before creating new one
             COMMAND ${CMAKE_COMMAND} -E rm -f ${LIBRARY_PRIVATE_DIR}/${_libname}_delayed.a
-            COMMAND ${CMAKE_DLLTOOL} ${_dlltool_args} --def ${_implib_def} ${_dlltool_killat_flag} --output-delaylib=${_libname}_delayed.a -t ${_libname}_delayed
+            COMMAND ${DLLTOOL_DELAYLIB} ${_dlltool_args} --def ${_implib_def} ${_dlltool_killat_flag} --output-delaylib=${_libname}_delayed.a -t ${_libname}_delayed
             DEPENDS ${_implib_def}
             WORKING_DIRECTORY ${LIBRARY_PRIVATE_DIR})
     endif()
@@ -812,6 +870,64 @@ endmacro()
 # PSEH lib, needed with mingw
 set(PSEH_LIB "pseh")
 
+# Clang's integrated assembler and llvm-mingw 'as' wrapper choke on NT-style asm.
+set(BOOTSECT_ASM_EXTRA_FLAGS)
+set(CLANG_ASM_EXTRA_FLAGS)
+if(CMAKE_C_COMPILER_ID STREQUAL "Clang" AND (ARCH STREQUAL "i386" OR ARCH STREQUAL "amd64"))
+    if(NOT CMAKE_HOST_WIN32)
+        set(_clang_binutils_as_name "${MINGW_TOOLCHAIN_PREFIX}as")
+        set(_clang_binutils_as)
+        if(DEFINED ROS_GNU_MINGW_TOOLCHAIN_PATH AND NOT ROS_GNU_MINGW_TOOLCHAIN_PATH STREQUAL "")
+            set(_clang_binutils_as "${ROS_GNU_MINGW_TOOLCHAIN_PATH}/${_clang_binutils_as_name}")
+            if(NOT EXISTS "${_clang_binutils_as}")
+                set(_clang_binutils_as)
+            endif()
+        endif()
+        set(_clang_binutils_as_hints)
+        if(DEFINED ROS_GNU_MINGW_TOOLCHAIN_PATH AND NOT ROS_GNU_MINGW_TOOLCHAIN_PATH STREQUAL "")
+            list(APPEND _clang_binutils_as_hints ${ROS_GNU_MINGW_TOOLCHAIN_PATH})
+        endif()
+        if(DEFINED ENV{ROS_GNU_MINGW_TOOLCHAIN_PATH} AND NOT "$ENV{ROS_GNU_MINGW_TOOLCHAIN_PATH}" STREQUAL "")
+            list(APPEND _clang_binutils_as_hints "$ENV{ROS_GNU_MINGW_TOOLCHAIN_PATH}")
+        endif()
+        list(APPEND _clang_binutils_as_hints /usr/bin /usr/local/bin)
+        if(NOT _clang_binutils_as)
+            find_program(_clang_binutils_as
+                NAMES ${_clang_binutils_as_name}
+                HINTS ${_clang_binutils_as_hints}
+                NO_DEFAULT_PATH)
+        endif()
+        if(NOT _clang_binutils_as)
+            find_program(_clang_binutils_as
+                NAMES ${_clang_binutils_as_name})
+        endif()
+        if(_clang_binutils_as)
+            set(_clang_as_wrapper_dir "${CMAKE_BINARY_DIR}/clang-gnu-tools")
+            file(MAKE_DIRECTORY "${_clang_as_wrapper_dir}")
+            set(_clang_as_wrapper "${_clang_as_wrapper_dir}/as")
+            if(EXISTS "${_clang_as_wrapper}")
+                file(REMOVE "${_clang_as_wrapper}")
+            endif()
+            file(CREATE_LINK "${_clang_binutils_as}" "${_clang_as_wrapper}" SYMBOLIC RESULT _clang_as_link_result)
+            if(NOT _clang_as_link_result EQUAL 0)
+                message(WARNING "Failed to create clang GNU as shim at ${_clang_as_wrapper} (result ${_clang_as_link_result}).")
+            endif()
+            set(CLANG_ASM_EXTRA_FLAGS -fno-integrated-as -B${_clang_as_wrapper_dir})
+            add_compile_options("$<$<COMPILE_LANGUAGE:ASM>:-fno-integrated-as>"
+                                "$<$<COMPILE_LANGUAGE:ASM>:-B${_clang_as_wrapper_dir}>")
+            set(BOOTSECT_ASM_EXTRA_FLAGS ${CLANG_ASM_EXTRA_FLAGS})
+            unset(_clang_as_wrapper_dir)
+            unset(_clang_as_wrapper)
+            unset(_clang_as_link_result)
+        else()
+            message(WARNING "Clang assembly may fail without GNU ${_clang_binutils_as_name} from binutils.")
+        endif()
+        unset(_clang_binutils_as_name)
+        unset(_clang_binutils_as)
+        unset(_clang_binutils_as_hints)
+    endif()
+endif()
+
 function(CreateBootSectorTarget _target_name _asm_file _binary_file _base_address)
     set(_object_file ${_binary_file}.o)
 
@@ -820,7 +936,7 @@ function(CreateBootSectorTarget _target_name _asm_file _binary_file _base_addres
 
     add_custom_command(
         OUTPUT ${_object_file}
-        COMMAND ${CMAKE_ASM_COMPILER} -x assembler-with-cpp -o ${_object_file} -I${REACTOS_SOURCE_DIR}/sdk/include/asm -I${REACTOS_BINARY_DIR}/sdk/include/asm ${_includes} ${_defines} -D__ASM__ -c ${_asm_file}
+        COMMAND ${CMAKE_ASM_COMPILER} ${BOOTSECT_ASM_EXTRA_FLAGS} -x assembler-with-cpp -o ${_object_file} -I${REACTOS_SOURCE_DIR}/sdk/include/asm -I${REACTOS_BINARY_DIR}/sdk/include/asm ${_includes} ${_defines} -D__ASM__ -c ${_asm_file}
         DEPENDS ${_asm_file})
 
     add_custom_command(

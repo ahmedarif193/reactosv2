@@ -45,7 +45,7 @@ function(add_asm16_bin _target _binary_file _base_address)
     ##
     add_custom_command(
         OUTPUT ${_object_file}
-        COMMAND ${CMAKE_ASM_COMPILER} -x assembler-with-cpp -o ${_object_file} -I${REACTOS_SOURCE_DIR}/sdk/include/asm -I${REACTOS_BINARY_DIR}/sdk/include/asm ${_directory_includes} ${_source_file_defines} ${_directory_defines} -D__ASM__ -c ${_concatenated_asm_file}
+        COMMAND ${CMAKE_ASM_COMPILER} ${CLANG_ASM_EXTRA_FLAGS} -x assembler-with-cpp -o ${_object_file} -I${REACTOS_SOURCE_DIR}/sdk/include/asm -I${REACTOS_BINARY_DIR}/sdk/include/asm ${_directory_includes} ${_source_file_defines} ${_directory_defines} -D__ASM__ -c ${_concatenated_asm_file}
         DEPENDS ${_concatenated_asm_file})
 
     add_custom_command(
