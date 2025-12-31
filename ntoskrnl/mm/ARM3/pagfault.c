@@ -2283,8 +2283,34 @@ _WARN("Session space stuff is not implemented yet!")
              */
             extern VOID MiArm64MapAliasForPointer(_In_ PVOID AliasVa);
 
+            /* Track available pages before and after to detect recursion issues */
+            PFN_NUMBER PagesBefore = MmAvailablePages;
+
             /* Ensure the self-map alias page is backed by physical memory */
             MiArm64MapAliasForPointer(Address);
+
+            /* Log if excessive pages were consumed (indicates recursion) */
+            {
+                PFN_NUMBER PagesAfter = MmAvailablePages;
+                PFN_NUMBER PagesConsumed = (PagesBefore > PagesAfter) ? (PagesBefore - PagesAfter) : 0;
+
+                if (PagesConsumed > 10)
+                {
+                    static volatile LONG ExcessiveLogBudget = 5;
+                    if (ExcessiveLogBudget > 0)
+                    {
+                        if (InterlockedDecrement(&ExcessiveLogBudget) >= 0)
+                        {
+                            extern VOID KiArm64BootStageLog(_In_z_ PCSTR Message);
+                            CHAR Buffer[200];
+                            RtlStringCbPrintfA(Buffer, sizeof(Buffer),
+                                "[pagfault] WARNING: MiArm64MapAliasForPointer consumed %lu pages for %p (before=%lu after=%lu)",
+                                (ULONG)PagesConsumed, Address, (ULONG)PagesBefore, (ULONG)PagesAfter);
+                            KiArm64BootStageLog(Buffer);
+                        }
+                    }
+                }
+            }
 
             /*
              * Invalidate TLB for the faulting address. The mapping was just created

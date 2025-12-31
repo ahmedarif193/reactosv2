@@ -481,10 +481,37 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
     PVOID BaseVa, BaseVaStart;
     PMMFREE_POOL_ENTRY FreeEntry;
 
+#if defined(_M_ARM64)
+    static ULONG MiAllocatePoolPagesCallCount = 0;
+    static ULONG MiAllocatePoolPagesPagesConsumed = 0;
+    MiAllocatePoolPagesCallCount++;
+#endif
+
     //
     // Figure out how big the allocation is in pages
     //
     SizeInPages = (PFN_COUNT)BYTES_TO_PAGES(SizeInBytes);
+
+#if defined(_M_ARM64)
+    /* ARM64: Track pool page allocations during early boot */
+    if (MiAllocatePoolPagesCallCount <= 20 || (MiAllocatePoolPagesCallCount % 100) == 0)
+    {
+        extern VOID KiArm64BootStageLog(_In_z_ PCSTR Stage);
+        extern PMEMORY_ALLOCATION_DESCRIPTOR MxFreeDescriptor;
+        CHAR TrackLog[300];
+        if (NT_SUCCESS(RtlStringCbPrintfA(TrackLog, sizeof(TrackLog),
+            "[arm64] MiAllocatePoolPages call#%lu: Type=%s Size=%lu pages=%lu MxFree=%lu MmAvail=%lu",
+            (ULONG)MiAllocatePoolPagesCallCount,
+            ((PoolType & BASE_POOL_TYPE_MASK) == PagedPool) ? "Paged" : "NonPaged",
+            (ULONG)SizeInBytes,
+            (ULONG)SizeInPages,
+            (ULONG)(MxFreeDescriptor ? MxFreeDescriptor->PageCount : 0),
+            (ULONG)MmAvailablePages)))
+        {
+            KiArm64BootStageLog(TrackLog);
+        }
+    }
+#endif
 
     //
     // Check for overflow

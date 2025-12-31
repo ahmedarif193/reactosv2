@@ -1861,6 +1861,13 @@ VOID
 NTAPI
 MiInitializeWorkingSetList(_Inout_ PMMSUPPORT WorkingSet);
 
+/* ARM64-specific MM functions ***********************************************/
+#if defined(_M_ARM64) || defined(__aarch64__)
+VOID
+MiArm64MapAliasForPointer(
+    _In_ PVOID AliasVa);
+#endif
+
 #ifdef __cplusplus
 } // extern "C"
 

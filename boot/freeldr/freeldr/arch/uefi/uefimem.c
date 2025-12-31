@@ -409,5 +409,16 @@ UefiExitBootServices(VOID)
 VOID
 UefiPrepareForReactOS(VOID)
 {
+    /*
+     * Exit UEFI boot services. After this call:
+     * - UEFI boot services are no longer available
+     * - Memory map is finalized
+     * - We have full control of the system
+     *
+     * On ARM64, _exituefi performs critical cache maintenance after
+     * ExitBootServices to ensure instruction cache coherency, and
+     * preserves the return address in a callee-saved register to
+     * avoid stack corruption issues.
+     */
     _exituefi();
 }

@@ -138,6 +138,19 @@ MiInitSystemMemoryAreas(VOID)
 
     // KUSER_SHARED_DATA
     MiCreateArm3StaticMemoryArea((PVOID)KI_USER_SHARED_DATA, PAGE_SIZE, FALSE);
+
+#if defined(_M_ARM64) || defined(__aarch64__)
+    //
+    // ARM64: Pre-map the PTE for KI_USER_SHARED_DATA in the self-map structure.
+    // This ensures that when Phase 1 tries to read the PTE at line 325, the
+    // self-map entry is already accessible and won't trigger a page fault while
+    // holding the paged pool mutex (IRQL 2).
+    //
+    {
+        PMMPTE SharedDataPte = MiAddressToPte((PVOID)KI_USER_SHARED_DATA);
+        MiArm64MapAliasForPointer(SharedDataPte);
+    }
+#endif
 #endif /* _X86_ */
 
     MmUnlockAddressSpace(MmGetKernelAddressSpace());
@@ -314,6 +327,8 @@ MmInitSystem(IN ULONG Phase,
 
     //
     // Now get the PTE for shared data, and read the PFN that holds it
+    // (ARM64: The PTE self-map entry was pre-populated in Phase 0 to avoid
+    // page faults while holding the paged pool mutex at IRQL 2)
     //
     PointerPte = MiAddressToPte((PVOID)KI_USER_SHARED_DATA);
     ASSERT(PointerPte->u.Hard.Valid == 1);

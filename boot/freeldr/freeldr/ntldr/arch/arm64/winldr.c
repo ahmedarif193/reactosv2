@@ -481,17 +481,60 @@ Arm64SetupForNt(
 {
     TRACE("ARM64: Setting up for NT kernel\n");
 
+#if defined(_M_ARM64) || defined(__aarch64__)
+    {
+        volatile ULONG *Uart = (volatile ULONG *)0x09000000UL;
+        const char *msg = "[PL011] Arm64SetupForNt entered\r\n";
+        while (*msg) {
+            while (Uart[0x18 / sizeof(ULONG)] & (1 << 5)) {}
+            Uart[0] = *msg++;
+        }
+    }
+#endif
+
     /* ARM64 doesn't use GDT/IDT or TSS like x86 */
     *GdtIdt = NULL;
     *PcrBasePage = 0;
     *TssBasePage = 0;
 
+#if defined(_M_ARM64) || defined(__aarch64__)
+    {
+        volatile ULONG *Uart = (volatile ULONG *)0x09000000UL;
+        const char *msg = "[PL011] About to allocate kernel data structures\r\n";
+        while (*msg) {
+            while (Uart[0x18 / sizeof(ULONG)] & (1 << 5)) {}
+            Uart[0] = *msg++;
+        }
+    }
+#endif
+
     /* Allocate kernel data structures including stacks */
     if (!Arm64AllocateKernelDataStructures())
     {
         ERR("ARM64: Failed to allocate kernel data structures\n");
+#if defined(_M_ARM64) || defined(__aarch64__)
+        {
+            volatile ULONG *Uart = (volatile ULONG *)0x09000000UL;
+            const char *msg = "[PL011] ERROR: Arm64AllocateKernelDataStructures FAILED\r\n";
+            while (*msg) {
+                while (Uart[0x18 / sizeof(ULONG)] & (1 << 5)) {}
+                Uart[0] = *msg++;
+            }
+        }
+#endif
         return FALSE;
     }
+
+#if defined(_M_ARM64) || defined(__aarch64__)
+    {
+        volatile ULONG *Uart = (volatile ULONG *)0x09000000UL;
+        const char *msg = "[PL011] Kernel data structures allocated successfully\r\n";
+        while (*msg) {
+            while (Uart[0x18 / sizeof(ULONG)] & (1 << 5)) {}
+            Uart[0] = *msg++;
+        }
+    }
+#endif
 
     /*
      * Populate LoaderBlock with stack and structure pointers.
@@ -608,8 +651,31 @@ WinLdrSetupMachineDependent(
     ULONG PcrBasePage = 0;
     ULONG TssBasePage = 0;
 
+#if defined(_M_ARM64) || defined(__aarch64__)
+    /* Direct PL011 UART output - works after ExitBootServices */
+    {
+        volatile ULONG *Uart = (volatile ULONG *)0x09000000UL;
+        const char *msg = "[PL011] WinLdrSetupMachineDependent entered\r\n";
+        while (*msg) {
+            while (Uart[0x18 / sizeof(ULONG)] & (1 << 5)) {}
+            Uart[0] = *msg++;
+        }
+    }
+#endif
+
     /* Delegate to the ARM64-specific setup; GDT/IDT/TSS are not used on AArch64 */
     (void)Arm64SetupForNt(LoaderBlock, &GdtIdt, &PcrBasePage, &TssBasePage);
+
+#if defined(_M_ARM64) || defined(__aarch64__)
+    {
+        volatile ULONG *Uart = (volatile ULONG *)0x09000000UL;
+        const char *msg = "[PL011] WinLdrSetupMachineDependent completed\r\n";
+        while (*msg) {
+            while (Uart[0x18 / sizeof(ULONG)] & (1 << 5)) {}
+            Uart[0] = *msg++;
+        }
+    }
+#endif
 }
 
 /* -------------------------------------------------------------------------- */
@@ -673,6 +739,17 @@ Arm64AllocateKernelDataStructures(VOID)
 {
     TRACE("ARM64: Allocating kernel data structures\n");
 
+#if defined(_M_ARM64) || defined(__aarch64__)
+    {
+        volatile ULONG *Uart = (volatile ULONG *)0x09000000UL;
+        const char *msg = "[PL011] Arm64AllocateKernelDataStructures entered\r\n";
+        while (*msg) {
+            while (Uart[0x18 / sizeof(ULONG)] & (1 << 5)) {}
+            Uart[0] = *msg++;
+        }
+    }
+#endif
+
     /* Allocate the ARM64 kernel data block which contains all stacks and structures.
        This returns a physical allocation in the loader's address space. */
     KernelDataBlock = MmAllocateMemoryWithType(sizeof(ARM64_KERNEL_DATA), LoaderMemoryData);
@@ -680,11 +757,43 @@ Arm64AllocateKernelDataStructures(VOID)
     {
         ERR("ARM64: Failed to allocate kernel data block of size %zu bytes\n",
             sizeof(ARM64_KERNEL_DATA));
+#if defined(_M_ARM64) || defined(__aarch64__)
+        {
+            volatile ULONG *Uart = (volatile ULONG *)0x09000000UL;
+            const char *msg = "[PL011] ERROR: MmAllocateMemoryWithType FAILED\r\n";
+            while (*msg) {
+                while (Uart[0x18 / sizeof(ULONG)] & (1 << 5)) {}
+                Uart[0] = *msg++;
+            }
+        }
+#endif
         return FALSE;
     }
 
+#if defined(_M_ARM64) || defined(__aarch64__)
+    {
+        volatile ULONG *Uart = (volatile ULONG *)0x09000000UL;
+        const char *msg = "[PL011] MmAllocateMemoryWithType succeeded\r\n";
+        while (*msg) {
+            while (Uart[0x18 / sizeof(ULONG)] & (1 << 5)) {}
+            Uart[0] = *msg++;
+        }
+    }
+#endif
+
     /* Zero out the entire data block for clean initialization */
     RtlZeroMemory(KernelDataBlock, sizeof(ARM64_KERNEL_DATA));
+
+#if defined(_M_ARM64) || defined(__aarch64__)
+    {
+        volatile ULONG *Uart = (volatile ULONG *)0x09000000UL;
+        const char *msg = "[PL011] RtlZeroMemory completed\r\n";
+        while (*msg) {
+            while (Uart[0x18 / sizeof(ULONG)] & (1 << 5)) {}
+            Uart[0] = *msg++;
+        }
+    }
+#endif
 
     /*
      * Initialize the KTHREAD structure's stack fields.
@@ -722,6 +831,17 @@ Arm64AllocateKernelDataStructures(VOID)
     TRACE("ARM64: Prcb at %p, Process at %p, Thread at %p\n",
           KernelDataBlock->Prcb, KernelDataBlock->InitialProcess, KernelDataBlock->InitialThread);
 
+#if defined(_M_ARM64) || defined(__aarch64__)
+    {
+        volatile ULONG *Uart = (volatile ULONG *)0x09000000UL;
+        const char *msg = "[PL011] About to map kernel data block\r\n";
+        while (*msg) {
+            while (Uart[0x18 / sizeof(ULONG)] & (1 << 5)) {}
+            Uart[0] = *msg++;
+        }
+    }
+#endif
+
     /* Mirror the kernel data block into KSEG0 so the kernel stack & PCR are accessible */
     {
         ULONGLONG block_pa = (ULONGLONG)(ULONG_PTR)KernelDataBlock;
@@ -738,6 +858,16 @@ Arm64AllocateKernelDataStructures(VOID)
                 (unsigned long long)block_pa,
                 (unsigned long long)block_va,
                 (unsigned long long)map_size);
+#if defined(_M_ARM64) || defined(__aarch64__)
+            {
+                volatile ULONG *Uart = (volatile ULONG *)0x09000000UL;
+                const char *msg = "[PL011] ERROR: Arm64MapVirtualMemory FAILED\r\n";
+                while (*msg) {
+                    while (Uart[0x18 / sizeof(ULONG)] & (1 << 5)) {}
+                    Uart[0] = *msg++;
+                }
+            }
+#endif
             return FALSE;
         }
 
@@ -746,8 +876,42 @@ Arm64AllocateKernelDataStructures(VOID)
               (unsigned long long)map_size);
     }
 
+#if defined(_M_ARM64) || defined(__aarch64__)
+    {
+        volatile ULONG *Uart = (volatile ULONG *)0x09000000UL;
+        const char *msg = "[PL011] Kernel data block mapped, checking shared user data\r\n";
+        while (*msg) {
+            while (Uart[0x18 / sizeof(ULONG)] & (1 << 5)) {}
+            Uart[0] = *msg++;
+        }
+    }
+#endif
+
     if (!Arm64EnsureSharedUserDataMapped())
+    {
+#if defined(_M_ARM64) || defined(__aarch64__)
+        {
+            volatile ULONG *Uart = (volatile ULONG *)0x09000000UL;
+            const char *msg = "[PL011] ERROR: Arm64EnsureSharedUserDataMapped FAILED\r\n";
+            while (*msg) {
+                while (Uart[0x18 / sizeof(ULONG)] & (1 << 5)) {}
+                Uart[0] = *msg++;
+            }
+        }
+#endif
         return FALSE;
+    }
+
+#if defined(_M_ARM64) || defined(__aarch64__)
+    {
+        volatile ULONG *Uart = (volatile ULONG *)0x09000000UL;
+        const char *msg = "[PL011] Arm64AllocateKernelDataStructures completed successfully\r\n";
+        while (*msg) {
+            while (Uart[0x18 / sizeof(ULONG)] & (1 << 5)) {}
+            Uart[0] = *msg++;
+        }
+    }
+#endif
 
     return TRUE;
 }
