@@ -600,6 +600,37 @@ KiArm64HandleSynchronousException(
                                     (PVOID)(ULONG_PTR)TrapFrame->X[2],
                                     (PVOID)(ULONG_PTR)TrapFrame->X[3]);
             }
+            else
+            {
+                /* Log kernel-mode data aborts for System View Space investigation */
+                extern PVOID MiSystemViewStart;
+                extern SIZE_T MmSystemViewSize;
+
+                KI_ARM64_STAGE_LOGF("[arm64] DA kern: far=%p elr=%p sp=%p lr=%p esr=0x%lx",
+                                    (PVOID)(ULONG_PTR)Context->State.FaultAddress,
+                                    (PVOID)(ULONG_PTR)Context->State.Elr,
+                                    (PVOID)(ULONG_PTR)TrapFrame->Sp,
+                                    (PVOID)(ULONG_PTR)TrapFrame->X[30],
+                                    Esr);
+
+                /* Check if this is System View Space access */
+                if (MiSystemViewStart != NULL &&
+                    (ULONG_PTR)Context->State.FaultAddress >= (ULONG_PTR)MiSystemViewStart &&
+                    (ULONG_PTR)Context->State.FaultAddress < ((ULONG_PTR)MiSystemViewStart + MmSystemViewSize))
+                {
+                    KI_ARM64_STAGE_LOGF("[arm64] SYSVIEW ACCESS: far=%p (offset=0x%lx) elr=%p",
+                                        (PVOID)(ULONG_PTR)Context->State.FaultAddress,
+                                        (ULONG_PTR)Context->State.FaultAddress - (ULONG_PTR)MiSystemViewStart,
+                                        (PVOID)(ULONG_PTR)Context->State.Elr);
+                    KI_ARM64_STAGE_LOGF("[arm64] SYSVIEW REGS: x0=%p x1=%p x2=%p x3=%p x4=%p x5=%p",
+                                        (PVOID)(ULONG_PTR)TrapFrame->X[0],
+                                        (PVOID)(ULONG_PTR)TrapFrame->X[1],
+                                        (PVOID)(ULONG_PTR)TrapFrame->X[2],
+                                        (PVOID)(ULONG_PTR)TrapFrame->X[3],
+                                        (PVOID)(ULONG_PTR)TrapFrame->X[4],
+                                        (PVOID)(ULONG_PTR)TrapFrame->X[5]);
+                }
+            }
 
             PreviousMode = KiArm64PreviousModeFromSpsr(Context->State.Spsr);
             WriteAccess = (Iss & (1u << 6)) != 0;

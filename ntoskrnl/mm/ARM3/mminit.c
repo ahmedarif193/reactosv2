@@ -1066,15 +1066,61 @@ MiBuildPfnDatabaseFromLoaderBlock(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 #endif
                 while (PageCount--)
                 {
-                    /* If the page really has no references, mark it as free */
+                    /* CRITICAL FIX (ARM64): MxGetNextPage allocates pages from MxFreeDescriptor starting
+                     * at BasePage, incrementing it with each allocation. However, the loader block
+                     * descriptors are NOT updated to reflect these allocations. This means pages below
+                     * MxFreeDescriptor->BasePage were already allocated by MxGetNextPage before
+                     * MiInitializePfnDatabase ran.
+                     *
+                     * Problem: If we insert these already-allocated pages into the free list, they will
+                     * have PageLocation=ZeroedPageList but won't actually be in the list structure,
+                     * causing assertion failures when MiInitializePfnForOtherProcess tries to unlink them.
+                     *
+                     * Solution: For ALL descriptors (not just MxFreeDescriptor), skip pages below
+                     * MxFreeDescriptor->BasePage since those were already allocated. */
+                    BOOLEAN ShouldInsert = FALSE;
+
                     if (!Pfn1->u3.e2.ReferenceCount)
                     {
-                        /* Add it to the free list */
-                        Pfn1->u3.e1.CacheAttribute = MiNonCached;
-                        MiInsertPageInFreeList(PageFrameIndex);
 #if defined(_M_ARM64)
-                        PagesInserted++;
+                        /* Debug: Log if this is PFN 48000 */
+                        if (PageFrameIndex == 48000)
+                        {
+                            CHAR DbgLog[256];
+                            RtlStringCbPrintfA(DbgLog, sizeof(DbgLog),
+                                "[arm64] DEBUG: Desc type=%u base=%lu count=%lu, PFN 48000, MxFree->Base=%lu, Check: %lu >= %lu = %d",
+                                (unsigned)MdBlock->MemoryType, (ULONG)MdBlock->BasePage, (ULONG)OrigPageCount,
+                                (ULONG)MxFreeDescriptor->BasePage,
+                                (ULONG)PageFrameIndex, (ULONG)MxFreeDescriptor->BasePage,
+                                (int)(PageFrameIndex >= MxFreeDescriptor->BasePage));
+                            KiArm64BootStageLog(DbgLog);
+                        }
+
+                        /* On ARM64, check if page was already allocated via MxGetNextPage */
+                        if (PageFrameIndex >= MxFreeDescriptor->BasePage)
+                        {
+                            /* Page is still free - safe to insert */
+                            ShouldInsert = TRUE;
+                        }
+                        else
+                        {
+                            /* Page was allocated before PFN DB initialization - skip it */
+                            PagesSkipped++;
+                        }
+#else
+                        /* Other architectures: insert normally */
+                        ShouldInsert = TRUE;
 #endif
+
+                        if (ShouldInsert)
+                        {
+                            /* Add it to the free list */
+                            Pfn1->u3.e1.CacheAttribute = MiNonCached;
+                            MiInsertPageInFreeList(PageFrameIndex);
+#if defined(_M_ARM64)
+                            PagesInserted++;
+#endif
+                        }
                     }
 #if defined(_M_ARM64)
                     else

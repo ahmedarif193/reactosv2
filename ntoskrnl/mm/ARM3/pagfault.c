@@ -1357,11 +1357,32 @@ MiResolveProtoPteFault(IN BOOLEAN StoreInstruction,
     {
         /* Release the lock */
         DPRINT1("Access on reserved section?\n");
+        DPRINT1("[pagfault] MiResolveProtoPteFault: Zero prototype PTE at %p for VA %p\n",
+                PointerProtoPte, Address);
         MiReleasePfnLock(OldIrql);
         return STATUS_ACCESS_VIOLATION;
     }
 
     /* There is no such thing as a decommitted prototype PTE */
+    if (TempPte.u.Long == MmDecommittedPte.u.Long)
+    {
+        DPRINT1("[pagfault] ERROR: Decommitted prototype PTE!\n");
+        DPRINT1("[pagfault]   VA: %p\n", Address);
+        DPRINT1("[pagfault]   PointerPte: %p (contains 0x%I64x)\n", PointerPte, PointerPte->u.Long);
+        DPRINT1("[pagfault]   PointerProtoPte: %p (contains 0x%I64x)\n", PointerProtoPte, TempPte.u.Long);
+        DPRINT1("[pagfault]   MmDecommittedPte: 0x%I64x\n", MmDecommittedPte.u.Long);
+
+        /* Check if this is System View Space */
+        extern PVOID MiSystemViewStart;
+        extern SIZE_T MmSystemViewSize;
+        if (MiSystemViewStart != NULL &&
+            (ULONG_PTR)Address >= (ULONG_PTR)MiSystemViewStart &&
+            (ULONG_PTR)Address < ((ULONG_PTR)MiSystemViewStart + MmSystemViewSize))
+        {
+            DPRINT1("[pagfault] *** This is in System View Space! (Start=%p Size=0x%lx) ***\n",
+                    MiSystemViewStart, (ULONG)MmSystemViewSize);
+        }
+    }
     ASSERT(TempPte.u.Long != MmDecommittedPte.u.Long);
 
     /* Check for access rights on the PTE proper */
@@ -2463,6 +2484,25 @@ RetryKernel:
         /* Check one kind of prototype PTE */
         if (TempPte.u.Soft.Prototype)
         {
+            /* ARM64 DIAGNOSTIC: Log prototype PTE fault in System View Space */
+            extern PVOID MiSystemViewStart;
+            extern SIZE_T MmSystemViewSize;
+            if (MiSystemViewStart != NULL &&
+                (ULONG_PTR)Address >= (ULONG_PTR)MiSystemViewStart &&
+                (ULONG_PTR)Address < ((ULONG_PTR)MiSystemViewStart + MmSystemViewSize))
+            {
+                DPRINT1("[pagfault] PROTO PTE FAULT in System View Space!\n");
+                DPRINT1("[pagfault]   Address: %p (offset 0x%lx from SysViewStart=%p)\n",
+                        Address,
+                        (ULONG_PTR)Address - (ULONG_PTR)MiSystemViewStart,
+                        MiSystemViewStart);
+                DPRINT1("[pagfault]   PTE at %p contains: 0x%I64x\n", PointerPte, TempPte.u.Long);
+                DPRINT1("[pagfault]   PTE.Soft.Prototype=%u Protection=%u PageFileHigh=0x%lx\n",
+                        (UINT)TempPte.u.Soft.Prototype,
+                        (UINT)TempPte.u.Soft.Protection,
+                        (ULONG)TempPte.u.Soft.PageFileHigh);
+            }
+
             /* Make sure protected pool is on, and that this is a pool address */
             if ((MmProtectFreedNonPagedPool) &&
                 (((Address >= MmNonPagedPoolStart) &&

@@ -148,7 +148,10 @@ MiInitSystemMemoryAreas(VOID)
     //
     {
         PMMPTE SharedDataPte = MiAddressToPte((PVOID)KI_USER_SHARED_DATA);
+        DPRINT1("[MM] Phase 0: Pre-mapping PTE for KI_USER_SHARED_DATA (%p) at PTE address %p\n",
+                (PVOID)KI_USER_SHARED_DATA, SharedDataPte);
         MiArm64MapAliasForPointer(SharedDataPte);
+        DPRINT1("[MM] Phase 0: PTE pre-mapping complete\n");
     }
 #endif
 #endif /* _X86_ */
@@ -331,24 +334,35 @@ MmInitSystem(IN ULONG Phase,
     // page faults while holding the paged pool mutex at IRQL 2)
     //
     PointerPte = MiAddressToPte((PVOID)KI_USER_SHARED_DATA);
+    DPRINT1("[MM] Phase 1: Got PTE for KI_USER_SHARED_DATA at %p\n", PointerPte);
     ASSERT(PointerPte->u.Hard.Valid == 1);
+    DPRINT1("[MM] Phase 1: PTE is valid, getting PFN\n");
     PageFrameNumber = PFN_FROM_PTE(PointerPte);
+    DPRINT1("[MM] Phase 1: Got PFN %I64x\n", (ULONG64)PageFrameNumber);
 
     /* Build the PTE and write it */
+    DPRINT1("[MM] Phase 1: Building shared user data PTE\n");
     MI_MAKE_HARDWARE_PTE_KERNEL(&TempPte,
                                 PointerPte,
                                 MM_READONLY,
                                 PageFrameNumber);
     *MmSharedUserDataPte = TempPte;
+    DPRINT1("[MM] Phase 1: Shared user data PTE written\n");
 
     /* Initialize session working set support */
+    DPRINT1("[MM] Phase 1: Calling MiInitializeSessionWsSupport\n");
     MiInitializeSessionWsSupport();
+    DPRINT1("[MM] Phase 1: MiInitializeSessionWsSupport complete\n");
 
     /* Setup session IDs */
+    DPRINT1("[MM] Phase 1: Calling MiInitializeSessionIds\n");
     MiInitializeSessionIds();
+    DPRINT1("[MM] Phase 1: MiInitializeSessionIds complete\n");
 
     /* Setup the memory threshold events */
+    DPRINT1("[MM] Phase 1: Calling MiInitializeMemoryEvents\n");
     if (!MiInitializeMemoryEvents()) return FALSE;
+    DPRINT1("[MM] Phase 1: MiInitializeMemoryEvents complete\n");
 
     /*
      * Unmap low memory

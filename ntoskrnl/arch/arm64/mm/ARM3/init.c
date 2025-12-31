@@ -40,6 +40,9 @@ static volatile BOOLEAN MiArm64ZeroLeafPages = TRUE;
 /* Optional boot-time cap for initial nonpaged pool mapping (in MiB). 0 = no cap. */
 static ULONG MiArm64NonPagedPoolCapMb = 0;
 
+/* Tracks whether PFN database is ready for access. FALSE during early bootstrap. */
+static BOOLEAN MiArm64PfnDatabaseReady = FALSE;
+
 /* Page consumption tracking for debugging the 858K page mystery */
 static PFN_NUMBER MiArm64PagesConsumedInMapPageTablePage = 0;
 static PFN_NUMBER MiArm64PagesConsumedInMiMapPPEs = 0;
@@ -130,8 +133,8 @@ MiArm64SelfMapL1MarkCreated(ULONG L0Index, ULONG L1Index)
 
 static VOID MiMapPPEs(PVOID StartAddress, PVOID EndAddress);
 static VOID MiMapPDEs(PVOID StartAddress, PVOID EndAddress);
+static VOID MiMapPTEs(PVOID StartAddress, PVOID EndAddress);
 
-#define ARM64_PTE_TYPE_TABLE        0x3ULL
 #define ARM64_PTE_AF                (1ULL << 10)  /* Access Flag - required for L3 page entries */
 #define ARM64_PTE_SH_INNER          (3ULL << 8)   /* Inner Shareable */
 #define ARM64_PTE_AP_RW_EL1         (0ULL << 6)   /* EL1 R/W, EL0 no access */
@@ -407,6 +410,19 @@ MiArm64MapPageTablePage(UINT64 Ttbr1, PVOID TableVa, PFN_NUMBER Pfn)
             RtlZeroMemory(MiArm64PfnToKseg0(NewPfn), PAGE_SIZE);
             l0[l0_idx] = MI_ARM64_MAKE_TABLE_DESC(NewPfn);
             __asm__ __volatile__("dsb ishst" ::: "memory");
+
+            /* Register the L1 table page in PFN database to prevent reuse by paged pool.
+             * L1 table is contained in L0, so PteFrame is the L0's PFN.
+             * CRITICAL: Skip PFN registration during early bootstrap (see MiMapPPEs). */
+            if (MiArm64PfnDatabaseReady)
+            {
+                PFN_NUMBER L0Pfn = root_pa >> PAGE_SHIFT;
+                volatile UINT64 *L0Entry = &l0[l0_idx];
+                MiInitializePfnForOtherProcess(NewPfn,
+                                               (PVOID)L0Entry,
+                                               L0Pfn);
+            }
+
             CreatedL0 = TRUE;
             PagesConsumedHere++;
         }
@@ -428,6 +444,19 @@ MiArm64MapPageTablePage(UINT64 Ttbr1, PVOID TableVa, PFN_NUMBER Pfn)
             RtlZeroMemory(MiArm64PfnToKseg0(NewPfn), PAGE_SIZE);
             l1[l1_idx] = MI_ARM64_MAKE_TABLE_DESC(NewPfn);
             __asm__ __volatile__("dsb ishst" ::: "memory");
+
+            /* Register the L2 table page in PFN database to prevent reuse by paged pool.
+             * L2 table is contained in L1, so PteFrame is the L1's PFN.
+             * CRITICAL: Skip PFN registration during early bootstrap (see MiMapPPEs). */
+            if (MiArm64PfnDatabaseReady)
+            {
+                PFN_NUMBER L1Pfn = (l0[l0_idx] & ARM64_PTE_ADDR_MASK) >> PAGE_SHIFT;
+                volatile UINT64 *L1Entry = &l1[l1_idx];
+                MiInitializePfnForOtherProcess(NewPfn,
+                                               (PVOID)L1Entry,
+                                               L1Pfn);
+            }
+
             CreatedL1 = TRUE;
             PagesConsumedHere++;
         }
@@ -449,6 +478,28 @@ MiArm64MapPageTablePage(UINT64 Ttbr1, PVOID TableVa, PFN_NUMBER Pfn)
         RtlZeroMemory(MiArm64PfnToKseg0(NewPfn), PAGE_SIZE);
         l2[l2_idx] = MI_ARM64_MAKE_TABLE_DESC(NewPfn);
         __asm__ __volatile__("dsb ishst" ::: "memory");
+
+        /* Register the L3 table page in PFN database to prevent reuse by paged pool.
+         * L3 table is contained in L2, so PteFrame is the L2's PFN.
+         * CRITICAL: Skip PFN registration during early bootstrap (see MiMapPPEs). */
+        if (MiArm64PfnDatabaseReady)
+        {
+            PFN_NUMBER L2Pfn = (l1[l1_idx] & ARM64_PTE_ADDR_MASK) >> PAGE_SHIFT;
+            volatile UINT64 *L2Entry = &l2[l2_idx];
+
+            CHAR SelfMapLog[200];
+            if (NT_SUCCESS(RtlStringCbPrintfA(SelfMapLog, sizeof(SelfMapLog),
+                "[arm64] MiArm64MapPageTablePage: Creating self-map L3 table PFN %I64x (L2Pfn=%I64x) for VA %p",
+                (ULONGLONG)NewPfn, (ULONGLONG)L2Pfn, TableVa)))
+            {
+                KiArm64BootStageLog(SelfMapLog);
+            }
+
+            MiInitializePfnForOtherProcess(NewPfn,
+                                           (PVOID)L2Entry,
+                                           L2Pfn);
+        }
+
         CreatedL2 = TRUE;
         PagesConsumedHere++;
     }
@@ -464,6 +515,31 @@ MiArm64MapPageTablePage(UINT64 Ttbr1, PVOID TableVa, PFN_NUMBER Pfn)
                   (1ULL << 10) |          /* AF */
                   (1ULL << 53) |          /* PXN */
                   (1ULL << 54);           /* UXN */
+
+    /* DIAGNOSTIC: Log if we're mapping a PTE alias page in the System View Space region.
+     * This helps us verify that the correct PFN is being mapped. */
+    if (TableVa >= (PVOID)PTE_BASE && TableVa <= (PVOID)PTE_TOP)
+    {
+        /* Calculate which virtual address range these PTEs correspond to */
+        PVOID MappedVaStart = MiPteToAddress((PMMPTE)TableVa);
+        static volatile LONG SystemViewPteMappingLogBudget = 5;
+
+        if (SystemViewPteMappingLogBudget > 0)
+        {
+            LONG Snap = InterlockedDecrement(&SystemViewPteMappingLogBudget);
+            if (Snap >= 0)
+            {
+                CHAR AliasLog[256];
+                if (NT_SUCCESS(RtlStringCbPrintfA(AliasLog, sizeof(AliasLog),
+                    "[arm64] MapPageTablePage: Mapping PTE alias %p (for VA ~%p) -> L3 PFN 0x%I64x, writing to l3[%u]=0x%016llx",
+                    TableVa, MappedVaStart, (ULONGLONG)Pfn, l3_idx, (ULONGLONG)Desc)))
+                {
+                    KiArm64BootStageLog(AliasLog);
+                }
+            }
+        }
+    }
+
     l3[l3_idx] = Desc;
     __asm__ __volatile__("dsb ishst\n\ttlbi vmalle1is\n\tdsb ish\n\tisb" ::: "memory");
 
@@ -1071,6 +1147,309 @@ MiArm64CanTouchSystemPageTables(VOID)
 
 PVOID MiSessionViewEnd;
 
+#if defined(_M_ARM64) || defined(__aarch64__)
+/*
+ * MiArm64RegisterFreeLdrPageTables - Register all FreeLDR-created page tables in PFN database
+ *
+ * PROBLEM:
+ * - FreeLDR creates entire page table hierarchy (L0/L1/L2/L3) before kernel starts
+ * - These page tables are never registered in the PFN database
+ * - Paged pool allocator thinks these pages are free and reuses them
+ * - This corrupts page tables with paged pool data
+ *
+ * SOLUTION:
+ * Walk the entire TTBR1 (kernel) page table hierarchy and register all page table pages
+ * in the PFN database using MiInitializePfnForOtherProcess. This prevents the paged pool
+ * allocator from reusing these pages.
+ *
+ * This function must be called AFTER:
+ * - MiInitializePfnDatabase has completed (PFN database is ready)
+ * - MiArm64PfnDatabaseReady is set to TRUE
+ *
+ * Page table entry format on ARM64:
+ * - Valid table descriptor: bits[1:0] = 0b11 (ARM64_PTE_TYPE_TABLE)
+ * - Valid block descriptor: bits[1:0] = 0b01 (ARM64_PTE_TYPE_BLOCK)
+ * - Table descriptor bits[47:12] contain the PFN of the next level table
+ * - Use ARM64_PTE_ADDR_MASK (0x0000FFFFFFFFF000ULL) to extract physical address
+ */
+static
+CODE_SEG("INIT")
+VOID
+MiArm64RegisterFreeLdrPageTables(VOID)
+{
+    UINT64 Ttbr1;
+    ULONG TotalPageTablesRegistered = 0;
+    ULONG L0TablesRegistered = 0;
+    ULONG L1TablesRegistered = 0;
+    ULONG L2TablesRegistered = 0;
+    ULONG L3TablesRegistered = 0;
+
+    /* Read TTBR1_EL1 to get the kernel page table base */
+    __asm__ __volatile__("mrs %0, ttbr1_el1" : "=r"(Ttbr1));
+
+    UINT64 RootPa = Ttbr1 & ~((UINT64)PAGE_SIZE - 1ULL);
+    PFN_NUMBER RootPfn = (PFN_NUMBER)(RootPa >> PAGE_SHIFT);
+
+    /* Access L0 table via KSEG0 direct mapping */
+    volatile UINT64 *L0Table = (volatile UINT64 *)MiArm64PhysToKseg0(RootPa);
+
+    /* Register the L0 root table itself - SKIP, already registered by FreeLDR or kernel */
+    if (RootPfn <= MmHighestPhysicalPage)
+    {
+        PMMPFN RootPfnEntry = MiGetPfnEntry(RootPfn);
+        /* Skip if already active (registered by MiBuildPfnDatabaseFromPages or kernel) */
+        if (RootPfnEntry && RootPfnEntry->u3.e1.PageLocation != ActiveAndValid)
+        {
+            /* CRITICAL FIX: Check if the PFN is actually linked in a list before registering.
+             * The issue: MxGetNextPage() allocates pages during early init (before PFN DB is ready)
+             * by removing them from MxFreeDescriptor. Later, MiBuildPfnDatabaseFromLoaderBlock()
+             * processes the ORIGINAL loader block descriptors (which don't reflect MxGetNextPage
+             * allocations), creating orphaned PFN entries with PageLocation=ZeroedPageList but
+             * Flink/Blink=0 (not actually in any list).
+             *
+             * If we try to register such orphaned entries, MiInitializePfnForOtherProcess() will
+             * call MiUnlinkFreeOrZeroedPage(), which asserts that ListHead->Total != 0, causing
+             * a fatal assertion failure at pfnlist.c:161.
+             *
+             * Solution: Only register the page if it's NOT already initialized (ReferenceCount == 0)
+             * OR if it's genuinely in a free/zero list (Flink != 0 AND Blink != 0). */
+            BOOLEAN ShouldRegister = FALSE;
+
+            if (RootPfnEntry->u3.e2.ReferenceCount == 0)
+            {
+                /* Page is completely uninitialized - safe to register */
+                ShouldRegister = TRUE;
+            }
+            else if ((RootPfnEntry->u3.e1.PageLocation == FreePageList ||
+                      RootPfnEntry->u3.e1.PageLocation == ZeroedPageList) &&
+                     (RootPfnEntry->u1.Flink == 0 && RootPfnEntry->u2.Blink == 0))
+            {
+                /* Orphaned entry: has PageLocation set but not actually in list - skip registration */
+                CHAR Log[256];
+                RtlStringCbPrintfA(Log, sizeof(Log),
+                    "[arm64] Skipping L0 PFN %lu: orphaned entry (location=%u but Flink/Blink=0, already allocated)",
+                    (ULONG)RootPfn, (unsigned)RootPfnEntry->u3.e1.PageLocation);
+                KiArm64BootStageLog(Log);
+                ShouldRegister = FALSE;
+            }
+            else
+            {
+                /* Other states - safe to register */
+                ShouldRegister = TRUE;
+            }
+
+            if (ShouldRegister)
+            {
+                /* Root page table is the top-level directory, PteFrame is 0 (no parent) */
+                MiInitializePfnForOtherProcess(RootPfn, (PVOID)(ULONG_PTR)RootPa, 0);
+                L0TablesRegistered++;
+                TotalPageTablesRegistered++;
+            }
+        }
+    }
+
+    /* Walk kernel space L0 entries (indices 256-511, kernel half of address space)
+     * Also include the self-map entry at index 493 which is within this range */
+    for (ULONG L0Index = 256; L0Index < 512; L0Index++)
+    {
+        UINT64 L0Entry = L0Table[L0Index];
+
+        /* Check if this is a valid table descriptor (bits[1:0] == 0b11) */
+        if ((L0Entry & ARM64_PTE_TYPE_MASK) != ARM64_PTE_TYPE_TABLE)
+            continue;
+
+        /* Extract L1 table physical address and PFN */
+        UINT64 L1TablePa = L0Entry & ARM64_PTE_ADDR_MASK;
+        PFN_NUMBER L1Pfn = (PFN_NUMBER)(L1TablePa >> PAGE_SHIFT);
+
+        /* Register L1 table in PFN database */
+        if (L1Pfn <= MmHighestPhysicalPage)
+        {
+            PMMPFN L1PfnEntry = MiGetPfnEntry(L1Pfn);
+
+            /* Skip if already active (registered by MiBuildPfnDatabaseFromPages or kernel) */
+            if (L1PfnEntry && L1PfnEntry->u3.e1.PageLocation != ActiveAndValid)
+            {
+                /* CRITICAL FIX: Check if the PFN is actually linked in a list before registering.
+                 * Same orphaned entry check as for L0 table. */
+                BOOLEAN ShouldRegister = FALSE;
+
+                if (L1PfnEntry->u3.e2.ReferenceCount == 0)
+                {
+                    /* Page is completely uninitialized - safe to register */
+                    ShouldRegister = TRUE;
+                }
+                else if ((L1PfnEntry->u3.e1.PageLocation == FreePageList ||
+                          L1PfnEntry->u3.e1.PageLocation == ZeroedPageList) &&
+                         (L1PfnEntry->u1.Flink == 0 && L1PfnEntry->u2.Blink == 0))
+                {
+                    /* Orphaned entry: has PageLocation set but not actually in list - skip registration */
+                    CHAR Log[256];
+                    RtlStringCbPrintfA(Log, sizeof(Log),
+                        "[arm64] Skipping L1 PFN %lu: orphaned entry (location=%u but Flink/Blink=0, already allocated)",
+                        (ULONG)L1Pfn, (unsigned)L1PfnEntry->u3.e1.PageLocation);
+                    KiArm64BootStageLog(Log);
+                    ShouldRegister = FALSE;
+                }
+                else
+                {
+                    /* Other states - safe to register */
+                    ShouldRegister = TRUE;
+                }
+
+                if (ShouldRegister)
+                {
+                    /* L1 table's parent is the L0 root table */
+                    MiInitializePfnForOtherProcess(L1Pfn,
+                                                   (PVOID)(ULONG_PTR)&L0Table[L0Index],
+                                                   RootPfn);
+                    L1TablesRegistered++;
+                    TotalPageTablesRegistered++;
+                }
+            }
+        }
+
+        /* Access L1 table and walk its entries */
+        volatile UINT64 *L1Table = (volatile UINT64 *)MiArm64PhysToKseg0(L1TablePa);
+
+        for (ULONG L1Index = 0; L1Index < 512; L1Index++)
+        {
+            UINT64 L1Entry = L1Table[L1Index];
+
+            /* Check for valid table descriptor (not block descriptor) */
+            if ((L1Entry & ARM64_PTE_TYPE_MASK) != ARM64_PTE_TYPE_TABLE)
+                continue;
+
+            /* Extract L2 table physical address and PFN */
+            UINT64 L2TablePa = L1Entry & ARM64_PTE_ADDR_MASK;
+            PFN_NUMBER L2Pfn = (PFN_NUMBER)(L2TablePa >> PAGE_SHIFT);
+
+            /* Register L2 table in PFN database */
+            if (L2Pfn <= MmHighestPhysicalPage)
+            {
+                PMMPFN L2PfnEntry = MiGetPfnEntry(L2Pfn);
+                /* Skip if already active (registered by MiBuildPfnDatabaseFromPages or kernel) */
+                if (L2PfnEntry && L2PfnEntry->u3.e1.PageLocation != ActiveAndValid)
+                {
+                    /* CRITICAL FIX: Check if the PFN is actually linked in a list before registering.
+                     * Same orphaned entry check as for L0/L1 tables. */
+                    BOOLEAN ShouldRegister = FALSE;
+
+                    if (L2PfnEntry->u3.e2.ReferenceCount == 0)
+                    {
+                        /* Page is completely uninitialized - safe to register */
+                        ShouldRegister = TRUE;
+                    }
+                    else if ((L2PfnEntry->u3.e1.PageLocation == FreePageList ||
+                              L2PfnEntry->u3.e1.PageLocation == ZeroedPageList) &&
+                             (L2PfnEntry->u1.Flink == 0 && L2PfnEntry->u2.Blink == 0))
+                    {
+                        /* Orphaned entry: has PageLocation set but not actually in list - skip registration */
+                        CHAR Log[256];
+                        RtlStringCbPrintfA(Log, sizeof(Log),
+                            "[arm64] Skipping L2 PFN %lu: orphaned entry (location=%u but Flink/Blink=0, already allocated)",
+                            (ULONG)L2Pfn, (unsigned)L2PfnEntry->u3.e1.PageLocation);
+                        KiArm64BootStageLog(Log);
+                        ShouldRegister = FALSE;
+                    }
+                    else
+                    {
+                        /* Other states - safe to register */
+                        ShouldRegister = TRUE;
+                    }
+
+                    if (ShouldRegister)
+                    {
+                        /* L2 table's parent is the L1 table */
+                        MiInitializePfnForOtherProcess(L2Pfn,
+                                                       (PVOID)(ULONG_PTR)&L1Table[L1Index],
+                                                       L1Pfn);
+                        L2TablesRegistered++;
+                        TotalPageTablesRegistered++;
+                    }
+                }
+            }
+
+            /* Access L2 table and walk its entries */
+            volatile UINT64 *L2Table = (volatile UINT64 *)MiArm64PhysToKseg0(L2TablePa);
+
+            for (ULONG L2Index = 0; L2Index < 512; L2Index++)
+            {
+                UINT64 L2Entry = L2Table[L2Index];
+
+                /* Check for valid table descriptor (not block descriptor or page) */
+                if ((L2Entry & ARM64_PTE_TYPE_MASK) != ARM64_PTE_TYPE_TABLE)
+                    continue;
+
+                /* Extract L3 table physical address and PFN */
+                UINT64 L3TablePa = L2Entry & ARM64_PTE_ADDR_MASK;
+                PFN_NUMBER L3Pfn = (PFN_NUMBER)(L3TablePa >> PAGE_SHIFT);
+
+                /* Register L3 table in PFN database */
+                if (L3Pfn <= MmHighestPhysicalPage)
+                {
+                    PMMPFN L3PfnEntry = MiGetPfnEntry(L3Pfn);
+                    /* Skip if already active (registered by MiBuildPfnDatabaseFromPages or kernel) */
+                    if (L3PfnEntry && L3PfnEntry->u3.e1.PageLocation != ActiveAndValid)
+                    {
+                        /* CRITICAL FIX: Check if the PFN is actually linked in a list before registering.
+                         * Same orphaned entry check as for L0/L1/L2 tables. */
+                        BOOLEAN ShouldRegister = FALSE;
+
+                        if (L3PfnEntry->u3.e2.ReferenceCount == 0)
+                        {
+                            /* Page is completely uninitialized - safe to register */
+                            ShouldRegister = TRUE;
+                        }
+                        else if ((L3PfnEntry->u3.e1.PageLocation == FreePageList ||
+                                  L3PfnEntry->u3.e1.PageLocation == ZeroedPageList) &&
+                                 (L3PfnEntry->u1.Flink == 0 && L3PfnEntry->u2.Blink == 0))
+                        {
+                            /* Orphaned entry: has PageLocation set but not actually in list - skip registration */
+                            CHAR Log[256];
+                            RtlStringCbPrintfA(Log, sizeof(Log),
+                                "[arm64] Skipping L3 PFN %lu: orphaned entry (location=%u but Flink/Blink=0, already allocated)",
+                                (ULONG)L3Pfn, (unsigned)L3PfnEntry->u3.e1.PageLocation);
+                            KiArm64BootStageLog(Log);
+                            ShouldRegister = FALSE;
+                        }
+                        else
+                        {
+                            /* Other states - safe to register */
+                            ShouldRegister = TRUE;
+                        }
+
+                        if (ShouldRegister)
+                        {
+                            /* L3 table's parent is the L2 table */
+                            MiInitializePfnForOtherProcess(L3Pfn,
+                                                           (PVOID)(ULONG_PTR)&L2Table[L2Index],
+                                                           L2Pfn);
+                            L3TablesRegistered++;
+                            TotalPageTablesRegistered++;
+                        }
+                    }
+                }
+
+                /* Note: We don't need to walk L3 entries because those point to
+                 * data pages, not page tables. Only L0/L1/L2/L3 table pages need
+                 * to be registered to prevent paged pool from reusing them. */
+            }
+        }
+    }
+
+    /* Log summary of registration */
+    CHAR LogBuffer[256];
+    if (NT_SUCCESS(RtlStringCbPrintfA(LogBuffer, sizeof(LogBuffer),
+        "[arm64] FreeLDR page table registration: Total=%lu (L0=%lu L1=%lu L2=%lu L3=%lu)",
+        TotalPageTablesRegistered, L0TablesRegistered, L1TablesRegistered,
+        L2TablesRegistered, L3TablesRegistered)))
+    {
+        KiArm64BootStageLog(LogBuffer);
+    }
+}
+#endif /* defined(_M_ARM64) || defined(__aarch64__) */
+
 CODE_SEG("INIT")
 NTSTATUS
 NTAPI
@@ -1236,6 +1615,7 @@ MiInitMachineDependent(_Inout_ PLOADER_PARAMETER_BLOCK LoaderBlock)
          * MmFreePagesByColor backing range has valid leaf entries. */
         KiArm64BootStageLog("[arm64] MiInitMachineDependent: mapping PFN database");
         MiMapPfnDatabase(LoaderBlock);
+        KiArm64BootStageLog("[arm64] MiInitMachineDependent: PFN database region mapped (entries not initialized yet)");
 
         KiArm64BootStageLog("[arm64] MiInitMachineDependent: initializing color tables");
         MiInitializeColorTables();
@@ -1293,6 +1673,33 @@ MiInitMachineDependent(_Inout_ PLOADER_PARAMETER_BLOCK LoaderBlock)
             MiArm64FinalizePfnDatabase(LoaderBlock);
             KiArm64BootStageLog("[arm64] MiInitMachineDependent: PFN database finalized");
         }
+
+        /* CRITICAL: Now that MiInitializePfnDatabase has completed and scanned all existing page tables,
+         * we can safely enable PFN registration for newly created page tables. This ensures that:
+         * 1. MiMapPfnDatabase has mapped and zeroed the PFN database region
+         * 2. MiInitializePfnDatabase has scanned all boot/early page tables and initialized their PFN entries
+         * 3. Any page tables created from this point forward will be correctly registered in the PFN database
+         *
+         * Previously, setting this flag too early (before MiInitializePfnDatabase) caused a critical bug:
+         * - Early page tables were registered via MiInitializePfnForOtherProcess
+         * - MiMapPfnDatabase then ZEROED the PFN database, destroying those registrations
+         * - MiInitializePfnDatabase re-scanned and set INCORRECT PteFrame values (all pointing to root PD)
+         * - Later page tables (System View Space) had correct registrations, but earlier ones were corrupted
+         * - This allowed paged pool to reuse page table pages, causing PTE corruption */
+        MiArm64PfnDatabaseReady = TRUE;
+        KiArm64BootStageLog("[arm64] MiInitMachineDependent: PFN database ready - new page tables will be registered");
+
+        /* CRITICAL: Register all FreeLDR-created page tables in the PFN database.
+         * This must happen immediately after PFN database is ready, before any pool operations.
+         * FreeLDR creates the entire page table hierarchy (L0/L1/L2/L3) but never registers
+         * these pages in the PFN database. Without registration, paged pool allocator thinks
+         * these pages are free and reuses them, corrupting page tables with pool data.
+         *
+         * This function walks TTBR1 (kernel page tables) and registers all page table pages
+         * found by traversing the hierarchy. This prevents pool allocator from reusing them. */
+        KiArm64BootStageLog("[arm64] MiInitMachineDependent: registering FreeLDR page tables");
+        MiArm64RegisterFreeLdrPageTables();
+        KiArm64BootStageLog("[arm64] MiInitMachineDependent: FreeLDR page tables registered");
 
         /* Normalize PFN boundary flags for initial nonpaged pool pages. */
         MiArm64NormalizePoolPfnFlagsRange(MmNonPagedPoolStart,
@@ -1360,6 +1767,520 @@ MiInitMachineDependent(_Inout_ PLOADER_PARAMETER_BLOCK LoaderBlock)
              * PDE worth of PTEs, and the rest will be demand-allocated during pool growth. */
         }
         KiArm64BootStageLog("[arm64] MiInitMachineDependent: paged pool page tables pre-mapped");
+
+        /* CRITICAL for ARM64: Pre-map page tables for System View Space.
+         * System View Space is accessed during Phase 1 at DISPATCH_LEVEL (IRQL 2),
+         * particularly in MiCreateArm3StaticMemoryArea. We need to ensure:
+         * 1) The actual PPE/PDE page tables exist for System View Space VA range
+         * 2) The PTE/PDE/PPE self-map alias pages for accessing those page tables
+         *
+         * This matches AMD64 which calls MiMapPPEs() for System View Space in Phase 0.
+         * Without this, any access to System View Space will fault trying to read
+         * the PTE through the self-map, which cannot be serviced at elevated IRQL.
+         */
+        {
+            PVOID SystemViewEnd = (PUCHAR)MiSystemViewStart + MmSystemViewSize - 1;
+
+            /* First, ensure the page table hierarchy exists for System View Space itself.
+             * This is analogous to AMD64's MiMapPPEs(MiSystemViewStart, ...) call.
+             * We map PPEs and PDEs to ensure the page directory structure exists.
+             *
+             * CRITICAL: Unlike System PTE Space, System View Space is used to map sections
+             * via MmMapViewInSystemSpace. When MiFillSystemPageDirectory is called to create
+             * PDEs for a view mapping, and then MiAddMappedPtes is called to write prototype
+             * PTEs, these operations can occur at DISPATCH_LEVEL (IRQL 2). On ARM64, accessing
+             * PTEs through the self-map requires the underlying page table pages to exist.
+             *
+             * IMPORTANT: We do NOT call MiMapPTEs here because that would pre-allocate and
+             * map 512 MB worth of physical pages (131,072 pages), and MiAddMappedPtes expects
+             * PTEs to be zero. Instead, we ensure the self-map aliases for PTE addresses are
+             * mapped, which creates the L3 page tables without mapping the data pages.
+             */
+            KiArm64BootStageLog("[arm64] MiInitMachineDependent: pre-mapping system view space page tables");
+
+            /* WORKAROUND: Disable interrupts while mapping System View Space to prevent
+             * timer interrupt handler from accessing System View Space before page tables exist. */
+            ULONG64 SavedDaif;
+            __asm__ __volatile__(
+                "mrs %0, daif\n\t"
+                "msr daifset, #2"  /* Set I bit to mask IRQ */
+                : "=r"(SavedDaif)
+                :
+                : "memory");
+
+            MiMapPPEs(MiSystemViewStart, SystemViewEnd);
+            MiMapPDEs(MiSystemViewStart, SystemViewEnd);
+
+            /* Restore interrupt state */
+            __asm__ __volatile__(
+                "msr daif, %0"
+                :
+                : "r"(SavedDaif)
+                : "memory");
+
+            /* CRITICAL: Create L3 page tables for all PDEs in System View Space.
+             * After MiMapPDEs, we have L2 tables (PDEs), but we need L3 tables (which hold PTEs).
+             * We must create empty (zero-filled) L3 tables so that when a page fault occurs
+             * in System View Space, the fault handler can read the PTEs (which will be zero).
+             */
+            {
+                PMMPDE CurrentPde;
+                PMMPDE BasePde = MiAddressToPde(MiSystemViewStart);
+                PMMPDE EndPde = MiAddressToPde(SystemViewEnd);
+                PFN_NUMBER L3TablesCreated = 0;
+
+                for (CurrentPde = BasePde; CurrentPde <= EndPde; CurrentPde++)
+                {
+                    /* Check if this PDE already points to an L3 table */
+                    if (!CurrentPde->u.Hard.Valid)
+                    {
+                        /* Allocate a physical page for the L3 table */
+                        PFN_NUMBER Pfn = MxGetNextPage(1);
+                        if (Pfn != 0)
+                        {
+                            /* Zero the L3 table - critical so PTEs start as zero */
+                            PVOID L3TableKseg0 = MiArm64PfnToKseg0(Pfn);
+                            RtlZeroMemory(L3TableKseg0, PAGE_SIZE);
+
+                            /* ARM64 CRITICAL: Flush data cache to Point of Coherency to ensure
+                             * the zeroed content is visible to all observers (MMU table walks, other CPUs).
+                             * Without this, the MMU might see stale (uninitialized) data in the L3 table.
+                             *
+                             * We must clean every cache line in the page. ARM64 cache line size is typically
+                             * 64 bytes (CTR_EL0.DminLine), so a 4KB page has 64 cache lines. */
+                            for (ULONG_PTR CacheLine = (ULONG_PTR)L3TableKseg0;
+                                 CacheLine < (ULONG_PTR)L3TableKseg0 + PAGE_SIZE;
+                                 CacheLine += 64)  /* 64-byte cache line size */
+                            {
+                                __asm__ __volatile__("dc cvac, %0" : : "r"(CacheLine) : "memory");
+                            }
+                            __asm__ __volatile__("dsb ish" ::: "memory");  /* Ensure all cleans complete */
+                            __asm__ __volatile__("isb" ::: "memory");      /* Synchronize instruction fetch */
+
+                            /* Create a table descriptor pointing to this L3 table */
+                            MMPDE TempPde = ValidKernelPde;
+                            TempPde.u.Hard.PageFrameNumber = Pfn;
+                            MI_WRITE_VALID_PDE(CurrentPde, TempPde);
+                            L3TablesCreated++;
+
+                                            /* Log the first L3 table creation for System View Space with detailed info */
+                            if (L3TablesCreated == 1)
+                            {
+                                CHAR FirstL3Log[256];
+                                if (NT_SUCCESS(RtlStringCbPrintfA(FirstL3Log, sizeof(FirstL3Log),
+                                    "[arm64] System View Space: Created FIRST L3 table PFN 0x%I64x at PDE %p, zeroed at KSEG0 %p",
+                                    (ULONGLONG)Pfn, CurrentPde, L3TableKseg0)))
+                                {
+                                    KiArm64BootStageLog(FirstL3Log);
+                                }
+
+                                /* DIAGNOSTIC: Immediately verify the first PTE (index 0) in this L3 table is zero.
+                                 * Access it via KSEG0 direct mapping to check physical memory content. */
+                                volatile UINT64 *L3TableEntries = (volatile UINT64 *)L3TableKseg0;
+                                UINT64 FirstPtePhysical = L3TableEntries[0];
+                                if (NT_SUCCESS(RtlStringCbPrintfA(FirstL3Log, sizeof(FirstL3Log),
+                                    "[arm64] DIAGNOSTIC: First L3 table entry[0] via KSEG0 = 0x%016llx (should be 0)",
+                                    (ULONGLONG)FirstPtePhysical)))
+                                {
+                                    KiArm64BootStageLog(FirstL3Log);
+                                }
+
+                                if (FirstPtePhysical != 0)
+                                {
+                                    KiArm64BootStageLog("[arm64] ERROR: First L3 table corrupted IMMEDIATELY after creation!");
+                                }
+                            }
+
+                            /* CRITICAL FIX: Register the L3 table page in PFN database.
+                             * This was the root cause of PTE corruption at FFFFF6FCBFDD0000:
+                             * - L3 tables for System View Space were created but not registered
+                             * - When mapped into self-map via MiArm64MapAliasForPointer, the source
+                             *   PFN (L3 table) was never registered in PFN database
+                             * - Paged pool would then reuse these L3 table pages, corrupting PTEs
+                             * - L3 table is contained in L2, so PteFrame is the L2 (PPE) PFN */
+                            if (MiArm64PfnDatabaseReady)
+                            {
+                                /* Find the PPE that contains this PDE to get the L2 PFN */
+                                PMMPPE CurrentPpe = MiAddressToPpe((PVOID)CurrentPde);
+                                if (CurrentPpe->u.Hard.Valid)
+                                {
+                                    PFN_NUMBER L2Pfn = CurrentPpe->u.Hard.PageFrameNumber;
+
+                                    /* DIAGNOSTIC: Check PFN state BEFORE registration */
+                                    PMMPFN PfnEntry = MiGetPfnEntry(Pfn);
+                                    UCHAR LocationBefore = PfnEntry ? PfnEntry->u3.e1.PageLocation : 0xFF;
+                                    ULONG RefCountBefore = PfnEntry ? PfnEntry->u3.e2.ReferenceCount : 0xFFFF;
+
+                                    MiInitializePfnForOtherProcess(Pfn,
+                                                                   (PVOID)CurrentPde,
+                                                                   L2Pfn);
+
+                                    /* DIAGNOSTIC: Verify registration succeeded for first L3 table */
+                                    if (L3TablesCreated == 1)
+                                    {
+                                        UCHAR LocationAfter = PfnEntry->u3.e1.PageLocation;
+                                        ULONG RefCountAfter = PfnEntry->u3.e2.ReferenceCount;
+                                        PFN_NUMBER PteFrameAfter = PfnEntry->u4.PteFrame;
+
+                                        CHAR RegLog[256];
+                                        if (NT_SUCCESS(RtlStringCbPrintfA(RegLog, sizeof(RegLog),
+                                            "[arm64] First L3 PFN 0x%I64x PFN DB: Before[Loc=%u Ref=%u] After[Loc=%u Ref=%u PteFrame=0x%I64x]",
+                                            (ULONGLONG)Pfn, LocationBefore, RefCountBefore,
+                                            LocationAfter, RefCountAfter, (ULONGLONG)PteFrameAfter)))
+                                        {
+                                            KiArm64BootStageLog(RegLog);
+                                        }
+
+                                        if (LocationAfter != ActiveAndValid || RefCountAfter == 0)
+                                        {
+                                            KiArm64BootStageLog("[arm64] ERROR: First L3 table PFN registration may have FAILED!");
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                CHAR L3Log[200];
+                if (NT_SUCCESS(RtlStringCbPrintfA(L3Log, sizeof(L3Log),
+                    "[arm64] MiInitMachineDependent: created %lu L3 page tables for System View Space",
+                    (ULONG)L3TablesCreated)))
+                {
+                    KiArm64BootStageLog(L3Log);
+                }
+            }
+
+            /* Now ensure the self-map alias pages for System View Space PTEs are accessible.
+             * This is the key fix: by mapping all L3 page tables in the self-map region,
+             * we ensure that when code accesses PTEs via MiAddressToPte(), those accesses
+             * won't page fault, even at DISPATCH_LEVEL.
+             */
+            PMMPTE FirstPte = MiAddressToPte(MiSystemViewStart);
+            PMMPTE LastPte = MiAddressToPte(SystemViewEnd);
+            PMMPDE FirstPde = MiAddressToPde(MiSystemViewStart);
+            PMMPDE LastPde = MiAddressToPde(SystemViewEnd);
+            PMMPPE FirstPpe = MiAddressToPpe(MiSystemViewStart);
+            PMMPPE LastPpe = MiAddressToPpe(SystemViewEnd);
+
+            KiArm64BootStageLog("[arm64] MiInitMachineDependent: mapping system view space alias pages");
+
+            /* Ensure the PPE alias pages are backed */
+            MiArm64MapAliasForPointer(FirstPpe);
+            if (LastPpe != FirstPpe)
+            {
+                MiArm64MapAliasForPointer(LastPpe);
+            }
+
+            /* Ensure ALL PDE alias pages are backed - critical for 512 MB range */
+            for (PMMPDE CurrentPde = FirstPde; CurrentPde <= LastPde; CurrentPde++)
+            {
+                /* Map each page containing PDEs (avoid redundant mappings) */
+                PVOID CurrentPage = (PVOID)((ULONG_PTR)CurrentPde & ~((ULONG_PTR)PAGE_SIZE - 1));
+                if (CurrentPde == FirstPde || CurrentPage != (PVOID)((ULONG_PTR)(CurrentPde - 1) & ~((ULONG_PTR)PAGE_SIZE - 1)))
+                {
+                    MiArm64MapAliasForPointer(CurrentPde);
+                }
+            }
+
+            /* Ensure ALL PTE alias pages are backed - this is critical!
+             * For 512 MB of System View Space, we have 131,072 PTEs (each covering 4 KB).
+             * PTEs are 8 bytes each, so 512 PTEs fit in one 4 KB page.
+             * We need to map 256 L3 page tables in the self-map region.
+             */
+            for (PMMPTE CurrentPte = FirstPte; CurrentPte <= LastPte; CurrentPte += 512)
+            {
+                MiArm64MapAliasForPointer(CurrentPte);
+            }
+            /* Ensure the last PTE page is mapped if not already covered */
+            PVOID LastPage = (PVOID)((ULONG_PTR)LastPte & ~((ULONG_PTR)PAGE_SIZE - 1));
+            PVOID PrevPage = (PVOID)((ULONG_PTR)(LastPte - 512) & ~((ULONG_PTR)PAGE_SIZE - 1));
+            if (LastPage != PrevPage)
+            {
+                MiArm64MapAliasForPointer(LastPte);
+            }
+
+            KiArm64BootStageLog("[arm64] MiInitMachineDependent: system view space alias pages mapped");
+
+            /* DIAGNOSTIC: Verify the first PTE of System View Space is still zero after alias mapping.
+             * This will help us detect if the corruption happens during alias mapping or later. */
+            {
+                PMMPTE FirstSysViewPte = MiAddressToPte(MiSystemViewStart);
+                MMPTE FirstPteValue = *FirstSysViewPte;
+
+                /* Also read the physical content directly via KSEG0 to check for cache coherency issues */
+                PMMPDE FirstSysViewPde = MiAddressToPde(MiSystemViewStart);
+                PFN_NUMBER L3TablePfn = FirstSysViewPde->u.Hard.PageFrameNumber;
+                volatile UINT64 *L3TableDirect = (volatile UINT64 *)MiArm64PfnToKseg0(L3TablePfn);
+                UINT64 FirstPtePhysicalDirect = L3TableDirect[0];  /* First entry in L3 table */
+
+                CHAR DiagLog[256];
+                if (NT_SUCCESS(RtlStringCbPrintfA(DiagLog, sizeof(DiagLog),
+                    "[arm64] DIAGNOSTIC: First System View Space PTE at %p = 0x%016llx, via KSEG0[L3 PFN 0x%I64x] = 0x%016llx",
+                    FirstSysViewPte, (ULONGLONG)FirstPteValue.u.Long,
+                    (ULONGLONG)L3TablePfn, (ULONGLONG)FirstPtePhysicalDirect)))
+                {
+                    KiArm64BootStageLog(DiagLog);
+                }
+
+                /* Check if the two values match - if not, it's a cache coherency or aliasing issue */
+                if (FirstPteValue.u.Long != FirstPtePhysicalDirect)
+                {
+                    CHAR MismatchLog[256];
+                    if (NT_SUCCESS(RtlStringCbPrintfA(MismatchLog, sizeof(MismatchLog),
+                        "[arm64] ERROR: PTE alias mismatch! Via PTE=%p got 0x%016llx, via KSEG0 got 0x%016llx",
+                        FirstSysViewPte, (ULONGLONG)FirstPteValue.u.Long, (ULONGLONG)FirstPtePhysicalDirect)))
+                    {
+                        KiArm64BootStageLog(MismatchLog);
+                    }
+                }
+
+                if (FirstPteValue.u.Long != 0 || FirstPtePhysicalDirect != 0)
+                {
+                    /* CORRUPTION DETECTED! Log detailed information */
+                    CHAR CorruptLog[256];
+                    if (NT_SUCCESS(RtlStringCbPrintfA(CorruptLog, sizeof(CorruptLog),
+                        "[arm64] ERROR: System View Space first PTE CORRUPTED after alias mapping! PTE=%p value=0x%016llx",
+                        FirstSysViewPte, (ULONGLONG)FirstPteValue.u.Long)))
+                    {
+                        KiArm64BootStageLog(CorruptLog);
+                    }
+
+                    /* Extract PFN from corrupt value if it looks like a PTE */
+                    PFN_NUMBER CorruptPfn = (PFN_NUMBER)((FirstPteValue.u.Long & ARM64_PTE_ADDR_MASK) >> PAGE_SHIFT);
+                    if (NT_SUCCESS(RtlStringCbPrintfA(CorruptLog, sizeof(CorruptLog),
+                        "[arm64] Corrupt PTE upper32=0x%08lx lower32=0x%08lx extracted_PFN=0x%I64x",
+                        (ULONG)(FirstPteValue.u.Long >> 32), (ULONG)(FirstPteValue.u.Long & 0xFFFFFFFFULL),
+                        (ULONGLONG)CorruptPfn)))
+                    {
+                        KiArm64BootStageLog(CorruptLog);
+                    }
+
+                    /* Check if the L3 table PFN is still properly registered in PFN database */
+                    if (MiArm64PfnDatabaseReady && L3TablePfn <= MmHighestPhysicalPage)
+                    {
+                        PMMPFN PfnEntry = MiGetPfnEntry(L3TablePfn);
+                        if (PfnEntry)
+                        {
+                            CHAR PfnDbLog[256];
+                            if (NT_SUCCESS(RtlStringCbPrintfA(PfnDbLog, sizeof(PfnDbLog),
+                                "[arm64] L3 table PFN 0x%I64x PFN DB: Loc=%u Ref=%u PteFrame=0x%I64x ShareCount=%u",
+                                (ULONGLONG)L3TablePfn, PfnEntry->u3.e1.PageLocation, PfnEntry->u3.e2.ReferenceCount,
+                                (ULONGLONG)PfnEntry->u4.PteFrame, (ULONG)PfnEntry->u2.ShareCount)))
+                            {
+                                KiArm64BootStageLog(PfnDbLog);
+                            }
+
+                            if (PfnEntry->u3.e1.PageLocation != ActiveAndValid)
+                            {
+                                KiArm64BootStageLog("[arm64] ERROR: L3 table PFN is NOT ActiveAndValid - may have been reused!");
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        /* CRITICAL for ARM64: Pre-map page tables for Session Space.
+         * Session Space is also accessed during Phase 1 at DISPATCH_LEVEL (IRQL 2),
+         * and like System View Space, must have both its page table hierarchy and
+         * self-map alias pages pre-mapped to avoid page faults at elevated IRQL.
+         */
+        {
+            PVOID SessionSpaceEnd = (PUCHAR)MiSessionSpaceEnd - 1;
+
+            /* First, ensure the page table hierarchy exists for Session Space itself */
+            KiArm64BootStageLog("[arm64] MiInitMachineDependent: pre-mapping session space page tables");
+            MiMapPPEs(MmSessionBase, SessionSpaceEnd);
+            MiMapPDEs(MmSessionBase, SessionSpaceEnd);
+
+            /* Now ensure the self-map alias pages for Session Space are accessible */
+            PMMPTE FirstPte = MiAddressToPte(MmSessionBase);
+            PMMPTE LastPte = MiAddressToPte(SessionSpaceEnd);
+            PMMPDE FirstPde = MiAddressToPde(MmSessionBase);
+            PMMPDE LastPde = MiAddressToPde(SessionSpaceEnd);
+            PMMPPE FirstPpe = MiAddressToPpe(MmSessionBase);
+            PMMPPE LastPpe = MiAddressToPpe(SessionSpaceEnd);
+
+            KiArm64BootStageLog("[arm64] MiInitMachineDependent: mapping session space alias pages");
+
+            /* Ensure the PPE alias pages are backed */
+            MiArm64MapAliasForPointer(FirstPpe);
+            if (LastPpe != FirstPpe)
+            {
+                MiArm64MapAliasForPointer(LastPpe);
+            }
+
+            /* Ensure the PDE alias pages are backed */
+            MiArm64MapAliasForPointer(FirstPde);
+            if (LastPde != FirstPde)
+            {
+                MiArm64MapAliasForPointer(LastPde);
+            }
+
+            /* Ensure the PTE alias pages are backed */
+            MiArm64MapAliasForPointer(FirstPte);
+            if (LastPte != FirstPte)
+            {
+                MiArm64MapAliasForPointer(LastPte);
+            }
+
+            KiArm64BootStageLog("[arm64] MiInitMachineDependent: session space alias pages mapped");
+        }
+
+        /* CRITICAL for ARM64: Pre-map self-map entries for NonPaged Pool regions.
+         * NonPaged Pool and its expansion space are accessed during Phase 1 at
+         * elevated IRQL, so their self-map entries must be pre-mapped.
+         */
+        {
+            PVOID NonPagedPoolEnd = (PUCHAR)MmNonPagedPoolStart + MmSizeOfNonPagedPoolInBytes - 1;
+            PMMPTE FirstPte = MiAddressToPte(MmNonPagedPoolStart);
+            PMMPTE LastPte = MiAddressToPte(NonPagedPoolEnd);
+            PMMPDE FirstPde = MiAddressToPde(MmNonPagedPoolStart);
+            PMMPDE LastPde = MiAddressToPde(NonPagedPoolEnd);
+            PMMPPE FirstPpe = MiAddressToPpe(MmNonPagedPoolStart);
+            PMMPPE LastPpe = MiAddressToPpe(NonPagedPoolEnd);
+
+            KiArm64BootStageLog("[arm64] MiInitMachineDependent: mapping nonpaged pool alias pages");
+
+            /* Ensure the PPE alias pages are backed */
+            MiArm64MapAliasForPointer(FirstPpe);
+            if (LastPpe != FirstPpe)
+            {
+                MiArm64MapAliasForPointer(LastPpe);
+            }
+
+            /* Ensure the PDE alias pages are backed */
+            MiArm64MapAliasForPointer(FirstPde);
+            if (LastPde != FirstPde)
+            {
+                MiArm64MapAliasForPointer(LastPde);
+            }
+
+            /* Ensure the PTE alias pages are backed */
+            MiArm64MapAliasForPointer(FirstPte);
+            if (LastPte != FirstPte)
+            {
+                MiArm64MapAliasForPointer(LastPte);
+            }
+
+            KiArm64BootStageLog("[arm64] MiInitMachineDependent: nonpaged pool alias pages mapped");
+        }
+
+        /* CRITICAL for ARM64: Pre-map self-map entries for NonPaged Pool Expansion.
+         */
+        if (MmNonPagedPoolExpansionStart != NULL && MmNonPagedPoolEnd != NULL)
+        {
+            PVOID ExpansionEnd = (PUCHAR)MmNonPagedPoolEnd - 1;
+            PMMPTE FirstPte = MiAddressToPte(MmNonPagedPoolExpansionStart);
+            PMMPTE LastPte = MiAddressToPte(ExpansionEnd);
+            PMMPDE FirstPde = MiAddressToPde(MmNonPagedPoolExpansionStart);
+            PMMPDE LastPde = MiAddressToPde(ExpansionEnd);
+            PMMPPE FirstPpe = MiAddressToPpe(MmNonPagedPoolExpansionStart);
+            PMMPPE LastPpe = MiAddressToPpe(ExpansionEnd);
+
+            KiArm64BootStageLog("[arm64] MiInitMachineDependent: mapping nonpaged pool expansion alias pages");
+
+            /* Ensure the PPE alias pages are backed */
+            MiArm64MapAliasForPointer(FirstPpe);
+            if (LastPpe != FirstPpe)
+            {
+                MiArm64MapAliasForPointer(LastPpe);
+            }
+
+            /* Ensure the PDE alias pages are backed */
+            MiArm64MapAliasForPointer(FirstPde);
+            if (LastPde != FirstPde)
+            {
+                MiArm64MapAliasForPointer(LastPde);
+            }
+
+            /* Ensure the PTE alias pages are backed */
+            MiArm64MapAliasForPointer(FirstPte);
+            if (LastPte != FirstPte)
+            {
+                MiArm64MapAliasForPointer(LastPte);
+            }
+
+            KiArm64BootStageLog("[arm64] MiInitMachineDependent: nonpaged pool expansion alias pages mapped");
+        }
+
+        /* CRITICAL for ARM64: Pre-map self-map entries for PFN Database.
+         * The PFN database is accessed during Phase 1 and must have its
+         * self-map entries pre-mapped.
+         */
+        {
+            PVOID PfnDbEnd = (PUCHAR)MmPfnDatabase + (MxPfnAllocation << PAGE_SHIFT) - 1;
+            PMMPTE FirstPte = MiAddressToPte(MmPfnDatabase);
+            PMMPTE LastPte = MiAddressToPte(PfnDbEnd);
+            PMMPDE FirstPde = MiAddressToPde(MmPfnDatabase);
+            PMMPDE LastPde = MiAddressToPde(PfnDbEnd);
+            PMMPPE FirstPpe = MiAddressToPpe(MmPfnDatabase);
+            PMMPPE LastPpe = MiAddressToPpe(PfnDbEnd);
+
+            KiArm64BootStageLog("[arm64] MiInitMachineDependent: mapping PFN database alias pages");
+
+            /* Ensure the PPE alias pages are backed */
+            MiArm64MapAliasForPointer(FirstPpe);
+            if (LastPpe != FirstPpe)
+            {
+                MiArm64MapAliasForPointer(LastPpe);
+            }
+
+            /* Ensure the PDE alias pages are backed */
+            MiArm64MapAliasForPointer(FirstPde);
+            if (LastPde != FirstPde)
+            {
+                MiArm64MapAliasForPointer(LastPde);
+            }
+
+            /* Ensure the PTE alias pages are backed */
+            MiArm64MapAliasForPointer(FirstPte);
+            if (LastPte != FirstPte)
+            {
+                MiArm64MapAliasForPointer(LastPte);
+            }
+
+            KiArm64BootStageLog("[arm64] MiInitMachineDependent: PFN database alias pages mapped");
+        }
+
+        /* CRITICAL for ARM64: Pre-map self-map entries for System PTE space.
+         */
+        if (MmNonPagedSystemStart != NULL && MmNumberOfSystemPtes > 0)
+        {
+            PVOID SystemPteEnd = (PUCHAR)MmNonPagedSystemStart + ((MmNumberOfSystemPtes + 1) * PAGE_SIZE) - 1;
+            PMMPTE FirstPte = MiAddressToPte(MmNonPagedSystemStart);
+            PMMPTE LastPte = MiAddressToPte(SystemPteEnd);
+            PMMPDE FirstPde = MiAddressToPde(MmNonPagedSystemStart);
+            PMMPDE LastPde = MiAddressToPde(SystemPteEnd);
+            PMMPPE FirstPpe = MiAddressToPpe(MmNonPagedSystemStart);
+            PMMPPE LastPpe = MiAddressToPpe(SystemPteEnd);
+
+            KiArm64BootStageLog("[arm64] MiInitMachineDependent: mapping system PTE space alias pages");
+
+            /* Ensure the PPE alias pages are backed */
+            MiArm64MapAliasForPointer(FirstPpe);
+            if (LastPpe != FirstPpe)
+            {
+                MiArm64MapAliasForPointer(LastPpe);
+            }
+
+            /* Ensure the PDE alias pages are backed */
+            MiArm64MapAliasForPointer(FirstPde);
+            if (LastPde != FirstPde)
+            {
+                MiArm64MapAliasForPointer(LastPde);
+            }
+
+            /* Ensure the PTE alias pages are backed */
+            MiArm64MapAliasForPointer(FirstPte);
+            if (LastPte != FirstPte)
+            {
+                MiArm64MapAliasForPointer(LastPte);
+            }
+
+            KiArm64BootStageLog("[arm64] MiInitMachineDependent: system PTE space alias pages mapped");
+        }
     }
     else
     {
@@ -1486,6 +2407,7 @@ MiMapPPEs(
         (void)TmplPde;
         UINT64 Ttbr1;
         __asm__ __volatile__("mrs %0, ttbr1_el1" : "=r"(Ttbr1));
+
         PVOID TargetVa = MiPpeToAddress(PointerPpe);
         volatile UINT64 *EntryPhys = MiArm64LookupTableEntry(Ttbr1, TargetVa, 1);
 
@@ -1498,10 +2420,34 @@ MiMapPPEs(
                 if (Pfn != 0)
                 {
                     /* Initialize the new L1 table page before publishing. */
-                    RtlZeroMemory(MiArm64PfnToKseg0(Pfn), PAGE_SIZE);
+                    /* WORKAROUND: Use manual zeroing instead of RtlZeroMemory to avoid
+                     * potential page fault in optimized memset implementation. */
+                    {
+                        volatile UINT64 *ZeroPtr = (volatile UINT64 *)MiArm64PfnToKseg0(Pfn);
+                        for (SIZE_T i = 0; i < PAGE_SIZE / sizeof(UINT64); i++)
+                        {
+                            ZeroPtr[i] = 0;
+                        }
+                    }
+
                     UINT64 Desc = MI_ARM64_MAKE_TABLE_DESC(Pfn);
                     *L0Entry = Desc;
                     __asm__ __volatile__("dsb ishst" ::: "memory");
+
+                    /* Register the L1 table page in PFN database to prevent reuse by paged pool.
+                     * L1 table is contained in L0, so PteFrame is the L0's PFN.
+                     * CRITICAL: Skip PFN registration during early bootstrap when mapping the
+                     * PFN database region itself, as this would cause circular dependency:
+                     * MiInitializePfnForOtherProcess accesses MmPfnDatabase which isn't mapped yet. */
+                    if (MiArm64PfnDatabaseReady)
+                    {
+                        UINT64 RootPa = Ttbr1 & ~((UINT64)PAGE_SIZE - 1ULL);
+                        PFN_NUMBER L0Pfn = RootPa >> PAGE_SHIFT;
+                        MiInitializePfnForOtherProcess(Pfn,
+                                                       (PVOID)L0Entry,
+                                                       L0Pfn);
+                    }
+
                     PVOID SelfVa = (PVOID)((ULONG_PTR)PointerPpe & ~((ULONG_PTR)PAGE_SIZE - 1ULL));
                     MiArm64MapPageTablePage(Ttbr1, SelfVa, Pfn);
                 }
@@ -1535,6 +2481,24 @@ MiMapPPEs(
             UINT64 table_desc = MI_ARM64_MAKE_TABLE_DESC(Pfn);
             *EntryPhys = table_desc;
             __asm__ __volatile__("dsb ishst" ::: "memory");
+
+            /* Register the L2 table page in PFN database to prevent reuse by paged pool.
+             * L2 table is contained in L1, so PteFrame is the L1's PFN.
+             * EntryPhys points to an L1 entry, extract its parent page.
+             * CRITICAL: Skip PFN registration during early bootstrap (see above). */
+            if (MiArm64PfnDatabaseReady)
+            {
+                volatile UINT64 *L0Entry = MiArm64LookupTableEntry(Ttbr1, TargetVa, 0);
+                PFN_NUMBER L1Pfn = 0;
+                if (L0Entry && (*L0Entry & 1ULL))
+                {
+                    L1Pfn = (*L0Entry & ARM64_PTE_ADDR_MASK) >> PAGE_SHIFT;
+                }
+                MiInitializePfnForOtherProcess(Pfn,
+                                               (PVOID)EntryPhys,
+                                               L1Pfn);
+            }
+
             PMMPDE PdePointer = MiAddressToPde(TargetVa);
             PVOID SelfVa = (PVOID)((ULONG_PTR)PdePointer & ~((ULONG_PTR)PAGE_SIZE - 1ULL));
             MiArm64MapPageTablePage(Ttbr1, SelfVa, Pfn);
@@ -1651,6 +2615,19 @@ MiMapPDEs(
                         UINT64 Desc = MI_ARM64_MAKE_TABLE_DESC(Pfn);
                         *L0Entry = Desc;
                         __asm__ __volatile__("dsb ishst" ::: "memory");
+
+                        /* Register the L1 table page in PFN database to prevent reuse by paged pool.
+                         * L1 table is contained in L0, so PteFrame is the L0's PFN.
+                         * CRITICAL: Skip PFN registration during early bootstrap (see MiMapPPEs). */
+                        if (MiArm64PfnDatabaseReady)
+                        {
+                            UINT64 RootPa = Ttbr1 & ~((UINT64)PAGE_SIZE - 1ULL);
+                            PFN_NUMBER L0Pfn = RootPa >> PAGE_SHIFT;
+                            MiInitializePfnForOtherProcess(Pfn,
+                                                           (PVOID)L0Entry,
+                                                           L0Pfn);
+                        }
+
                         PMMPDE PpePointer = MiAddressToPpe(TargetVa);
                         PVOID SelfVa = (PVOID)((ULONG_PTR)PpePointer & ~((ULONG_PTR)PAGE_SIZE - 1ULL));
                         MiArm64MapPageTablePage(Ttbr1, SelfVa, Pfn);
@@ -1668,6 +2645,24 @@ MiMapPDEs(
                         UINT64 Desc = MI_ARM64_MAKE_TABLE_DESC(Pfn);
                         *PpeEntry = Desc;
                         __asm__ __volatile__("dsb ishst" ::: "memory");
+
+                        /* Register the L2 table page in PFN database to prevent reuse by paged pool.
+                         * L2 table is contained in L1, so PteFrame is the L1's PFN.
+                         * PpeEntry points to an L1 entry, extract its parent page.
+                         * CRITICAL: Skip PFN registration during early bootstrap (see MiMapPPEs). */
+                        if (MiArm64PfnDatabaseReady)
+                        {
+                            volatile UINT64 *L0Entry = MiArm64LookupTableEntry(Ttbr1, TargetVa, 0);
+                            PFN_NUMBER L1Pfn = 0;
+                            if (L0Entry && (*L0Entry & 1ULL))
+                            {
+                                L1Pfn = (*L0Entry & ARM64_PTE_ADDR_MASK) >> PAGE_SHIFT;
+                            }
+                            MiInitializePfnForOtherProcess(Pfn,
+                                                           (PVOID)PpeEntry,
+                                                           L1Pfn);
+                        }
+
                         PVOID SelfVa = (PVOID)((ULONG_PTR)PointerPde & ~((ULONG_PTR)PAGE_SIZE - 1ULL));
                         MiArm64MapPageTablePage(Ttbr1, SelfVa, Pfn);
                         PerformedPdeMappings = TRUE;
@@ -1700,6 +2695,35 @@ MiMapPDEs(
                 UINT64 table_desc = MI_ARM64_MAKE_TABLE_DESC(Pfn);
                 *EntryPhys = table_desc;
                 __asm__ __volatile__("dsb ishst" ::: "memory");
+
+                /* CRITICAL FIX: Register the L3 table page in PFN database to prevent reuse by paged pool.
+                 * This was the root cause of the aliasing bug where L3 page tables were
+                 * reused for paged pool allocations, causing PTE corruption.
+                 * L3 table is contained in L2, so PteFrame is the L2's PFN.
+                 * EntryPhys points to an L2 entry, extract its parent page.
+                 * CRITICAL: Skip PFN registration during early bootstrap (see MiMapPPEs). */
+                if (MiArm64PfnDatabaseReady)
+                {
+                    volatile UINT64 *PpeEntry = MiArm64LookupTableEntry(Ttbr1, TargetVa, 1);
+                    PFN_NUMBER L2Pfn = 0;
+                    if (PpeEntry && (*PpeEntry & 1ULL))
+                    {
+                        L2Pfn = (*PpeEntry & ARM64_PTE_ADDR_MASK) >> PAGE_SHIFT;
+                    }
+
+                    CHAR PfnLog[200];
+                    if (NT_SUCCESS(RtlStringCbPrintfA(PfnLog, sizeof(PfnLog),
+                        "[arm64] MiMapPDEs: Registering L3 table PFN %I64x (L2Pfn=%I64x) for VA %p EntryPhys=%p",
+                        (ULONGLONG)Pfn, (ULONGLONG)L2Pfn, TargetVa, EntryPhys)))
+                    {
+                        KiArm64BootStageLog(PfnLog);
+                    }
+
+                    MiInitializePfnForOtherProcess(Pfn,
+                                                   (PVOID)EntryPhys,
+                                                   L2Pfn);
+                }
+
                 PMMPTE PtePointer = MiAddressToPte(TargetVa);
                 PVOID SelfVa = (PVOID)((ULONG_PTR)PtePointer & ~((ULONG_PTR)PAGE_SIZE - 1ULL));
                 MiArm64MapPageTablePage(Ttbr1, SelfVa, Pfn);
