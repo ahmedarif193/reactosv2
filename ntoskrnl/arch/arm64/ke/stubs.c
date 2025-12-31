@@ -142,7 +142,15 @@ MMPTE ValidKernelPteLocal = {
     }
 };
 MMPDE ValidKernelPdeLocal = {.u.Hard.Valid = 1, .u.Hard.Accessed = 1};
-MMPTE MmDecommittedPte = {.u.Long = (MM_READWRITE << MM_PTE_SOFTWARE_PROTECTION_BITS)};
+
+/* Template PTE for decommitted page.
+ * CRITICAL: Must use MM_DECOMMIT, NOT MM_READWRITE!
+ * On ARM64, MMPTE_SOFTWARE.Protection is at bits 1-5, so MM_PTE_SOFTWARE_PROTECTION_BITS = 1.
+ * Using MM_READWRITE (0x4) would create value 0x8, which collides with legitimate
+ * prototype PTEs that have MM_READWRITE protection.
+ * MM_DECOMMIT = MM_GUARDPAGE (0x10) creates unique value 0x20 that won't appear
+ * in normal prototype PTEs, making the assertion in MiResolveProtoPteFault valid. */
+MMPTE MmDecommittedPte = {.u.Long = (MM_DECOMMIT << MM_PTE_SOFTWARE_PROTECTION_BITS)};
 
 /* TODO(ARM64): The above globals mimic the legacy layouts purely to unblock
  * the build. Replace with real hardware descriptors once paging support is

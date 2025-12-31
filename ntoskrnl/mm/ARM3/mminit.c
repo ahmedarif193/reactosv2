@@ -18,6 +18,11 @@
 
 extern PPOOL_DESCRIPTOR PoolVector[2];
 
+#if defined(_M_ARM64)
+/* ARM64: Forward declaration for System View Space PTE diagnostic helper */
+extern VOID MiArm64CheckSystemViewSpacePte(_In_z_ PCSTR Location);
+#endif
+
 /* GLOBALS ********************************************************************/
 
 //
@@ -1455,9 +1460,19 @@ MiCreateMemoryEvent(IN PUNICODE_STRING Name,
                  RtlLengthSid(SeAliasAdminsSid) +
                  RtlLengthSid(SeWorldSid);
 
+#if defined(_M_ARM64)
+    /* CHECKPOINT: Before DACL allocation from paged pool */
+    MiArm64CheckSystemViewSpacePte("MiCreateMemoryEvent: Before DACL alloc");
+#endif
+
     /* Allocate space for the DACL */
     Dacl = ExAllocatePoolWithTag(PagedPool, DaclLength, TAG_DACL);
     if (!Dacl) return STATUS_INSUFFICIENT_RESOURCES;
+
+#if defined(_M_ARM64)
+    /* CHECKPOINT: After DACL allocation from paged pool */
+    MiArm64CheckSystemViewSpacePte("MiCreateMemoryEvent: After DACL alloc");
+#endif
 
     /* Setup the ACL inside it */
     Status = RtlCreateAcl(Dacl, DaclLength, ACL_REVISION);
@@ -1498,12 +1513,23 @@ MiCreateMemoryEvent(IN PUNICODE_STRING Name,
                                NULL,
                                &SecurityDescriptor);
 
+#if defined(_M_ARM64)
+    /* CHECKPOINT: Before ZwCreateEvent */
+    MiArm64CheckSystemViewSpacePte("MiCreateMemoryEvent: Before ZwCreateEvent");
+#endif
+
     /* Create the event */
     Status = ZwCreateEvent(&EventHandle,
                            EVENT_ALL_ACCESS,
                            &ObjectAttributes,
                            NotificationEvent,
                            FALSE);
+
+#if defined(_M_ARM64)
+    /* CHECKPOINT: After ZwCreateEvent */
+    MiArm64CheckSystemViewSpacePte("MiCreateMemoryEvent: After ZwCreateEvent");
+#endif
+
 CleanUp:
     /* Free the DACL */
     ExFreePoolWithTag(Dacl, TAG_DACL);
@@ -1582,25 +1608,74 @@ MiInitializeMemoryEvents(VOID)
     /* Make sure high threshold is actually higher than the low */
     MmHighMemoryThreshold = max(MmHighMemoryThreshold, MmLowMemoryThreshold);
 
+#if defined(_M_ARM64)
+    /* CHECKPOINT: Before creating memory events (before paged pool allocations) */
+    MiArm64CheckSystemViewSpacePte("MiInitMemEvents: Before event creation");
+#endif
+
     /* Create the memory events for all the thresholds */
     Status = MiCreateMemoryEvent(&LowString, &MiLowMemoryEvent);
     if (!NT_SUCCESS(Status)) return FALSE;
+#if defined(_M_ARM64)
+    MiArm64CheckSystemViewSpacePte("MiInitMemEvents: After LowMemoryEvent");
+#endif
+
     Status = MiCreateMemoryEvent(&HighString, &MiHighMemoryEvent);
     if (!NT_SUCCESS(Status)) return FALSE;
+#if defined(_M_ARM64)
+    MiArm64CheckSystemViewSpacePte("MiInitMemEvents: After HighMemoryEvent");
+#endif
+
     Status = MiCreateMemoryEvent(&LowPagedPoolString, &MiLowPagedPoolEvent);
     if (!NT_SUCCESS(Status)) return FALSE;
+#if defined(_M_ARM64)
+    MiArm64CheckSystemViewSpacePte("MiInitMemEvents: After LowPagedPoolEvent");
+#endif
+
     Status = MiCreateMemoryEvent(&HighPagedPoolString, &MiHighPagedPoolEvent);
     if (!NT_SUCCESS(Status)) return FALSE;
+#if defined(_M_ARM64)
+    MiArm64CheckSystemViewSpacePte("MiInitMemEvents: After HighPagedPoolEvent");
+#endif
+
     Status = MiCreateMemoryEvent(&LowNonPagedPoolString, &MiLowNonPagedPoolEvent);
     if (!NT_SUCCESS(Status)) return FALSE;
+#if defined(_M_ARM64)
+    MiArm64CheckSystemViewSpacePte("MiInitMemEvents: After LowNonPagedPoolEvent");
+#endif
+
     Status = MiCreateMemoryEvent(&HighNonPagedPoolString, &MiHighNonPagedPoolEvent);
     if (!NT_SUCCESS(Status)) return FALSE;
+#if defined(_M_ARM64)
+    MiArm64CheckSystemViewSpacePte("MiInitMemEvents: After HighNonPagedPoolEvent");
+#endif
+
+#if defined(_M_ARM64)
+    /* CHECKPOINT: Before calling MiInitializePoolEvents (second time) */
+    MiArm64CheckSystemViewSpacePte("MiInitMemEvents: Before MiInitializePoolEvents");
+#endif
 
     /* Now setup the pool events */
     MiInitializePoolEvents();
 
+#if defined(_M_ARM64)
+    /* CHECKPOINT: After MiInitializePoolEvents (second call) */
+    MiArm64CheckSystemViewSpacePte("MiInitMemEvents: After MiInitializePoolEvents");
+#endif
+
+#if defined(_M_ARM64)
+    /* CHECKPOINT: Before MiNotifyMemoryEvents */
+    MiArm64CheckSystemViewSpacePte("MiInitMemEvents: Before MiNotifyMemoryEvents");
+#endif
+
     /* Set the initial event state */
     MiNotifyMemoryEvents();
+
+#if defined(_M_ARM64)
+    /* CHECKPOINT: After MiNotifyMemoryEvents */
+    MiArm64CheckSystemViewSpacePte("MiInitMemEvents: After MiNotifyMemoryEvents");
+#endif
+
     return TRUE;
 }
 

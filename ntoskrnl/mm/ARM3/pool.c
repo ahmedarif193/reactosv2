@@ -15,6 +15,11 @@
 #define MODULE_INVOLVED_IN_ARM3
 #include <mm/ARM3/miarm.h>
 
+#if defined(_M_ARM64)
+/* ARM64: Forward declaration for System View Space PTE diagnostic helper */
+extern VOID MiArm64CheckSystemViewSpacePte(_In_z_ PCSTR Location);
+#endif
+
 /* GLOBALS ********************************************************************/
 
 LIST_ENTRY MmNonPagedPoolFreeListHead[MI_MAX_FREE_PAGE_LISTS];
@@ -215,6 +220,11 @@ MiInitializePoolEvents(VOID)
             MmPagedPoolMutex.Count,
             MmPagedPoolMutex.Owner);
 
+#if defined(_M_ARM64)
+    /* CHECKPOINT: Before checking/reinitializing paged pool mutex */
+    MiArm64CheckSystemViewSpacePte("MiInitPoolEvents: Before mutex check");
+#endif
+
     /*
      * ARM64 WORKAROUND: On ARM64, global variables in BSS may be cleared between
      * Phase 0 (where MmPagedPoolMutex is initialized) and Phase 1 (where this
@@ -232,8 +242,18 @@ MiInitializePoolEvents(VOID)
     }
 #endif
 
+#if defined(_M_ARM64)
+    /* CHECKPOINT: Before acquiring paged pool mutex */
+    MiArm64CheckSystemViewSpacePte("MiInitPoolEvents: Before KeAcquireGuardedMutex");
+#endif
+
     /* Lock paged pool */
     KeAcquireGuardedMutex(&MmPagedPoolMutex);
+
+#if defined(_M_ARM64)
+    /* CHECKPOINT: After acquiring paged pool mutex */
+    MiArm64CheckSystemViewSpacePte("MiInitPoolEvents: After KeAcquireGuardedMutex");
+#endif
 
     /* Total size of the paged pool minus the allocated size, is free */
     FreePoolInPages = MmSizeOfPagedPoolInPages - MmPagedPoolInfo.AllocatedPagedPool;
@@ -262,11 +282,31 @@ MiInitializePoolEvents(VOID)
         KeClearEvent(MiLowPagedPoolEvent);
     }
 
+#if defined(_M_ARM64)
+    /* CHECKPOINT: Before releasing paged pool mutex */
+    MiArm64CheckSystemViewSpacePte("MiInitPoolEvents: Before KeReleaseGuardedMutex");
+#endif
+
     /* Release the paged pool lock */
     KeReleaseGuardedMutex(&MmPagedPoolMutex);
 
+#if defined(_M_ARM64)
+    /* CHECKPOINT: After releasing paged pool mutex */
+    MiArm64CheckSystemViewSpacePte("MiInitPoolEvents: After KeReleaseGuardedMutex");
+#endif
+
+#if defined(_M_ARM64)
+    /* CHECKPOINT: Before acquiring nonpaged pool lock */
+    MiArm64CheckSystemViewSpacePte("MiInitPoolEvents: Before nonpaged pool lock");
+#endif
+
     /* Now it's time for the nonpaged pool lock */
     OldIrql = KeAcquireQueuedSpinLock(LockQueueMmNonPagedPoolLock);
+
+#if defined(_M_ARM64)
+    /* CHECKPOINT: After acquiring nonpaged pool lock */
+    MiArm64CheckSystemViewSpacePte("MiInitPoolEvents: After nonpaged pool lock");
+#endif
 
     /* Free pages are the maximum minus what's been allocated */
     FreePoolInPages = MmMaximumNonPagedPoolInPages - MmAllocatedNonPagedPool;
@@ -295,8 +335,18 @@ MiInitializePoolEvents(VOID)
         KeClearEvent(MiLowNonPagedPoolEvent);
     }
 
+#if defined(_M_ARM64)
+    /* CHECKPOINT: Before releasing nonpaged pool lock */
+    MiArm64CheckSystemViewSpacePte("MiInitPoolEvents: Before releasing nonpaged pool lock");
+#endif
+
     /* We're done, release the nonpaged pool lock */
     KeReleaseQueuedSpinLock(LockQueueMmNonPagedPoolLock, OldIrql);
+
+#if defined(_M_ARM64)
+    /* CHECKPOINT: After releasing nonpaged pool lock (MiInitPoolEvents exit) */
+    MiArm64CheckSystemViewSpacePte("MiInitPoolEvents: Exit");
+#endif
 }
 
 CODE_SEG("INIT")

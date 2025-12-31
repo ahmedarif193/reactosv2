@@ -299,3 +299,13 @@ MiPdeToPxe(PMMPDE PointerPde)
 
 #define MiSubsectionPteToSubsection(x)                              \
         (PMMPTE)((LONG64)(x)->u.Subsect.SubsectionAddress)
+
+//
+// ARM64-specific MM diagnostics and helper functions
+//
+#ifdef _M_ARM64
+VOID
+MiArm64CheckSystemViewSpacePte(
+    _In_z_ PCSTR Location
+);
+#endif

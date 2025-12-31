@@ -2473,6 +2473,46 @@ MiSetSystemCodeProtection(
 {
     PMMPTE PointerPte;
     MMPTE TempPte;
+#if defined(_M_ARM64)
+    extern PVOID MiSystemViewStart;
+    extern SIZE_T MmSystemViewSize;
+    PMMPTE SysViewFirstPte, SysViewLastPte;
+
+    /* ARM64: Validate PTE range doesn't overlap with System View Space.
+     * System View Space uses prototype PTEs for mapped sections, and should
+     * never be modified by MiSetSystemCodeProtection which expects valid
+     * hardware PTEs for kernel code/data sections.
+     *
+     * If System View Space has been initialized, calculate its PTE range
+     * and ensure our range doesn't intersect with it.
+     */
+    if (MiSystemViewStart != NULL && MmSystemViewSize > 0)
+    {
+        SysViewFirstPte = MiAddressToPte(MiSystemViewStart);
+        SysViewLastPte = MiAddressToPte((PUCHAR)MiSystemViewStart + MmSystemViewSize - 1);
+
+        /* Check for overlap: ranges [A,B] and [C,D] overlap if A <= D && C <= B */
+        if (FirstPte <= SysViewLastPte && SysViewFirstPte <= LastPte)
+        {
+            PVOID FirstVa = MiPteToAddress(FirstPte);
+            PVOID LastVa = MiPteToAddress(LastPte);
+
+            DPRINT1("[arm64] WARNING: MiSetSystemCodeProtection PTE range overlaps with System View Space!\n");
+            DPRINT1("  Requested VA range:   %p - %p\n", FirstVa, LastVa);
+            DPRINT1("  Requested PTE range:  %p - %p\n", FirstPte, LastPte);
+            DPRINT1("  SysView VA range:     %p - %p\n",
+                    MiSystemViewStart, (PUCHAR)MiSystemViewStart + MmSystemViewSize - 1);
+            DPRINT1("  SysView PTE range:    %p - %p\n", SysViewFirstPte, SysViewLastPte);
+            DPRINT1("  Protection:           0x%lx\n", Protection);
+            DPRINT1("  This indicates an invalid image base address or corrupted PE headers.\n");
+            DPRINT1("  Skipping protection to prevent System View Space corruption.\n");
+
+            /* Don't proceed - this would corrupt System View Space PTEs */
+            NT_ASSERT(FALSE);
+            return;
+        }
+    }
+#endif
 
     /* Loop the PTEs */
     for (PointerPte = FirstPte; PointerPte <= LastPte; PointerPte++)
@@ -2540,11 +2580,50 @@ MiWriteProtectSystemImage(
         return;
     }
 
+#if defined(_M_ARM64)
+    DPRINT1("[arm64] MiWriteProtectSystemImage: ImageBase=%p\n", ImageBase);
+#endif
+
     /* Large page mapped images are not supported */
     NT_ASSERT(!MI_IS_PHYSICAL_ADDRESS(ImageBase));
 
     /* Session images are not yet supported */
     NT_ASSERT(!MI_IS_SESSION_ADDRESS(ImageBase));
+
+#if defined(_M_ARM64)
+    /* ARM64: Validate image base is not in System View Space.
+     * System View Space is used for section mappings (via MmMapViewInSystemSpace)
+     * and should never contain directly-loaded kernel modules.
+     * Kernel modules must be in KSEG0 or System PTE Space.
+     */
+    extern PVOID MiSystemViewStart;
+    extern SIZE_T MmSystemViewSize;
+    if (MiSystemViewStart != NULL && MmSystemViewSize > 0)
+    {
+        if ((ULONG_PTR)ImageBase >= (ULONG_PTR)MiSystemViewStart &&
+            (ULONG_PTR)ImageBase < ((ULONG_PTR)MiSystemViewStart + MmSystemViewSize))
+        {
+            DPRINT1("ARM64: MiWriteProtectSystemImage called on invalid image in System View Space!\n");
+            DPRINT1("  ImageBase: %p\n", ImageBase);
+            DPRINT1("  SysView:   %p - %p\n",
+                    MiSystemViewStart, (PUCHAR)MiSystemViewStart + MmSystemViewSize - 1);
+            DPRINT1("  System View Space is for mapped sections, not loaded modules.\n");
+            NT_ASSERT(FALSE);
+            return;
+        }
+    }
+
+    /* ARM64: Additional validation - image should be in valid kernel ranges.
+     * Expected ranges: KSEG0 (0xFFFF8000_00000000+) or System PTE Space.
+     */
+    if ((ULONG_PTR)ImageBase < 0xFFFF800000000000ULL)
+    {
+        DPRINT1("ARM64: MiWriteProtectSystemImage called on non-kernel address!\n");
+        DPRINT1("  ImageBase: %p (expected >= 0xFFFF800000000000)\n", ImageBase);
+        NT_ASSERT(FALSE);
+        return;
+    }
+#endif
 
     /* Get the NT headers */
     NtHeaders = RtlImageNtHeader(ImageBase);

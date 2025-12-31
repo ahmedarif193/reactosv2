@@ -26,6 +26,9 @@ VOID MiArm64DumpPoolDescriptors(_In_ PVOID VirtualAddress,
                                 _In_z_ PCSTR ContextTag);
 static VOID MiBuildNonPagedPool(VOID);
 static VOID MiBuildSystemPteSpace(VOID);
+static __inline PVOID MiArm64PhysToKseg0(UINT64 Phys);
+static __inline PVOID MiArm64PfnToKseg0(PFN_NUMBER Pfn);
+extern PVOID MiSystemViewStart;
 PVOID MiSystemPteSpaceStart;
 PVOID MiSystemPteSpaceEnd;
 /* Optional one-shot trace budget for verbose mapping logs (unused in release). */
@@ -134,6 +137,86 @@ MiArm64SelfMapL1MarkCreated(ULONG L0Index, ULONG L1Index)
 static VOID MiMapPPEs(PVOID StartAddress, PVOID EndAddress);
 static VOID MiMapPDEs(PVOID StartAddress, PVOID EndAddress);
 static VOID MiMapPTEs(PVOID StartAddress, PVOID EndAddress);
+
+/*
+ * DIAGNOSTIC: Helper function to verify System View Space PTE integrity.
+ * This function checks if the first PTE of System View Space has been corrupted.
+ * It's called at strategic checkpoints to identify exactly when corruption occurs.
+ */
+VOID
+MiArm64CheckSystemViewSpacePte(_In_z_ PCSTR Location)
+{
+    PMMPTE Pte;
+    MMPTE PteValue;
+    CHAR LogBuffer[300];
+
+    /* If System View Space hasn't been initialized yet, skip the check.
+     * Check the pointer before trying to use it to avoid accessing
+     * unitialized data during early boot. */
+    if (!MiSystemViewStart ||
+        (ULONG_PTR)MiSystemViewStart < 0xFFFF800000000000ULL)
+    {
+        return;
+    }
+
+    /* Get the first PTE of System View Space */
+    Pte = MiAddressToPte(MiSystemViewStart);
+    PteValue = *Pte;
+
+    /* Check if the PTE is non-zero (corrupted) */
+    if (PteValue.u.Long != 0)
+    {
+        CHAR CorruptLog[256];
+        if (NT_SUCCESS(RtlStringCbPrintfA(CorruptLog, sizeof(CorruptLog),
+            "[arm64] *** CORRUPTION DETECTED at %s: PTE=%p Value=0x%016llx ***",
+            Location, Pte, (ULONGLONG)PteValue.u.Long)))
+        {
+            KiArm64BootStageLog(CorruptLog);
+        }
+
+        /* Also check if it's a prototype PTE pointing to paged pool */
+        if (PteValue.u.Soft.Prototype)
+        {
+            PVOID ProtoAddr = MiProtoPteToPte(&PteValue);
+            if (NT_SUCCESS(RtlStringCbPrintfA(CorruptLog, sizeof(CorruptLog),
+                "[arm64] *** This is a PROTOTYPE PTE pointing to %p (PageFileHigh=0x%lx) ***",
+                ProtoAddr, PteValue.u.Soft.PageFileHigh)))
+            {
+                KiArm64BootStageLog(CorruptLog);
+            }
+        }
+
+        /* Read the physical content directly via KSEG0 to check for cache coherency */
+        PMMPDE FirstSysViewPde = MiAddressToPde(MiSystemViewStart);
+        if (FirstSysViewPde->u.Hard.Valid)
+        {
+            PFN_NUMBER L3TablePfn = FirstSysViewPde->u.Hard.PageFrameNumber;
+            volatile UINT64 *L3TableDirect = (volatile UINT64 *)MiArm64PfnToKseg0(L3TablePfn);
+            UINT64 FirstPtePhysicalDirect = L3TableDirect[0];
+
+            if (NT_SUCCESS(RtlStringCbPrintfA(CorruptLog, sizeof(CorruptLog),
+                "[arm64] *** Physical check: L3 PFN=0x%I64x KSEG0[0]=0x%016llx (matches=%d) ***",
+                (ULONGLONG)L3TablePfn, (ULONGLONG)FirstPtePhysicalDirect,
+                (PteValue.u.Long == FirstPtePhysicalDirect))))
+            {
+                KiArm64BootStageLog(CorruptLog);
+            }
+        }
+
+        DbgBreakPoint();
+    }
+    else
+    {
+        /* PTE is still zero - log success at key checkpoints only */
+        CHAR OkLog[200];
+        if (NT_SUCCESS(RtlStringCbPrintfA(OkLog, sizeof(OkLog),
+            "[arm64] Checkpoint OK at %s: PTE=%p is still zero",
+            Location, Pte)))
+        {
+            KiArm64BootStageLog(OkLog);
+        }
+    }
+}
 
 #define ARM64_PTE_AF                (1ULL << 10)  /* Access Flag - required for L3 page entries */
 #define ARM64_PTE_SH_INNER          (3ULL << 8)   /* Inner Shareable */
@@ -1648,6 +1731,9 @@ MiInitMachineDependent(_Inout_ PLOADER_PARAMETER_BLOCK LoaderBlock)
         MiInitializePfnDatabase(LoaderBlock);
         KiArm64BootStageLog("[arm64] MiInitMachineDependent: PFN database ready");
 
+        /* CHECKPOINT 3: After MiInitializePfnDatabase - DISABLED (MiSystemViewStart not initialized yet) */
+        /* MiArm64CheckSystemViewSpacePte("After MiInitializePfnDatabase"); */
+
         /* Report page consumption from PFN DB initialization */
         if (MxFreeDescriptor && PagesBeforePfnDb > 0)
         {
@@ -1700,6 +1786,9 @@ MiInitMachineDependent(_Inout_ PLOADER_PARAMETER_BLOCK LoaderBlock)
         KiArm64BootStageLog("[arm64] MiInitMachineDependent: registering FreeLDR page tables");
         MiArm64RegisterFreeLdrPageTables();
         KiArm64BootStageLog("[arm64] MiInitMachineDependent: FreeLDR page tables registered");
+
+        /* CHECKPOINT 2: After MiArm64RegisterFreeLdrPageTables - DISABLED (MiSystemViewStart not initialized yet) */
+        /* MiArm64CheckSystemViewSpacePte("After MiArm64RegisterFreeLdrPageTables"); */
 
         /* Normalize PFN boundary flags for initial nonpaged pool pages. */
         MiArm64NormalizePoolPfnFlagsRange(MmNonPagedPoolStart,
@@ -1767,6 +1856,9 @@ MiInitMachineDependent(_Inout_ PLOADER_PARAMETER_BLOCK LoaderBlock)
              * PDE worth of PTEs, and the rest will be demand-allocated during pool growth. */
         }
         KiArm64BootStageLog("[arm64] MiInitMachineDependent: paged pool page tables pre-mapped");
+
+        /* CHECKPOINT 4: After pool initialization (paged pool page tables pre-mapped) - DISABLED (MiSystemViewStart not initialized yet) */
+        /* MiArm64CheckSystemViewSpacePte("After paged pool page tables pre-mapped"); */
 
         /* CRITICAL for ARM64: Pre-map page tables for System View Space.
          * System View Space is accessed during Phase 1 at DISPATCH_LEVEL (IRQL 2),
@@ -2002,83 +2094,8 @@ MiInitMachineDependent(_Inout_ PLOADER_PARAMETER_BLOCK LoaderBlock)
 
             KiArm64BootStageLog("[arm64] MiInitMachineDependent: system view space alias pages mapped");
 
-            /* DIAGNOSTIC: Verify the first PTE of System View Space is still zero after alias mapping.
-             * This will help us detect if the corruption happens during alias mapping or later. */
-            {
-                PMMPTE FirstSysViewPte = MiAddressToPte(MiSystemViewStart);
-                MMPTE FirstPteValue = *FirstSysViewPte;
-
-                /* Also read the physical content directly via KSEG0 to check for cache coherency issues */
-                PMMPDE FirstSysViewPde = MiAddressToPde(MiSystemViewStart);
-                PFN_NUMBER L3TablePfn = FirstSysViewPde->u.Hard.PageFrameNumber;
-                volatile UINT64 *L3TableDirect = (volatile UINT64 *)MiArm64PfnToKseg0(L3TablePfn);
-                UINT64 FirstPtePhysicalDirect = L3TableDirect[0];  /* First entry in L3 table */
-
-                CHAR DiagLog[256];
-                if (NT_SUCCESS(RtlStringCbPrintfA(DiagLog, sizeof(DiagLog),
-                    "[arm64] DIAGNOSTIC: First System View Space PTE at %p = 0x%016llx, via KSEG0[L3 PFN 0x%I64x] = 0x%016llx",
-                    FirstSysViewPte, (ULONGLONG)FirstPteValue.u.Long,
-                    (ULONGLONG)L3TablePfn, (ULONGLONG)FirstPtePhysicalDirect)))
-                {
-                    KiArm64BootStageLog(DiagLog);
-                }
-
-                /* Check if the two values match - if not, it's a cache coherency or aliasing issue */
-                if (FirstPteValue.u.Long != FirstPtePhysicalDirect)
-                {
-                    CHAR MismatchLog[256];
-                    if (NT_SUCCESS(RtlStringCbPrintfA(MismatchLog, sizeof(MismatchLog),
-                        "[arm64] ERROR: PTE alias mismatch! Via PTE=%p got 0x%016llx, via KSEG0 got 0x%016llx",
-                        FirstSysViewPte, (ULONGLONG)FirstPteValue.u.Long, (ULONGLONG)FirstPtePhysicalDirect)))
-                    {
-                        KiArm64BootStageLog(MismatchLog);
-                    }
-                }
-
-                if (FirstPteValue.u.Long != 0 || FirstPtePhysicalDirect != 0)
-                {
-                    /* CORRUPTION DETECTED! Log detailed information */
-                    CHAR CorruptLog[256];
-                    if (NT_SUCCESS(RtlStringCbPrintfA(CorruptLog, sizeof(CorruptLog),
-                        "[arm64] ERROR: System View Space first PTE CORRUPTED after alias mapping! PTE=%p value=0x%016llx",
-                        FirstSysViewPte, (ULONGLONG)FirstPteValue.u.Long)))
-                    {
-                        KiArm64BootStageLog(CorruptLog);
-                    }
-
-                    /* Extract PFN from corrupt value if it looks like a PTE */
-                    PFN_NUMBER CorruptPfn = (PFN_NUMBER)((FirstPteValue.u.Long & ARM64_PTE_ADDR_MASK) >> PAGE_SHIFT);
-                    if (NT_SUCCESS(RtlStringCbPrintfA(CorruptLog, sizeof(CorruptLog),
-                        "[arm64] Corrupt PTE upper32=0x%08lx lower32=0x%08lx extracted_PFN=0x%I64x",
-                        (ULONG)(FirstPteValue.u.Long >> 32), (ULONG)(FirstPteValue.u.Long & 0xFFFFFFFFULL),
-                        (ULONGLONG)CorruptPfn)))
-                    {
-                        KiArm64BootStageLog(CorruptLog);
-                    }
-
-                    /* Check if the L3 table PFN is still properly registered in PFN database */
-                    if (MiArm64PfnDatabaseReady && L3TablePfn <= MmHighestPhysicalPage)
-                    {
-                        PMMPFN PfnEntry = MiGetPfnEntry(L3TablePfn);
-                        if (PfnEntry)
-                        {
-                            CHAR PfnDbLog[256];
-                            if (NT_SUCCESS(RtlStringCbPrintfA(PfnDbLog, sizeof(PfnDbLog),
-                                "[arm64] L3 table PFN 0x%I64x PFN DB: Loc=%u Ref=%u PteFrame=0x%I64x ShareCount=%u",
-                                (ULONGLONG)L3TablePfn, PfnEntry->u3.e1.PageLocation, PfnEntry->u3.e2.ReferenceCount,
-                                (ULONGLONG)PfnEntry->u4.PteFrame, (ULONG)PfnEntry->u2.ShareCount)))
-                            {
-                                KiArm64BootStageLog(PfnDbLog);
-                            }
-
-                            if (PfnEntry->u3.e1.PageLocation != ActiveAndValid)
-                            {
-                                KiArm64BootStageLog("[arm64] ERROR: L3 table PFN is NOT ActiveAndValid - may have been reused!");
-                            }
-                        }
-                    }
-                }
-            }
+            /* CHECKPOINT 1: After System View Space mapping completes */
+            MiArm64CheckSystemViewSpacePte("After System View Space MiMapPDEs + alias mapping");
         }
 
         /* CRITICAL for ARM64: Pre-map page tables for Session Space.
@@ -2287,6 +2304,9 @@ MiInitMachineDependent(_Inout_ PLOADER_PARAMETER_BLOCK LoaderBlock)
         KiArm64BootStageLog("[arm64] MiInitMachineDependent: deferring pool/PTE bring-up (self-map unavailable)");
     }
     KiArm64BootStageLog("[arm64] MiInitMachineDependent: guard check done");
+
+    /* CHECKPOINT 5: Before MiInitMachineDependent returns */
+    MiArm64CheckSystemViewSpacePte("Before MiInitMachineDependent returns");
 
     /* Report comprehensive page consumption statistics */
     {
