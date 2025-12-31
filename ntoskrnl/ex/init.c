@@ -17,6 +17,12 @@
 #define NDEBUG
 #include <debug.h>
 
+#if defined(_M_ARM64)
+#define EXP_ARM64_LOG(Stage) KiArm64BootStageLog(Stage)
+#else
+#define EXP_ARM64_LOG(Stage) do { } while (0)
+#endif
+
 /* This is the size that we can expect from the win 2003 loader */
 #define LOADER_PARAMETER_EXTENSION_MIN_SIZE \
     RTL_SIZEOF_THROUGH_FIELD(LOADER_PARAMETER_EXTENSION, AcpiTableSize)
@@ -1169,12 +1175,14 @@ ExpInitializeExecutive(IN ULONG Cpu,
                      &ExpNlsTableInfo);
     RtlResetRtlTranslations(&ExpNlsTableInfo);
 
+    EXP_ARM64_LOG("[arm64] ExpInitializeExecutive: before HalInitSystem");
     /* Now initialize the HAL */
     if (!HalInitSystem(ExpInitializationPhase, LoaderBlock))
     {
         /* HAL failed to initialize, bugcheck */
         KeBugCheck(HAL_INITIALIZATION_FAILED);
     }
+    EXP_ARM64_LOG("[arm64] ExpInitializeExecutive: after HalInitSystem");
 
     /* Make sure interrupts are active now */
     _enable();
@@ -1229,14 +1237,20 @@ ExpInitializeExecutive(IN ULONG Cpu,
     /* Add loaded CmNtGlobalFlag value */
     NtGlobalFlag |= CmNtGlobalFlag;
 
+    EXP_ARM64_LOG("[arm64] ExpInitializeExecutive: before ExInitSystem");
     /* Initialize the executive at phase 0 */
     if (!ExInitSystem()) KeBugCheck(PHASE0_INITIALIZATION_FAILED);
+    EXP_ARM64_LOG("[arm64] ExpInitializeExecutive: after ExInitSystem");
 
+    EXP_ARM64_LOG("[arm64] ExpInitializeExecutive: before MmArmInitSystem(0)");
     /* Initialize the memory manager at phase 0 */
     if (!MmArmInitSystem(0, LoaderBlock)) KeBugCheck(PHASE0_INITIALIZATION_FAILED);
+    EXP_ARM64_LOG("[arm64] ExpInitializeExecutive: after MmArmInitSystem(0)");
 
+    EXP_ARM64_LOG("[arm64] ExpInitializeExecutive: before ExpLoadBootSymbols");
     /* Load boot symbols */
     ExpLoadBootSymbols(LoaderBlock);
+    EXP_ARM64_LOG("[arm64] ExpInitializeExecutive: after ExpLoadBootSymbols");
 
     /* Check if we should break after symbol load */
     if (KdBreakAfterSymbolLoad)
@@ -1259,7 +1273,9 @@ ExpInitializeExecutive(IN ULONG Cpu,
 #endif
 
     /* Make a copy of the NLS Tables */
+    EXP_ARM64_LOG("[arm64] ExpInitializeExecutive: before ExpInitNls");
     ExpInitNls(LoaderBlock);
+    EXP_ARM64_LOG("[arm64] ExpInitializeExecutive: after ExpInitNls");
 
     /* Get the kernel's load entry */
     NtosEntry = CONTAINING_RECORD(LoaderBlock->LoadOrderListHead.Flink,
@@ -1436,20 +1452,30 @@ ExpInitializeExecutive(IN ULONG Cpu,
     }
 #endif
 
+    EXP_ARM64_LOG("[arm64] ExpInitializeExecutive: before ObInitSystem");
     /* Create the Basic Object Manager Types to allow new Object Types */
     if (!ObInitSystem()) KeBugCheck(OBJECT_INITIALIZATION_FAILED);
+    EXP_ARM64_LOG("[arm64] ExpInitializeExecutive: after ObInitSystem");
 
+    EXP_ARM64_LOG("[arm64] ExpInitializeExecutive: before SeInitSystem");
     /* Load basic Security for other Managers */
     if (!SeInitSystem()) KeBugCheck(SECURITY_INITIALIZATION_FAILED);
+    EXP_ARM64_LOG("[arm64] ExpInitializeExecutive: after SeInitSystem");
 
+    EXP_ARM64_LOG("[arm64] ExpInitializeExecutive: before PsInitSystem");
     /* Initialize the Process Manager */
     if (!PsInitSystem(LoaderBlock)) KeBugCheck(PROCESS_INITIALIZATION_FAILED);
+    EXP_ARM64_LOG("[arm64] ExpInitializeExecutive: after PsInitSystem");
 
+    EXP_ARM64_LOG("[arm64] ExpInitializeExecutive: before PpInitSystem");
     /* Initialize the PnP Manager */
     if (!PpInitSystem()) KeBugCheck(PP0_INITIALIZATION_FAILED);
+    EXP_ARM64_LOG("[arm64] ExpInitializeExecutive: after PpInitSystem");
 
+    EXP_ARM64_LOG("[arm64] ExpInitializeExecutive: before DbgkInitialize");
     /* Initialize the User-Mode Debugging Subsystem */
     DbgkInitialize();
+    EXP_ARM64_LOG("[arm64] ExpInitializeExecutive: after DbgkInitialize");
 
     /* Calculate the tick count multiplier */
     ExpTickCountMultiplier = ExComputeTickCountMultiplier(KeMaximumIncrement);

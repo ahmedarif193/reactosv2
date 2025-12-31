@@ -33,6 +33,7 @@ static KINTERRUPT KiArm64DpcInterrupt;
 static KSPIN_LOCK KiArm64DpcLock;
 static KINTERRUPT KiArm64ApcInterrupt;
 static KSPIN_LOCK KiArm64ApcLock;
+static BOOLEAN KiArm64UseVirtualTimer = TRUE;
 
 BOOLEAN
 NTAPI
@@ -63,6 +64,14 @@ static __inline VOID KiArm64WriteCntpCtl(ULONG v)
 {
     __asm__ __volatile__("msr cntp_ctl_el0, %0" :: "r"((ULONGLONG)v));
 }
+static __inline VOID KiArm64WriteCntvTval(ULONGLONG v)
+{
+    __asm__ __volatile__("msr cntv_tval_el0, %0" :: "r"(v));
+}
+static __inline VOID KiArm64WriteCntvCtl(ULONG v)
+{
+    __asm__ __volatile__("msr cntv_ctl_el0, %0" :: "r"((ULONGLONG)v));
+}
 
 static BOOLEAN NTAPI
 KiArm64TimerIsr(
@@ -73,7 +82,10 @@ KiArm64TimerIsr(
     UNREFERENCED_PARAMETER(Interrupt);
 
     /* Reload next tick */
-    KiArm64WriteCntpTval(period);
+    if (KiArm64UseVirtualTimer)
+        KiArm64WriteCntvTval(period);
+    else
+        KiArm64WriteCntpTval(period);
 
     /* Light heartbeat (very sparse to avoid spam) */
     static volatile LONG tick;
@@ -127,9 +139,15 @@ KiArm64StartTimer(VOID)
     if (frq == 0) frq = 100000000ULL; /* safe default */
     /* Target ~100 Hz */
     KiArm64TimerPeriodTicks = frq / 100ULL;
-    KiArm64WriteCntpTval(KiArm64TimerPeriodTicks);
+    if (KiArm64UseVirtualTimer)
+        KiArm64WriteCntvTval(KiArm64TimerPeriodTicks);
+    else
+        KiArm64WriteCntpTval(KiArm64TimerPeriodTicks);
     /* Enable and unmask: ENABLE=1, IMASK=0 */
-    KiArm64WriteCntpCtl(1);
+    if (KiArm64UseVirtualTimer)
+        KiArm64WriteCntvCtl(1);
+    else
+        KiArm64WriteCntpCtl(1);
 }
 
 CODE_SEG("INIT")
@@ -217,7 +235,7 @@ KeInitInterrupts(VOID)
                               KiArm64TimerIsr,
                               &KiArm64TimerPeriodTicks,
                               &KiArm64TimerLock,
-                              30, /* PPI: non-secure physical timer */
+                              KiArm64UseVirtualTimer ? 27 : 30,
                               DISPATCH_LEVEL,
                               DISPATCH_LEVEL,
                               LevelSensitive,
@@ -232,9 +250,11 @@ KeInitInterrupts(VOID)
             __asm__ __volatile__("msr daifclr, #2" ::: "memory");
             DbgPrintEx(DPFLTR_DEFAULT_ID,
                        DPFLTR_TRACE_LEVEL,
-                       "[arm64] Timer configured: CNTFRQ=%llu period=%llu ticks (INTID=30)\n",
+                       "[arm64] Timer configured: %s CNTFRQ=%llu period=%llu ticks (INTID=%u)\n",
+                       KiArm64UseVirtualTimer ? "CNTV" : "CNTP",
                        KiArm64ReadCntFrq(),
-                       KiArm64TimerPeriodTicks);
+                       KiArm64TimerPeriodTicks,
+                       KiArm64UseVirtualTimer ? 27u : 30u);
             KiArm64BootStageLog("[arm64] KeInitInterrupts: timer connected & enabled");
         }
         else

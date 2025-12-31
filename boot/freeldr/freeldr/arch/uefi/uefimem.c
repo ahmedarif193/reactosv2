@@ -46,6 +46,10 @@ extern REACTOS_INTERNAL_BGCONTEXT framebufferData;
 /* Provided elsewhere */
 extern char __ImageBase;
 
+#if defined(_M_ARM64) || defined(__aarch64__)
+VOID Arm64InitializeExceptions(VOID);
+#endif
+
 /* From your other unit */
 extern ULONG
 AddMemoryDescriptor(
@@ -402,7 +406,15 @@ UefiExitBootServices(VOID)
         BootServicesExitedFlag = TRUE;
         /* Notify the console layer so it can switch to the GOP fallback. */
         UefiConsMarkBootServicesExited();
+#if defined(_M_ARM64) || defined(__aarch64__)
+        /* Install exception vectors while we still have a stable identity map. */
+        Arm64InitializeExceptions();
+#endif
+#if defined(_M_ARM64) || defined(__aarch64__)
+        /* Defer serial shutdown so post-EBS debug output stays visible on ARM64. */
+#else
         UefiSerialDisableFirmware();
+#endif
     }
 }
 

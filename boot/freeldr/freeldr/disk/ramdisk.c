@@ -231,7 +231,7 @@ RamDiskRegisterArcDevice(VOID)
     ArcRegistered = TRUE;
 }
 
-static BOOLEAN RamDiskReserveWritableBuffer(ULONGLONG RequestedSize);
+static BOOLEAN RamDiskReserveWritableBuffer(ULONGLONG RequestedSize, BOOLEAN OptionalRamDisk);
 
 static VOID
 RamDiskSetVisibleRegion(IN ULONGLONG Offset,
@@ -1682,7 +1682,8 @@ RamDiskBuildWritableImage(
     IN PISO_SOURCE Source,
     IN ULONGLONG RequestedSize,
     OUT PVOID *NewBase,
-    OUT PULONGLONG NewSize)
+    OUT PULONGLONG NewSize,
+    IN BOOLEAN OptionalRamDisk)
 {
     PVOID WritableBase = NULL;
     ULONGLONG WritableSize = 0;
@@ -1706,7 +1707,7 @@ RamDiskBuildWritableImage(
         WARN("RamDiskBuildWritableImage: requested size %llu exceeds low-memory limit %llu\n",
              RequiredSize,
              RAMDISK_LOW_ALLOC_MAX);
-        if (!RamDiskErrorShown)
+        if (!RamDiskErrorShown && !OptionalRamDisk)
         {
             UiMessageBox("Requested writable RAM disk size exceeds available low memory.");
             RamDiskErrorShown = TRUE;
@@ -1723,7 +1724,7 @@ RamDiskBuildWritableImage(
              IsoSize,
              RequiredSize,
              RAMDISK_LOW_ALLOC_MAX);
-        if (!RamDiskErrorShown)
+        if (!RamDiskErrorShown && !OptionalRamDisk)
         {
             UiMessageBox("Writable RAM disk request uses too much low memory to keep the ISO resident.");
             RamDiskErrorShown = TRUE;
@@ -1740,7 +1741,7 @@ RamDiskBuildWritableImage(
           RequestedSize,
           RequiredSize);
 
-    if (!RamDiskReserveWritableBuffer(RequiredSize))
+    if (!RamDiskReserveWritableBuffer(RequiredSize, OptionalRamDisk))
         return FALSE;
 
     if (!RamDiskGetReservedBuffer(RequiredSize, &WritableBase, &WritableSize))
@@ -1976,7 +1977,7 @@ __attribute__((unused))
 #endif
 static
 BOOLEAN
-RamDiskReserveWritableBuffer(ULONGLONG RequestedSize)
+RamDiskReserveWritableBuffer(ULONGLONG RequestedSize, BOOLEAN OptionalRamDisk)
 {
     ULONGLONG AllocationSize;
     PVOID Base;
@@ -1996,7 +1997,7 @@ RamDiskReserveWritableBuffer(ULONGLONG RequestedSize)
         WARN("Requested ramdisk buffer %llu bytes exceeds low-memory limit %llu bytes\n",
              AllocationSize,
              AllocationLimit);
-        if (!RamDiskErrorShown)
+        if (!RamDiskErrorShown && !OptionalRamDisk)
         {
             UiMessageBox("Requested writable RAM disk size exceeds available low memory.");
             RamDiskErrorShown = TRUE;
@@ -2022,13 +2023,22 @@ RamDiskReserveWritableBuffer(ULONGLONG RequestedSize)
         return FALSE;
     }
 
-    Base = MmAllocateHighestMemoryBelowAddress((SIZE_T)AllocationSize,
-                                               (PVOID)(ULONG_PTR)AllocationLimit,
-                                               LoaderMemoryData);
+    if (OptionalRamDisk)
+    {
+        Base = MmAllocateHighestMemoryBelowAddressOptional((SIZE_T)AllocationSize,
+                                                           (PVOID)(ULONG_PTR)AllocationLimit,
+                                                           LoaderMemoryData);
+    }
+    else
+    {
+        Base = MmAllocateHighestMemoryBelowAddress((SIZE_T)AllocationSize,
+                                                   (PVOID)(ULONG_PTR)AllocationLimit,
+                                                   LoaderMemoryData);
+    }
     if (!Base)
     {
         WARN("Failed to reserve writable ramdisk buffer (%llu bytes)\n", AllocationSize);
-        if (!RamDiskErrorShown)
+        if (!RamDiskErrorShown && !OptionalRamDisk)
         {
             UiMessageBox("Unable to allocate low-memory buffer for writable RAM disk.");
             RamDiskErrorShown = TRUE;
@@ -2043,7 +2053,7 @@ RamDiskReserveWritableBuffer(ULONGLONG RequestedSize)
              (PVOID)(ULONG_PTR)((ULONG_PTR)Base + (ULONG_PTR)AllocationSize),
              (PVOID)(ULONG_PTR)AllocationLimit);
         RamDiskReleaseMemory(Base, AllocationSize);
-        if (!RamDiskErrorShown)
+        if (!RamDiskErrorShown && !OptionalRamDisk)
         {
             UiMessageBox("Unable to allocate low-memory buffer for writable RAM disk.");
             RamDiskErrorShown = TRUE;
@@ -2191,7 +2201,8 @@ static const DEVVTBL RamDiskVtbl =
 static ARC_STATUS
 RamDiskLoadVirtualFile(
     IN PCSTR FileName,
-    IN PCSTR DefaultPath OPTIONAL)
+    IN PCSTR DefaultPath OPTIONAL,
+    IN BOOLEAN OptionalRamDisk)
 {
     ARC_STATUS Status;
     ULONG RamFileId;
@@ -2268,7 +2279,8 @@ RamDiskLoadVirtualFile(
     if (Information.EndingAddress.HighPart != 0)
     {
         ArcClose(RamFileId);
-        UiMessageBox("RAM disk too big.");
+        if (!OptionalRamDisk)
+            UiMessageBox("RAM disk too big.");
         return ENOMEM;
     }
 #endif
@@ -2295,12 +2307,16 @@ RamDiskLoadVirtualFile(
         ChunkSize = ISO_SECTOR_SIZE;
 
 #if defined(_M_AMD64) || defined(__x86_64__)
-    RamDiskBase = MmAllocateMemoryWithType(RamDiskFileSize, LoaderXIPRom);
+    if (OptionalRamDisk)
+        RamDiskBase = MmAllocateMemoryWithTypeOptional(RamDiskFileSize, LoaderXIPRom);
+    else
+        RamDiskBase = MmAllocateMemoryWithType(RamDiskFileSize, LoaderXIPRom);
     if (!RamDiskBase)
     {
         RamDiskFileSize = 0;
         ArcClose(RamFileId);
-        UiMessageBox("Failed to allocate memory for RAM disk.");
+        if (!OptionalRamDisk)
+            UiMessageBox("Failed to allocate memory for RAM disk.");
         return ENOMEM;
     }
 #else
@@ -2311,18 +2327,29 @@ RamDiskLoadVirtualFile(
         {
             RamDiskFileSize = 0;
             ArcClose(RamFileId);
-            UiMessageBox("RAM disk image is larger than available low memory.");
+            if (!OptionalRamDisk)
+                UiMessageBox("RAM disk image is larger than available low memory.");
             return ENOMEM;
         }
 
-        RamDiskBase = MmAllocateHighestMemoryBelowAddress((SIZE_T)RamDiskFileSize,
-                                                          (PVOID)(ULONG_PTR)AllocationLimit,
-                                                          LoaderXIPRom);
+        if (OptionalRamDisk)
+        {
+            RamDiskBase = MmAllocateHighestMemoryBelowAddressOptional((SIZE_T)RamDiskFileSize,
+                                                                      (PVOID)(ULONG_PTR)AllocationLimit,
+                                                                      LoaderXIPRom);
+        }
+        else
+        {
+            RamDiskBase = MmAllocateHighestMemoryBelowAddress((SIZE_T)RamDiskFileSize,
+                                                              (PVOID)(ULONG_PTR)AllocationLimit,
+                                                              LoaderXIPRom);
+        }
         if (!RamDiskBase)
         {
             RamDiskFileSize = 0;
             ArcClose(RamFileId);
-            UiMessageBox("Failed to allocate low memory for RAM disk.");
+            if (!OptionalRamDisk)
+                UiMessageBox("Failed to allocate low memory for RAM disk.");
             return ENOMEM;
         }
     }
@@ -2336,7 +2363,8 @@ RamDiskLoadVirtualFile(
         RamDiskBase = NULL;
         RamDiskFileSize = 0;
         ArcClose(RamFileId);
-        UiMessageBox("Failed to read RAM disk.");
+        if (!OptionalRamDisk)
+            UiMessageBox("Failed to read RAM disk.");
         return Status;
     }
 
@@ -2387,7 +2415,8 @@ RamDiskLoadVirtualFile(
             RamDiskBase = NULL;
             RamDiskFileSize = 0;
             ArcClose(RamFileId);
-            UiMessageBox("Failed to read RAM disk.");
+            if (!OptionalRamDisk)
+                UiMessageBox("Failed to read RAM disk.");
             return ((Status != ESUCCESS) ? Status : EIO);
         }
 
@@ -2525,6 +2554,7 @@ RamDiskInitialize(
 
         BOOLEAN StreamingSucceeded = FALSE;
         ULONGLONG StreamIsoSize = 0;
+        BOOLEAN OptionalRamDisk = (RamDiskRequestedSize != 0 && !*FileName);
 
         if (RamDiskRequestedSize != 0)
         {
@@ -2582,7 +2612,8 @@ RamDiskInitialize(
                         if (RamDiskBuildWritableImage(&StreamSource,
                                                        TotalTarget,
                                                        &WritableBase,
-                                                       &WritableSize))
+                                                       &WritableSize,
+                                                       OptionalRamDisk))
                         {
                             RamDiskCloseIsoSource(&StreamSource);
                             RamDiskBase = WritableBase;
@@ -2609,7 +2640,8 @@ RamDiskInitialize(
                                 if (RamDiskBuildWritableImage(&StreamSource,
                                                                ShrunkTotal,
                                                                &WritableBase,
-                                                               &WritableSize))
+                                                               &WritableSize,
+                                                               OptionalRamDisk))
                                 {
                                     RamDiskCloseIsoSource(&StreamSource);
                                     RamDiskBase = WritableBase;
@@ -2662,7 +2694,7 @@ RamDiskInitialize(
                     WARN("RamDiskInitialize: writable overlay request (%llu) exceeds low-memory limit before staging ISO (%llu)\n",
                          RequiredSize,
                          (ULONGLONG)RAMDISK_LOW_ALLOC_MAX);
-                    if (!RamDiskErrorShown)
+                    if (!RamDiskErrorShown && !OptionalRamDisk)
                     {
                         UiMessageBox("Writable RAM disk request exceeds available low memory. Continuing with read-only media.");
                         RamDiskErrorShown = TRUE;
@@ -2680,7 +2712,7 @@ RamDiskInitialize(
                              IsoSize,
                              ExtraBytes,
                              (ULONGLONG)RAMDISK_LOW_ALLOC_MAX);
-                        if (!RamDiskErrorShown)
+                        if (!RamDiskErrorShown && !OptionalRamDisk)
                         {
                             UiMessageBox("Writable RAM disk request leaves insufficient low memory once the ISO is cached. Continuing with read-only media.");
                             RamDiskErrorShown = TRUE;
@@ -2692,9 +2724,9 @@ RamDiskInitialize(
         }
 
         if (*FileName)
-            Status = RamDiskLoadVirtualFile(FileName, DefaultPath);
+            Status = RamDiskLoadVirtualFile(FileName, DefaultPath, OptionalRamDisk);
         else
-            Status = RamDiskLoadVirtualFile(DefaultPath, NULL);
+            Status = RamDiskLoadVirtualFile(DefaultPath, NULL, OptionalRamDisk);
         if (Status != ESUCCESS)
             return Status;
 
@@ -2731,9 +2763,10 @@ RamDiskInitialize(
                 if (!RamDiskBuildWritableImage(&MemorySource,
                                                TotalTarget,
                                                &WritableBase,
-                                               &WritableSize))
+                                               &WritableSize,
+                                               OptionalRamDisk))
                 {
-                    if (!RamDiskErrorShown)
+                    if (!RamDiskErrorShown && !OptionalRamDisk)
                     {
                         UiMessageBox("Failed to expand LiveCD into writable RAM.");
                         RamDiskErrorShown = TRUE;

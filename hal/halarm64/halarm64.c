@@ -387,10 +387,16 @@ static ULONG HalpArm64ActiveIntId[MAXIMUM_PROCESSORS];
 
 /* GIC detection: system-register interface (GICv3+) vs legacy CPU IF (GICv2) */
 static BOOLEAN HalpGicUseSysRegs = FALSE;
+static BOOLEAN HalpForceLegacyGic = FALSE;
 static ULONG HalpGicArchRev = 0; /* 2=v2, 3=v3, 4=v4, etc. */
 static BOOLEAN HalpLoggedGicOnce = FALSE; /* One-time post-KD log */
 
 #if defined(_M_ARM64) || defined(__aarch64__)
+FORCEINLINE ULONGLONG HalpReadMidr(void)
+{
+    ULONGLONG v; __asm__ __volatile__("mrs %0, midr_el1" : "=r"(v)); return v;
+}
+
 FORCEINLINE ULONGLONG HalpReadPfr0(void)
 {
     ULONGLONG v; __asm__ __volatile__("mrs %0, id_aa64pfr0_el1" : "=r"(v)); return v;
@@ -442,6 +448,17 @@ FORCEINLINE VOID HalpWriteIccIgrpen1(unsigned int v)
 }
 #endif
 
+static BOOLEAN
+HalpHasLoaderOption(
+    _In_opt_ PSTR Options,
+    _In_ PCSTR Option)
+{
+    if (!Options || !Option || *Option == '\0')
+        return FALSE;
+
+    return (strstr(Options, Option) != NULL);
+}
+
 static VOID
 HalpArm64SendSgi(
     _In_ KAFFINITY TargetSet,
@@ -472,7 +489,6 @@ HalInitSystem(
 {
     ULONG i, lines, nregs;
     ULONG typer;
-    UNREFERENCED_PARAMETER(LoaderBlock);
 
     if (BootPhase != 0)
     {
@@ -499,6 +515,32 @@ HalInitSystem(
         return TRUE;
     }
 
+    DPRINT1("[arm64][HAL] HalInitSystem: phase0 begin\n");
+
+    if (LoaderBlock && LoaderBlock->LoadOptions)
+    {
+        if (HalpHasLoaderOption(LoaderBlock->LoadOptions, "GICV2") ||
+            HalpHasLoaderOption(LoaderBlock->LoadOptions, "NOGICSYSREG") ||
+            HalpHasLoaderOption(LoaderBlock->LoadOptions, "LEGACYGIC"))
+        {
+            HalpForceLegacyGic = TRUE;
+            DPRINT1("[arm64][HAL] Forcing legacy GIC interface via boot option\n");
+        }
+    }
+
+#if defined(_M_ARM64) || defined(__aarch64__)
+    if (!HalpForceLegacyGic)
+    {
+        ULONGLONG midr = HalpReadMidr();
+        ULONG implementer = (ULONG)((midr >> 24) & 0xFF);
+        if (implementer == 0x61) /* Apple */
+        {
+            HalpForceLegacyGic = TRUE;
+            DPRINT1("[arm64][HAL] Forcing legacy GIC interface on Apple CPU\n");
+        }
+    }
+#endif
+
     /* Probe GIC capabilities before touching CPU IF */
     {
         ULONGLONG pfr0 = 0;
@@ -516,7 +558,7 @@ HalInitSystem(
          * For GICv3+, we MUST use system registers (ICC_*) because the
          * legacy MMIO CPU interface (GICC) doesn't exist on GICv3-only systems.
          */
-        if (pfr0_gic >= 1)
+        if (!HalpForceLegacyGic && pfr0_gic >= 1)
         {
             /* Enable System Register interface */
             ULONG sre = HalpReadIccSre();
@@ -559,32 +601,53 @@ HalInitSystem(
                    HalpGicUseSysRegs ? "GICv3 system-register" : "GICv2 legacy (GICC)");
     }
 
+    DPRINT1("[arm64][HAL] HalInitSystem: GIC probe done (useSys=%lu arch=%lu)\n",
+            HalpGicUseSysRegs ? 1UL : 0UL,
+            HalpGicArchRev);
+
     /* Disable distributor while we (re)configure */
     *HalpMmio(HAL_ARM64_GICD_BASE, GICD_CTLR) = 0;
+    DPRINT1("[arm64][HAL] HalInitSystem: GICD disabled\n");
 
     /* How many interrupt lines? */
     typer = *HalpMmio(HAL_ARM64_GICD_BASE, GICD_TYPER);
     lines = 32 * ((typer & 0x1F) + 1);
     if (lines > 1020) lines = 1020;
     nregs = (lines + 31) / 32;
+    DPRINT1("[arm64][HAL] HalInitSystem: GICD typer=0x%08lx lines=%lu nregs=%lu\n",
+            typer,
+            lines,
+            nregs);
 
-    /* Group 0, disable and clear pending, set priority, route to CPU0 */
-    for (i = 1; i < nregs; ++i) /* start at 1 to skip SGI/PPI */
+    if (!HalpForceLegacyGic)
     {
-        *HalpMmio(HAL_ARM64_GICD_BASE, GICD_ICENABLER + i * 4) = 0xFFFFFFFF;
-        *HalpMmio(HAL_ARM64_GICD_BASE, GICD_ICPENDR   + i * 4) = 0xFFFFFFFF;
-        *HalpMmio(HAL_ARM64_GICD_BASE, GICD_IGROUPR   + i * 4) = 0x00000000; /* G0 */
+        /* Group 0, disable and clear pending, set priority, route to CPU0 */
+        for (i = 1; i < nregs; ++i) /* start at 1 to skip SGI/PPI */
+        {
+            *HalpMmio(HAL_ARM64_GICD_BASE, GICD_ICENABLER + i * 4) = 0xFFFFFFFF;
+            *HalpMmio(HAL_ARM64_GICD_BASE, GICD_ICPENDR   + i * 4) = 0xFFFFFFFF;
+            *HalpMmio(HAL_ARM64_GICD_BASE, GICD_IGROUPR   + i * 4) = 0x00000000; /* G0 */
+        }
+
+        DPRINT1("[arm64][HAL] HalInitSystem: GICD groups/disable done\n");
+
+        /* Set priorities to medium (0xA0) and route to CPU0 */
+        for (i = 32; i < lines; i += 4)
+        {
+            *HalpMmio(HAL_ARM64_GICD_BASE, GICD_IPRIORITYR + (i & ~3)) = 0xA0A0A0A0;
+            *HalpMmio(HAL_ARM64_GICD_BASE, GICD_ITARGETSR + (i & ~3))  = 0x01010101; /* CPU0 */
+        }
+
+        DPRINT1("[arm64][HAL] HalInitSystem: GICD priorities/targets done\n");
     }
-
-    /* Set priorities to medium (0xA0) and route to CPU0 */
-    for (i = 32; i < lines; i += 4)
+    else
     {
-        *HalpMmio(HAL_ARM64_GICD_BASE, GICD_IPRIORITYR + (i & ~3)) = 0xA0A0A0A0;
-        *HalpMmio(HAL_ARM64_GICD_BASE, GICD_ITARGETSR + (i & ~3))  = 0x01010101; /* CPU0 */
+        DPRINT1("[arm64][HAL] HalInitSystem: skipping GICD reprogram (legacy workaround)\n");
     }
 
     /* Enable distributor for Group0+Group1 */
     *HalpMmio(HAL_ARM64_GICD_BASE, GICD_CTLR) = 0x3;
+    DPRINT1("[arm64][HAL] HalInitSystem: GICD enabled\n");
 
     /* CPU interface: system registers (v3+) or legacy GICC (v2) */
     if (HalpGicUseSysRegs)
@@ -601,6 +664,8 @@ HalInitSystem(
         *HalpMmio(HAL_ARM64_GICC_BASE, GICC_BPR) = 0x0;
         *HalpMmio(HAL_ARM64_GICC_BASE, GICC_CTLR) = 0x3; /* enable Group0+Group1 */
     }
+
+    DPRINT1("[arm64][HAL] HalInitSystem: CPU interface configured\n");
 
     return TRUE;
 }

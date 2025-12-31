@@ -54,6 +54,7 @@ KiArm64EmitStageLog(_In_z_ PCSTR Stage)
 
 extern BOOLEAN KdDebuggerNotPresent;
 extern BOOLEAN RtlpUse16ByteSLists;
+extern VOID NTAPI ExInitPoolLookasidePointers(VOID);
 
 KINTERRUPT KxUnexpectedInterrupt;
 ULONG KeNumberProcessIds;
@@ -619,6 +620,9 @@ KiInitializeSystem(_Inout_ PLOADER_PARAMETER_BLOCK LoaderBlock)
             Pcr->Prcb.RspBase = (ULONG_PTR)LoaderBlock->KernelStack;
         }
     }
+
+    KiArm64BootStageLog("[arm64] KiInitializeSystem: initializing pool lookaside pointers");
+    ExInitPoolLookasidePointers();
 
     if (ProcessorNumber == 0)
     {

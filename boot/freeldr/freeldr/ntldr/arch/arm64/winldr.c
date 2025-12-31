@@ -103,8 +103,8 @@ static VOID UartPuts(const char* s) { (void)s; }
 #else
 static inline VOID UartPutc(char c)
 {
-    /* Use WFI instead of busy NOP while TX FIFO is full. */
-    while (PL011_FR & PL011_TXFF) { __asm__ __volatile__("wfi"); }
+    /* Use yield instead of wfi while TX FIFO is full (wfi hangs on Apple Silicon HVF). */
+    while (PL011_FR & PL011_TXFF) { __asm__ __volatile__("yield"); }
     PL011_DR = (unsigned char)c;
 }
 static VOID UartPuts(const char* s)
@@ -189,45 +189,15 @@ Arm64LoaderZeroSharedUserData(VOID)
 }
 
 /* -------------------------------------------------------------------------- */
-/* Hierarchical range mapping (1G -> 2M -> 4K)                                */
+/* Range mapping (map_region_hierarchical handles block selection)            */
 /* -------------------------------------------------------------------------- */
 static BOOLEAN
 Arm64MapRangeHierarchical(ULONGLONG Va, ULONGLONG Pa, ULONGLONG Size, ULONG Attrs)
 {
-    while (Size)
-    {
-        if (IS_ALIGNED(Va, ARM64_BLOCK_SIZE_1G) &&
-            IS_ALIGNED(Pa, ARM64_BLOCK_SIZE_1G) &&
-            Size >= ARM64_BLOCK_SIZE_1G)
-        {
-            if (!Arm64MapVirtualMemory(Va, Pa, ARM64_BLOCK_SIZE_1G, Attrs))
-                return FALSE;
-            Va   += ARM64_BLOCK_SIZE_1G;
-            Pa   += ARM64_BLOCK_SIZE_1G;
-            Size -= ARM64_BLOCK_SIZE_1G;
-            continue;
-        }
+    if (Size == 0)
+        return TRUE;
 
-        if (IS_ALIGNED(Va, ARM64_BLOCK_SIZE_2M) &&
-            IS_ALIGNED(Pa, ARM64_BLOCK_SIZE_2M) &&
-            Size >= ARM64_BLOCK_SIZE_2M)
-        {
-            if (!Arm64MapVirtualMemory(Va, Pa, ARM64_BLOCK_SIZE_2M, Attrs))
-                return FALSE;
-            Va   += ARM64_BLOCK_SIZE_2M;
-            Pa   += ARM64_BLOCK_SIZE_2M;
-            Size -= ARM64_BLOCK_SIZE_2M;
-            continue;
-        }
-
-        /* Map a single 4KB page (fallback) */
-        if (!Arm64MapVirtualMemory(Va, Pa, MM_PAGE_SIZE, Attrs))
-            return FALSE;
-        Va   += MM_PAGE_SIZE;
-        Pa   += MM_PAGE_SIZE;
-        Size -= MM_PAGE_SIZE;
-    }
-    return TRUE;
+    return Arm64MapVirtualMemory(Va, Pa, Size, Attrs);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -247,9 +217,24 @@ MempSetupPaging(
     ULONGLONG phys_end   = phys_start + (((ULONGLONG)NumberOfPages) << MM_PAGE_SHIFT);
     ULONGLONG length     = phys_end - phys_start;
 
-    /* Prefer non-exec identity mappings; exec only for kernel VA */
-    const ULONG attrs_id = ARM64_MAP_ATTR_NORMAL | ARM64_MAP_ATTR_UXN | ARM64_MAP_ATTR_PXN;
+    /* Prefer non-exec identity mappings; keep the loader's own range executable. */
+    const ULONG attrs_id_exec = ARM64_MAP_ATTR_NORMAL | ARM64_MAP_ATTR_EXECUTE;
+    const ULONG attrs_id_nx = ARM64_MAP_ATTR_NORMAL | ARM64_MAP_ATTR_UXN | ARM64_MAP_ATTR_PXN;
+    ULONG attrs_id = attrs_id_nx;
     const ULONG attrs_kv = ARM64_MAP_ATTR_NORMAL | ARM64_MAP_ATTR_EXECUTE;
+
+    if (!KernelMapping)
+    {
+        ULONGLONG current_pc;
+        __asm__ volatile("adr %0, ." : "=r"(current_pc));
+        if (current_pc >= phys_start && current_pc < phys_end)
+        {
+            attrs_id = attrs_id_exec;
+            TRACE("ARM64: Exec identity map for loader range 0x%llx..0x%llx\n",
+                  (unsigned long long)phys_start,
+                  (unsigned long long)phys_end);
+        }
+    }
 
     TRACE("ARM64: MempSetupPaging StartPage=0x%lx, Pages=0x%lx, KernelMapping=%d\n",
           (ULONG)StartPage, (ULONG)NumberOfPages, KernelMapping);
@@ -713,6 +698,10 @@ Arm64ConfigureProcessorContext(USHORT OperatingSystemVersion)
      * own page tables (TTBR0 identity, TTBR1 kernel) to ensure KSEG0
      * is accessible for the jump to the kernel.
      */
+#ifdef UEFIBOOT
+    /* Avoid firmware serial callbacks once we swap translation tables. */
+    UefiSerialDisableFirmware();
+#endif
     Arm64EnablePageTables();
 }
 
