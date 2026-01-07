@@ -1147,7 +1147,7 @@ NtGdiExtFloodFill(
     SURFACE    *psurf;
     EXLATEOBJ  exlo;
     BOOL       Ret = FALSE;
-    RECTL      DestRect;
+    RECTL      DestRect = {0};
     POINTL     Pt;
     ULONG      ConvColor;
     PREGION    prgn;

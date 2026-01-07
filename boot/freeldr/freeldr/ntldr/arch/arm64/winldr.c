@@ -679,6 +679,8 @@ Arm64InitializeMemory(
         return FALSE;
     }
 
+    Arm64ApplyDeferredPageTableMemoryTypes();
+
     /* Memory descriptors are built later by WinLdrSetupMemoryLayout(). */
     TRACE("ARM64: Memory management structures initialized\n");
     return TRUE;

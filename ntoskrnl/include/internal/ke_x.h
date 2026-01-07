@@ -893,10 +893,20 @@ KiRemoveEntryTimer(IN PKTIMER Timer)
 {
     ULONG Hand;
     PKTIMER_TABLE_ENTRY TableEntry;
+    PLIST_ENTRY Entry = &Timer->TimerListEntry;
+
+    /* ARM64: Validate list entry before removal to prevent crashes on corrupted lists */
+    if (Entry->Flink == NULL || Entry->Blink == NULL ||
+        (ULONG_PTR)Entry->Flink == (ULONG_PTR)-1 ||
+        (ULONG_PTR)Entry->Blink == (ULONG_PTR)-1)
+    {
+        /* List is corrupted or uninitialized, skip removal */
+        goto Cleanup;
+    }
 
     /* Remove the timer from the timer list and check if it's empty */
     Hand = Timer->Header.Hand;
-    if (RemoveEntryList(&Timer->TimerListEntry))
+    if (RemoveEntryList(Entry))
     {
         /* Get the respective timer table entry */
         TableEntry = &KiTimerTableListHead[Hand];
@@ -907,6 +917,7 @@ KiRemoveEntryTimer(IN PKTIMER Timer)
         }
     }
 
+Cleanup:
     /* Clear the list entries on dbg builds so we can tell the timer is gone */
 #if DBG
     Timer->TimerListEntry.Flink = NULL;
@@ -1006,6 +1017,7 @@ KxRemoveTreeTimer(IN PKTIMER Timer)
     ULONG Hand = Timer->Header.Hand;
     PKSPIN_LOCK_QUEUE LockQueue;
     PKTIMER_TABLE_ENTRY TimerEntry;
+    PLIST_ENTRY Entry = &Timer->TimerListEntry;
 
     /* Acquire timer lock */
     LockQueue = KiAcquireTimerLock(Hand);
@@ -1013,15 +1025,21 @@ KxRemoveTreeTimer(IN PKTIMER Timer)
     /* Set the timer as non-inserted */
     Timer->Header.Inserted = FALSE;
 
-    /* Remove it from the timer list */
-    if (RemoveEntryList(&Timer->TimerListEntry))
+    /* ARM64: Validate list entry before removal to prevent crashes on corrupted lists */
+    if (Entry->Flink != NULL && Entry->Blink != NULL &&
+        (ULONG_PTR)Entry->Flink != (ULONG_PTR)-1 &&
+        (ULONG_PTR)Entry->Blink != (ULONG_PTR)-1)
     {
-        /* Get the entry and check if it's empty */
-        TimerEntry = &KiTimerTableListHead[Hand];
-        if (IsListEmpty(&TimerEntry->Entry))
+        /* Remove it from the timer list */
+        if (RemoveEntryList(Entry))
         {
-            /* Clear the time then */
-            TimerEntry->Time.HighPart = 0xFFFFFFFF;
+            /* Get the entry and check if it's empty */
+            TimerEntry = &KiTimerTableListHead[Hand];
+            if (IsListEmpty(&TimerEntry->Entry))
+            {
+                /* Clear the time then */
+                TimerEntry->Time.HighPart = 0xFFFFFFFF;
+            }
         }
     }
 
@@ -1448,11 +1466,22 @@ KiSelectReadyThread(IN KPRIORITY Priority,
     ASSERT(Thread->Affinity & AFFINITY_MASK(Prcb->Number));
     ASSERT(Thread->NextProcessor == Prcb->Number);
 
-    /* Remove it from the list */
-    if (RemoveEntryList(&Thread->WaitListEntry))
+    /* ARM64: Validate list entry before removal to prevent crashes on corrupted lists */
+    if (Thread->WaitListEntry.Flink != NULL && Thread->WaitListEntry.Blink != NULL &&
+        (ULONG_PTR)Thread->WaitListEntry.Flink != (ULONG_PTR)-1 &&
+        (ULONG_PTR)Thread->WaitListEntry.Blink != (ULONG_PTR)-1)
     {
-        /* The list is empty now, reset the ready summary */
-        Prcb->ReadySummary ^= PRIORITY_MASK(HighPriority);
+        /* Remove it from the list */
+        if (RemoveEntryList(&Thread->WaitListEntry))
+        {
+            /* The list is empty now, reset the ready summary */
+            Prcb->ReadySummary ^= PRIORITY_MASK(HighPriority);
+        }
+    }
+    else
+    {
+        /* List corrupted, cannot select this thread */
+        Thread = NULL;
     }
 
     /* Sanity check and return the thread */

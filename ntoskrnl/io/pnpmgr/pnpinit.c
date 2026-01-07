@@ -294,10 +294,33 @@ IopInitializePlugPlayServices(VOID)
     PDEVICE_OBJECT Pdo;
 
     /* Initialize locks and such */
+#if defined(_M_ARM64)
+    {
+        KIRQL CurrentIrql = KeGetCurrentIrql();
+        DPRINT1("[arm64] IopInitializePlugPlayServices: entry, IRQL=%lu\n", (ULONG)CurrentIrql);
+
+        /* CRITICAL ARM64 WORKAROUND: Force IRQL to PASSIVE_LEVEL.
+         * For unknown reasons, IRQL is DISPATCH_LEVEL (2) at function entry
+         * even though caller shows IRQL=0. This causes assertion failure in
+         * arbiter code which uses pageable memory (requires IRQL <= APC_LEVEL).
+         * ROOT CAUSE: Unknown - possibly timer interrupt, DPC, or ARM64 ABI issue.
+         * TODO: Investigate why IRQL changes between caller and callee.
+         */
+        if (CurrentIrql > PASSIVE_LEVEL)
+        {
+            DPRINT1("[arm64] CRITICAL: IRQL is %lu at function entry, forcing to PASSIVE_LEVEL!\n", (ULONG)CurrentIrql);
+            KeLowerIrql(PASSIVE_LEVEL);
+            DPRINT1("[arm64] IRQL forcibly lowered to %lu\n", (ULONG)KeGetCurrentIrql());
+        }
+    }
+#endif
     KeInitializeSpinLock(&IopDeviceTreeLock);
     KeInitializeSpinLock(&IopDeviceActionLock);
     InitializeListHead(&IopDeviceActionRequestList);
     KeInitializeEvent(&PiEnumerationFinished, NotificationEvent, TRUE);
+#if defined(_M_ARM64)
+    DPRINT1("[arm64] IopInitializePlugPlayServices: locks/event initialized, IRQL=%lu\n", (ULONG)KeGetCurrentIrql());
+#endif
 
     /* Get the default interface */
     PnpDefaultInterfaceType = IopDetermineDefaultInterfaceType();

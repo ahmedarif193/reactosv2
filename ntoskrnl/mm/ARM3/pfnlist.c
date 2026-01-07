@@ -1294,9 +1294,35 @@ MiDecrementReferenceCount(IN PMMPFN Pfn1,
     }
     else
     {
-        /* Otherwise, insert this page into the standby list */
-        ASSERT(Pfn1->u3.e1.RemovalRequested == 0);
-        MiInsertStandbyListAtFront(PageFrameIndex);
+#if defined(_M_ARM64) || defined(__aarch64__)
+        //
+        // ARM64 FIX: MiInsertStandbyListAtFront asserts that PrototypePte == 1.
+        // However, on ARM64, system pages like paged pool page tables don't have
+        // this flag set. When a page table's ShareCount drops to 0 and its
+        // RefCount hits 0, it ends up here. Instead of asserting, we put such
+        // pages directly into the free list.
+        //
+        // This is safe because:
+        // 1. The page is not modified (Modified == 0)
+        // 2. The page has no remaining references (RefCount == 0, ShareCount == 0)
+        // 3. The page was not explicitly deleted (MI_IS_PFN_DELETED returned false)
+        //
+        // For prototype PTE pages (shared sections), they will go to standby
+        // for potential reuse. For system pages without PrototypePte, they go
+        // directly to free.
+        //
+        if (Pfn1->u3.e1.PrototypePte == 0)
+        {
+            /* System page without PrototypePte - put in free list */
+            MiInsertPageInFreeList(PageFrameIndex);
+        }
+        else
+#endif
+        {
+            /* Otherwise, insert this page into the standby list */
+            ASSERT(Pfn1->u3.e1.RemovalRequested == 0);
+            MiInsertStandbyListAtFront(PageFrameIndex);
+        }
     }
 }
 
@@ -1334,16 +1360,8 @@ MiInitializePfnForOtherProcess(IN PFN_NUMBER PageFrameIndex,
          * Orphaned entries have PageLocation set but Flink/Blink are both 0. */
         if (Pfn1->u1.Flink != 0 || Pfn1->u2.Blink != 0)
         {
-#if defined(_M_ARM64)
-            /* ARM64 debug: Log that we're removing a page from free list */
-            extern VOID KiArm64BootStageLog(const CHAR *Message);
-            CHAR LogMsg[128];
-            if (NT_SUCCESS(RtlStringCbPrintfA(LogMsg, sizeof(LogMsg),
-                "[arm64] MiInitializePfnForOtherProcess: removing PFN %lx from free list (location=%u)",
-                (ULONG)PageFrameIndex, (unsigned)OldLocation)))
-            {
-                KiArm64BootStageLog(LogMsg);
-            }
+#if DBG && defined(_M_ARM64)
+            ASSERTMSG("ARM64 PFN still linked in free/zero list on MiInitializePfnForOtherProcess", FALSE);
 #endif
             /* Acquire PFN lock to safely manipulate the free list */
             OldIrql = MiAcquirePfnLock();
@@ -1352,20 +1370,6 @@ MiInitializePfnForOtherProcess(IN PFN_NUMBER PageFrameIndex,
             MiUnlinkFreeOrZeroedPage(Pfn1);
             WasOnFreeList = TRUE;
         }
-#if defined(_M_ARM64)
-        else
-        {
-            /* Orphaned entry detected - skip unlinking but log it */
-            extern VOID KiArm64BootStageLog(const CHAR *Message);
-            CHAR LogMsg[256];
-            if (NT_SUCCESS(RtlStringCbPrintfA(LogMsg, sizeof(LogMsg),
-                "[arm64] MiInitializePfnForOtherProcess: skipping unlink for orphaned PFN %lx (location=%u but Flink/Blink=0)",
-                (ULONG)PageFrameIndex, (unsigned)OldLocation)))
-            {
-                KiArm64BootStageLog(LogMsg);
-            }
-        }
-#endif
     }
 
     Pfn1->PteAddress = PteAddress;

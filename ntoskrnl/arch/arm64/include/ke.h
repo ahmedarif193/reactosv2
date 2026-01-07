@@ -79,12 +79,36 @@ KeSweepICache(
     _In_opt_ PVOID BaseAddress,
     _In_ SIZE_T FlushSize)
 {
-    UNREFERENCED_PARAMETER(BaseAddress);
-    UNREFERENCED_PARAMETER(FlushSize);
+    ULONG64 Ctr;
+    ULONG DLine, ILine;
+    ULONG_PTR Start, End, Addr;
 
-    __asm__ __volatile__("ic iallu" ::: "memory");
+    if (!BaseAddress || FlushSize == 0)
+    {
+        /* ic ialluis broadcasts to all CPUs in inner shareable domain (SMP-safe) */
+        __asm__ __volatile__("ic ialluis\n\tdsb ish\n\tisb" ::: "memory");
+        return;
+    }
+
+    __asm__ __volatile__("mrs %0, ctr_el0" : "=r"(Ctr));
+    DLine = 4u << ((Ctr >> 16) & 0xF);
+    ILine = 4u << (Ctr & 0xF);
+
+    /* Clean D-cache to PoU for the modified range before invalidating I-cache. */
+    Start = (ULONG_PTR)BaseAddress & ~(ULONG_PTR)(DLine - 1);
+    End = (ULONG_PTR)BaseAddress + FlushSize;
+    for (Addr = Start; Addr < End; Addr += DLine)
+    {
+        __asm__ __volatile__("dc cvau, %0" :: "r"(Addr) : "memory");
+    }
     __asm__ __volatile__("dsb ish" ::: "memory");
-    __asm__ __volatile__("isb" ::: "memory");
+
+    Start = (ULONG_PTR)BaseAddress & ~(ULONG_PTR)(ILine - 1);
+    for (Addr = Start; Addr < End; Addr += ILine)
+    {
+        __asm__ __volatile__("ic ivau, %0" :: "r"(Addr) : "memory");
+    }
+    __asm__ __volatile__("dsb ish\n\tisb" ::: "memory");
 }
 
 ULONG
@@ -203,6 +227,14 @@ KeGetTrapFrameStackRegister(
 }
 
 FORCEINLINE
+ULONG_PTR
+KeGetTrapFrameFrameRegister(
+    _In_ PKTRAP_FRAME TrapFrame)
+{
+    return TrapFrame->Fp;
+}
+
+FORCEINLINE
 PULONG_PTR
 KiGetUserModeStackAddress(void)
 {
@@ -231,9 +263,6 @@ HalSweepDcache(VOID);
 
 VOID
 HalSweepIcache(VOID);
-
-VOID
-KiArm64BootStageLog(_In_z_ PCSTR Stage);
 
 /* Final exception/interrupt readiness flags (for bring-up diagnostics) */
 extern BOOLEAN KiArm64FinalVectorsInstalled;

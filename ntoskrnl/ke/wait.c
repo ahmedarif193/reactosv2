@@ -50,6 +50,31 @@ KiWaitTest(IN PVOID ObjectPointer,
     }
 }
 
+/* Helper to validate list entry integrity before removal - ARM64 specific */
+FORCEINLINE
+BOOLEAN
+KiIsListEntryValid(IN PLIST_ENTRY Entry)
+{
+    /* Check for NULL pointers */
+    if (Entry->Flink == NULL || Entry->Blink == NULL)
+        return FALSE;
+
+    /* Check for invalid sentinel values */
+    if ((ULONG_PTR)Entry->Flink == (ULONG_PTR)-1 ||
+        (ULONG_PTR)Entry->Blink == (ULONG_PTR)-1)
+        return FALSE;
+
+    /* Check list integrity: Flink->Blink should point back to Entry */
+    if (Entry->Flink->Blink != Entry)
+        return FALSE;
+
+    /* Check list integrity: Blink->Flink should point back to Entry */
+    if (Entry->Blink->Flink != Entry)
+        return FALSE;
+
+    return TRUE;
+}
+
 VOID
 FASTCALL
 KiUnlinkThread(IN PKTHREAD Thread,
@@ -62,18 +87,33 @@ KiUnlinkThread(IN PKTHREAD Thread,
     Thread->WaitStatus |= WaitStatus;
 
     /* Remove the Wait Blocks from the list */
+    /* Only unlink wait blocks if the thread was actually in a wait state */
     WaitBlock = Thread->WaitBlockList;
-    do
+    if ((WaitBlock != NULL) &&
+        ((ULONG_PTR)WaitBlock != (ULONG_PTR)-1) &&
+        (Thread->State == Waiting || Thread->State == GateWait))
     {
-        /* Remove it */
-        RemoveEntryList(&WaitBlock->WaitListEntry);
+        do
+        {
+            /* Validate list integrity before removal to avoid assertion */
+            if (KiIsListEntryValid(&WaitBlock->WaitListEntry))
+            {
+                RemoveEntryList(&WaitBlock->WaitListEntry);
+            }
 
-        /* Go to the next one */
-        WaitBlock = WaitBlock->NextWaitBlock;
-    } while (WaitBlock != Thread->WaitBlockList);
+            /* Go to the next one */
+            WaitBlock = WaitBlock->NextWaitBlock;
+        } while (WaitBlock != Thread->WaitBlockList);
+    }
 
     /* Remove the thread from the wait list! */
-    if (Thread->WaitListEntry.Flink) RemoveEntryList(&Thread->WaitListEntry);
+    /* Only remove if the thread was in a proper wait state with valid list links */
+    if (Thread->WaitListEntry.Flink &&
+        (Thread->State == Waiting || Thread->State == GateWait) &&
+        KiIsListEntryValid(&Thread->WaitListEntry))
+    {
+        RemoveEntryList(&Thread->WaitListEntry);
+    }
 
     /* Check if there's a Thread Timer */
     Timer = &Thread->Timer;
@@ -429,6 +469,45 @@ KeWaitForSingleObject(IN PVOID Object,
     LARGE_INTEGER DueTime = {{0}}, NewDueTime, InterruptTime;
     PLARGE_INTEGER OriginalDueTime = Timeout;
     ULONG Hand = 0;
+
+    /* ARM64: Validate Object pointer to catch uninitialized or invalid dispatcher objects */
+    if (Object == NULL ||
+        (ULONG_PTR)Object == (ULONG_PTR)-1 ||
+        (ULONG_PTR)Object < 0x1000)
+    {
+        DPRINT1("[KeWaitForSingleObject] FATAL: Invalid Object pointer: %p (WaitReason=%u)\n",
+                Object, WaitReason);
+        DPRINT1("[KeWaitForSingleObject] Thread=%p TID=%p PID=%p\n",
+                Thread,
+                Thread ? PsGetThreadId((PETHREAD)Thread) : NULL,
+                Thread ? PsGetThreadProcessId((PETHREAD)Thread) : NULL);
+        KeBugCheckEx(INVALID_PROCESS_ATTACH_ATTEMPT,
+                     (ULONG_PTR)Object,
+                     WaitReason,
+                     (ULONG_PTR)Thread,
+                     0);
+    }
+
+    /* ARM64: Validate WaitListHead is properly initialized (not -1) */
+    if ((ULONG_PTR)CurrentObject->Header.WaitListHead.Flink == (ULONG_PTR)-1 ||
+        (ULONG_PTR)CurrentObject->Header.WaitListHead.Blink == (ULONG_PTR)-1)
+    {
+        DPRINT1("[KeWaitForSingleObject] FATAL: Object WaitListHead corrupted: Object=%p Type=%u Flink=%p Blink=%p\n",
+                Object,
+                CurrentObject->Header.Type,
+                CurrentObject->Header.WaitListHead.Flink,
+                CurrentObject->Header.WaitListHead.Blink);
+        DPRINT1("[KeWaitForSingleObject] Thread=%p TID=%p PID=%p WaitReason=%u\n",
+                Thread,
+                Thread ? PsGetThreadId((PETHREAD)Thread) : NULL,
+                Thread ? PsGetThreadProcessId((PETHREAD)Thread) : NULL,
+                WaitReason);
+        KeBugCheckEx(INVALID_PROCESS_ATTACH_ATTEMPT,
+                     (ULONG_PTR)Object,
+                     (ULONG_PTR)CurrentObject->Header.WaitListHead.Flink,
+                     (ULONG_PTR)CurrentObject->Header.WaitListHead.Blink,
+                     CurrentObject->Header.Type);
+    }
 
     if (Thread->WaitNext)
         ASSERT(KeGetCurrentIrql() == SYNCH_LEVEL);

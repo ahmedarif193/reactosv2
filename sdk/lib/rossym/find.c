@@ -101,6 +101,17 @@ RosSymGetAddressInformation(PROSSYM_INFO RosSymInfo,
 
   DPRINT("RelativeAddress = 0x%08x\n", RelativeAddress);
 
+  /*
+   * Defensive NULL check: On ARM64, the debugger may call this function
+   * with a corrupted or NULL RosSymInfo pointer. Early NULL check prevents
+   * cascading crashes in the debugger's backtrace handler.
+   */
+  if (RosSymInfo == NULL)
+    {
+      DPRINT1("RosSymInfo is NULL\n");
+      return FALSE;
+    }
+
   if (RosSymInfo->Symbols == NULL || RosSymInfo->SymbolsCount == 0 ||
       RosSymInfo->Strings == NULL || RosSymInfo->StringsLength == 0)
     {

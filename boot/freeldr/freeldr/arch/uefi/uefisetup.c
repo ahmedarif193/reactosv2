@@ -9,6 +9,9 @@
 
 #include <debug.h>
 DBG_DEFAULT_CHANNEL(WARNING);
+#if DBG
+static void __attribute__((unused)) __dbg_channel_keep(void) { (void)DbgDefaultChannel; }
+#endif
 
 /* GLOBALS ********************************************************************/
 

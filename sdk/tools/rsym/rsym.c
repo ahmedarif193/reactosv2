@@ -30,6 +30,13 @@
 
 #include "rsym.h"
 
+/*
+ * We keep a single contiguous strings buffer whose size is determined up-front
+ * from the inputs. Guard it to prevent silent overruns (which were causing
+ * heap corruption and crashes on arm64 builds).
+ */
+static size_t g_StringCapacity;
+
 /* dbghelp host prototype missing in compat.h */
 BOOL WINAPI SymUnloadModule64(HANDLE hProcess, DWORD64 BaseOfDll);
 
@@ -71,6 +78,11 @@ AddStringToHash(struct StringHashTable *StringTable,
                 char *StringPtr)
 {
     struct StringEntry *entry = calloc(1, sizeof(struct StringEntry));
+    if (!entry)
+    {
+        fprintf(stderr, "AddStringToHash: calloc failed\n");
+        return;
+    }
     entry->Offset = Offset;
     entry->String = StringPtr;
     entry->Next = StringTable->Table[hash];
@@ -100,17 +112,58 @@ static void
 StringHashTableFree(struct StringHashTable *StringTable)
 {
     int i;
-    struct StringEntry *entry;
-    for (i = 0; i < StringTable->TableSize; i++)
+    struct StringEntry *entry, *next;
+
+    if (!StringTable || !StringTable->Table)
+        return;
+
+    /* Validate Table pointer before accessing - limit to 128GB */
+    if ((ULONG_PTR)StringTable->Table < 0x1000 ||
+        (ULONG_PTR)StringTable->Table > 0x2000000000ULL)
     {
-        while ((entry = StringTable->Table[i]))
+        fprintf(stderr, "StringHashTableFree: invalid Table pointer %p, skipping cleanup\n",
+                (void*)StringTable->Table);
+        StringTable->Table = NULL;
+        return;
+    }
+
+    for (i = 0; i < (int)StringTable->TableSize; i++)
+    {
+        entry = StringTable->Table[i];
+        while (entry)
         {
-            entry = entry->Next;
-            free(StringTable->Table[i]);
-            StringTable->Table[i] = entry;
+            /*
+             * Sanity check: detect obviously invalid pointers.
+             * On macOS ARM64, heap addresses are typically < 0x2000000000 (128GB).
+             * Addresses like 0x6500000000 (434GB) are clearly invalid.
+             * If we find corruption, abort cleanup to avoid cascading failures.
+             */
+            ULONG_PTR entry_val = (ULONG_PTR)entry;
+            if (entry_val < 0x1000 || entry_val > 0x2000000000ULL)
+            {
+                fprintf(stderr, "StringHashTableFree: invalid entry pointer %p at index %d, aborting cleanup\n",
+                        (void*)entry, i);
+                /* Memory is corrupted - don't try to free anything else */
+                StringTable->Table = NULL;
+                return;
+            }
+            next = entry->Next;
+            if (next && ((ULONG_PTR)next < 0x1000 || (ULONG_PTR)next > 0x2000000000ULL))
+            {
+                fprintf(stderr, "StringHashTableFree: invalid next pointer %p at index %d, aborting cleanup\n",
+                        (void*)next, i);
+                /* Free what we can, then abort */
+                free(entry);
+                StringTable->Table = NULL;
+                return;
+            }
+            free(entry);
+            entry = next;
         }
+        StringTable->Table[i] = NULL;
     }
     free(StringTable->Table);
+    StringTable->Table = NULL;
 }
 
 static int
@@ -220,6 +273,16 @@ FindOrAddString(struct StringHashTable *StringTable,
     else
     {
         char *End = (char *)StringsBase + *StringsLength;
+        size_t Needed = (size_t)(*StringsLength) + strlen(StringToFind) + 1;
+
+        if (g_StringCapacity && Needed > g_StringCapacity)
+        {
+            fprintf(stderr,
+                    "FindOrAddString: string table overflow (needed=%zu, cap=%zu)\n",
+                    Needed,
+                    g_StringCapacity);
+            exit(1);
+        }
 
         strcpy(End, StringToFind);
         *StringsLength += strlen(StringToFind) + 1;
@@ -550,7 +613,14 @@ DbgHelpGetString(struct DbgHelpStringTab *tab, int id)
 static char *
 StrDupShortenPath(char *PathChop, char *FilePath)
 {
-    int pclen = strlen(PathChop);
+    int pclen;
+
+    if (!FilePath || !*FilePath)
+        return strdup("");
+    if (!PathChop || !*PathChop)
+        return strdup(FilePath);
+
+    pclen = strlen(PathChop);
     if (!strncmp(FilePath, PathChop, pclen))
     {
         return strdup(FilePath+pclen);
@@ -567,6 +637,7 @@ DbgHelpAddLineNumber(PSRCCODEINFO LineInfo, void *UserContext)
     struct DbgHelpStringTab *tab = (struct DbgHelpStringTab *)UserContext;
     DWORD64 disp;
     int fileId, functionId;
+    const char *file_name = LineInfo->FileName ? LineInfo->FileName : "";
     PSYMBOL_INFO pSymbol = malloc(FIELD_OFFSET(SYMBOL_INFO, Name[MAX_SYM_NAME]));
     if (!pSymbol) return FALSE;
     memset(pSymbol, 0, FIELD_OFFSET(SYMBOL_INFO, Name[MAX_SYM_NAME]));
@@ -576,23 +647,23 @@ DbgHelpAddLineNumber(PSRCCODEINFO LineInfo, void *UserContext)
     if (!tab->PathChop)
     {
         int i, endLen;
-        char *end = strrchr(LineInfo->FileName, '/');
+        const char *end = strrchr(file_name, '/');
 
         if (!end)
-            end = strrchr(LineInfo->FileName, '\\');
+            end = strrchr(file_name, '\\');
 
         if (end)
         {
-            for (i = (end - LineInfo->FileName) - 1; i >= 0; i--)
+            for (i = (end - file_name) - 1; i >= 0; i--)
             {
-                if (LineInfo->FileName[i] == '/' || LineInfo->FileName[i] == '\\')
+                if (file_name[i] == '/' || file_name[i] == '\\')
                 {
                     char *synthname = malloc(strlen(tab->SourcePath) +
-                                             strlen(LineInfo->FileName + i + 1)
+                                             strlen(file_name + i + 1)
                                              + 2);
                     strcpy(synthname, tab->SourcePath);
                     strcat(synthname, "/");
-                    strcat(synthname, LineInfo->FileName + i + 1);
+                    strcat(synthname, file_name + i + 1);
                     FILE *f = fopen(synthname, "r");
                     free(synthname);
                     if (f)
@@ -605,14 +676,14 @@ DbgHelpAddLineNumber(PSRCCODEINFO LineInfo, void *UserContext)
 
             i++; /* Be in the string or past the next slash */
             tab->PathChop = malloc(i + 1);
-            memcpy(tab->PathChop, LineInfo->FileName, i);
+            memcpy(tab->PathChop, file_name, i);
             tab->PathChop[i] = 0;
         }
     }
 
     fileId = DbgHelpAddStringToTable(tab,
                                      StrDupShortenPath(tab->PathChop,
-                                                       LineInfo->FileName));
+                                                       (char *)file_name));
 
     pSymbol->SizeOfStruct = sizeof(SYMBOL_INFO);
     pSymbol->MaxNameLen = MAX_SYM_NAME;
@@ -1076,8 +1147,16 @@ CreateOutputFile(FILE *OutFile, void *InData,
         CurrentSectionHeader->PointerToLinenumbers = 0;
         CurrentSectionHeader->NumberOfRelocations = 0;
         CurrentSectionHeader->NumberOfLinenumbers = 0;
-        CurrentSectionHeader->Characteristics = IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_DISCARDABLE
-                                                | IMAGE_SCN_LNK_REMOVE | IMAGE_SCN_TYPE_NOLOAD;
+        /*
+         * Default behavior: mark .rossym as discardable/no-load debug data.
+         * The loader may skip mapping it; KDB can still load from file later.
+         * (Mapping into memory will be handled separately to avoid boot
+         * regressions observed when forcing it resident on ARM64.)
+         */
+        CurrentSectionHeader->Characteristics = IMAGE_SCN_MEM_READ |
+                                                IMAGE_SCN_MEM_DISCARDABLE |
+                                                IMAGE_SCN_LNK_REMOVE |
+                                                IMAGE_SCN_TYPE_NOLOAD;
         OutOptHeader->SizeOfImage = ROUND_UP(CurrentSectionHeader->VirtualAddress + CurrentSectionHeader->Misc.VirtualSize,
                                              OutOptHeader->SectionAlignment);
         OutFileHeader->NumberOfSections++;
@@ -1237,7 +1316,8 @@ int main(int argc, char* argv[])
     PIMAGE_FILE_HEADER PEFileHeader;
     PIMAGE_OPTIONAL_HEADER PEOptHeader;
     PIMAGE_SECTION_HEADER PESectionHeaders;
-    ULONG ImageBase;
+    ULONG_PTR ImageBase;
+    WORD OptMagic;
     void *StabBase;
     ULONG StabsLength;
     void *StabStringBase;
@@ -1336,7 +1416,21 @@ int main(int argc, char* argv[])
     /* Locate optional header */
     assert(sizeof(ULONG) == 4);
     PEOptHeader = (PIMAGE_OPTIONAL_HEADER)(PEFileHeader + 1);
-    ImageBase = PEOptHeader->ImageBase;
+    OptMagic = PEOptHeader->Magic;
+    if (OptMagic == IMAGE_NT_OPTIONAL_HDR64_MAGIC)
+    {
+        ImageBase = (ULONG_PTR)((PIMAGE_OPTIONAL_HEADER64)PEOptHeader)->ImageBase;
+    }
+    else if (OptMagic == IMAGE_NT_OPTIONAL_HDR32_MAGIC)
+    {
+        ImageBase = (ULONG_PTR)((PIMAGE_OPTIONAL_HEADER32)PEOptHeader)->ImageBase;
+    }
+    else
+    {
+        fprintf(stderr, "Unknown PE optional header magic 0x%04x\n", OptMagic);
+        free(FileData);
+        exit(1);
+    }
 
     /* Locate PE section headers  */
     PESectionHeaders = (PIMAGE_SECTION_HEADER)((char *) PEOptHeader + PEFileHeader->SizeOfOptionalHeader);
@@ -1395,10 +1489,14 @@ int main(int argc, char* argv[])
     }
 
     {
+        size_t SymbolCountEstimate = (size_t)(CoffsLength / sizeof(COFF_SYMENT));
         size_t RequiredSize = (size_t)StringsLength +
+                              StabStringsLength +
                               CoffStringsLength +
                               1 +
-                              (size_t)(CoffsLength / sizeof(ROSSYM_ENTRY)) * (E_SYMNMLEN + 1);
+                              SymbolCountEstimate * (E_SYMNMLEN + 1);
+
+        g_StringCapacity = RequiredSize;
 
         if (!UseDbgHelp)
         {

@@ -21,6 +21,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import struct
 import subprocess
 import sys
 import platform
@@ -31,7 +32,6 @@ from pathlib import Path
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 SUFFIX_WHITELIST = {".exe", ".dll", ".sys", ".efi", ".ax", ".acm", ".drv", ".so"}
-
 NM_TOOL = os.environ.get("NM", "aarch64-w64-mingw32-nm")
 _PATTERN = re.compile(r"<([^:+<>]+)(?:[:+])(?:0x)?([0-9A-Fa-f]+)>")
 
@@ -279,10 +279,10 @@ def _run_default_capture(log_path: Path, timeout: int, bootmain_limit: Optional[
         raise RuntimeError("Failed to build livecd")
     print("[symbolize] livecd build complete")
 
-    livecd = build_dir / "livecd_arm64-merge.iso"
+    livecd = build_dir / "livecd.iso"
     if not livecd.exists():
         raise FileNotFoundError(
-            "livecd_arm64-merge.iso not found after ninja build"
+            "livecd.iso not found after ninja build"
         )
 
     if sys.platform == "darwin" and platform.machine() == "arm64":
@@ -351,15 +351,7 @@ def _run_default_capture(log_path: Path, timeout: int, bootmain_limit: Optional[
         ]
 
         print(f"[symbolize] Launching QEMU (headless, 4G RAM). Log: {log_path}")
-
-    # Kill any existing qemu-system-aarch64 process before launching new one
-    subprocess.run(
-        "sudo kill -9 $(pidof qemu-system-aarch64)",
-        shell=True,
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
+        
     proc = subprocess.Popen(
         qemu_cmd,
         cwd=build_dir,
@@ -373,7 +365,7 @@ def _run_default_capture(log_path: Path, timeout: int, bootmain_limit: Optional[
     lines_cache: List[str] = []
     poll_interval = 0.5
     # Treat long silences as stalls; keep generous to allow USB/PnP bring-up.
-    idle_threshold = 6.0
+    idle_threshold = 15.0
 
     entered_debugger_at: Optional[float] = None
     bootmain_count = 0

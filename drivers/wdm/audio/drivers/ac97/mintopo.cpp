@@ -23,7 +23,7 @@
  */
 static KSDATARANGE PinDataRangesAnalogBridge[] =
 {
-   {
+   {{
       sizeof(KSDATARANGE),
       0,
       0,
@@ -31,7 +31,7 @@ static KSDATARANGE PinDataRangesAnalogBridge[] =
       STATICGUIDOF(KSDATAFORMAT_TYPE_AUDIO),
       STATICGUIDOF(KSDATAFORMAT_SUBTYPE_ANALOG),
       STATICGUIDOF(KSDATAFORMAT_SPECIFIER_NONE)
-   }
+   }}
 };
 
 /*****************************************************************************

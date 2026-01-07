@@ -1275,6 +1275,7 @@ IofCallDriver(IN PDEVICE_OBJECT DeviceObject,
 {
     PDRIVER_OBJECT DriverObject;
     PIO_STACK_LOCATION StackPtr;
+    PDRIVER_DISPATCH DispatchRoutine;
 
     /* Make sure this is a valid IRP */
     ASSERT(Irp->Type == IO_TYPE_IRP);
@@ -1297,9 +1298,27 @@ IofCallDriver(IN PDEVICE_OBJECT DeviceObject,
     /* Get the Device Object */
     StackPtr->DeviceObject = DeviceObject;
 
+    /* Get the dispatch routine */
+    DispatchRoutine = DriverObject->MajorFunction[StackPtr->MajorFunction];
+
+#if defined(_M_ARM64)
+    /* Validate the dispatch routine pointer on ARM64 */
+    if ((ULONG_PTR)DispatchRoutine < (ULONG_PTR)MmSystemRangeStart ||
+        (ULONG_PTR)DispatchRoutine > (ULONG_PTR)-1 - PAGE_SIZE)
+    {
+        DPRINT1("[arm64] IofCallDriver: INVALID DispatchRoutine=%p for MajorFunction=%u DriverObject=%p (%wZ)\n",
+                DispatchRoutine, StackPtr->MajorFunction, DriverObject, &DriverObject->DriverName);
+        KeBugCheckEx(DRIVER_PORTION_MUST_BE_NONPAGED,
+                     (ULONG_PTR)DispatchRoutine,
+                     (ULONG_PTR)DriverObject,
+                     (ULONG_PTR)StackPtr->MajorFunction,
+                     0);
+    }
+
+#endif
+
     /* Call it */
-    return DriverObject->MajorFunction[StackPtr->MajorFunction](DeviceObject,
-                                                                Irp);
+    return DispatchRoutine(DeviceObject, Irp);
 }
 
 FORCEINLINE

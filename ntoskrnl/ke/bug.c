@@ -492,6 +492,24 @@ VOID
 NTAPI
 KiBugCheckDebugBreak(IN ULONG StatusCode)
 {
+#if defined(_M_ARM64) || defined(__aarch64__)
+    {
+        CHAR Buf[200];
+
+        if (NT_SUCCESS(RtlStringCbPrintfA(Buf,
+                                          sizeof(Buf),
+                                          "[arm64] BUGCHECK: status=%lu code=0x%08lx p1=%p p2=%p p3=%p p4=%p",
+                                          StatusCode,
+                                          (ULONG)KiBugCheckData[0],
+                                          (PVOID)KiBugCheckData[1],
+                                          (PVOID)KiBugCheckData[2],
+                                          (PVOID)KiBugCheckData[3],
+                                          (PVOID)KiBugCheckData[4])))
+        {
+            DPRINT1("%s\n", Buf);
+        }
+    }
+#endif
     /*
      * Wrap this in SEH so we don't crash if
      * there is no debugger or if it disconnected
@@ -825,6 +843,14 @@ KeBugCheckWithTf(IN ULONG BugCheckCode,
     KiBugCheckData[2] = BugCheckParameter2;
     KiBugCheckData[3] = BugCheckParameter3;
     KiBugCheckData[4] = BugCheckParameter4;
+#if defined(_M_ARM64) || defined(__aarch64__)
+    DPRINT1("[arm64] BUGCHECK: code=0x%08lx p1=%p p2=%p p3=%p p4=%p\n",
+            BugCheckCode,
+            (PVOID)BugCheckParameter1,
+            (PVOID)BugCheckParameter2,
+            (PVOID)BugCheckParameter3,
+            (PVOID)BugCheckParameter4);
+#endif
 
     /* Now check what bugcheck this is */
     switch (BugCheckCode)

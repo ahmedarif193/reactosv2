@@ -138,17 +138,17 @@ C_ASSERT(SYSTEM_PD_SIZE == PAGE_SIZE);
 #elif defined(_M_ARM64)
 /*
  * ARM64 hardware PTE layout mirrors Windows' WoA descriptors:
- *  - AttrIndx is in bits [3:2]
+ *  - AttrIndx is in bits [4:2]
  *  - Shareability is in bits [9:8]
  *  - Access flag is bit 10
  *  - PXN/UXN are bits 53/54
  *  - Writable/CopyOnWrite are bits 55/56
  */
 #define ARM64_PTE_CACHE_SHIFT        2
-#define ARM64_PTE_CACHE_MASK         (3ULL << ARM64_PTE_CACHE_SHIFT)
+#define ARM64_PTE_CACHE_MASK         (7ULL << ARM64_PTE_CACHE_SHIFT)
 #define ARM64_PTE_CACHE_WB           (4ULL << ARM64_PTE_CACHE_SHIFT)
-#define ARM64_PTE_CACHE_UC           (0ULL << ARM64_PTE_CACHE_SHIFT)
-#define ARM64_PTE_CACHE_WC           (1ULL << ARM64_PTE_CACHE_SHIFT)
+#define ARM64_PTE_CACHE_UC           (1ULL << ARM64_PTE_CACHE_SHIFT)
+#define ARM64_PTE_CACHE_WC           (2ULL << ARM64_PTE_CACHE_SHIFT)
 #define ARM64_PTE_PXN                (1ULL << 53)
 #define ARM64_PTE_UXN                (1ULL << 54)
 #define ARM64_PTE_WRITE              (1ULL << 55)
@@ -513,10 +513,18 @@ MiGetPteCacheAttribute(
     if (PointerPte->u.Hard.Buffered) return MiWriteCombined;
     return MiNonCached;
 #elif defined(_M_ARM64)
-    if (PointerPte->u.Hard.CacheType == 3) return MiWriteCombined;
-    if (PointerPte->u.Hard.CacheType == 2) return MiNonCached;
-    if (PointerPte->u.Hard.CacheType == 1) return MiNonCached;
-    return MiCached;
+    {
+        ULONG AttrIndex;
+
+        AttrIndex = (ULONG)PointerPte->u.Hard.CacheType |
+                    ((ULONG)PointerPte->u.Hard.OsAvailable2 << 2);
+
+        if (AttrIndex == 0) return MiNonCached;
+        if (AttrIndex == 1) return MiNonCached;
+        if (AttrIndex == 2) return MiWriteCombined;
+        if (AttrIndex == 4) return MiCached;
+        return MiNonCached;
+    }
 #else
     if (PointerPte->u.Hard.CacheDisable == 0) return MiCached;
     if (PointerPte->u.Hard.WriteThrough != 0) return MiNonCached;
@@ -939,13 +947,13 @@ MI_MAKE_HARDWARE_PTE_KERNEL(IN PMMPTE NewPte,
     ASSERT((ProtectionMask & MM_GUARDPAGE) == 0);
 
 #if defined(_M_ARM64)
-    /* Seed with a valid ARM64 template to set type bits/AF/cache/shareability. */
+    /* Seed with a valid ARM64 template to set type bits/AF/cache/shareability.
+     * Do NOT clear ARM64_PTE_CACHE_MASK - preserve cache attributes (Normal WB). */
     NewPte->u.Long = ValidKernelPte.u.Long;
     NewPte->u.Long &= ~(ARM64_PTE_PXN |
                         ARM64_PTE_UXN |
                         ARM64_PTE_WRITE |
-                        ARM64_PTE_COPY_ON_WRITE |
-                        ARM64_PTE_CACHE_MASK);
+                        ARM64_PTE_COPY_ON_WRITE);
 #else
     /* Start fresh */
     NewPte->u.Long = 0;
@@ -977,8 +985,40 @@ MI_MAKE_HARDWARE_PTE(IN PMMPTE NewPte,
     ASSERT(ProtectionMask & MM_PROTECT_ACCESS);
     ASSERT((ProtectionMask & MM_GUARDPAGE) == 0);
 
+#if defined(_M_ARM64)
+    /*
+     * ARM64: For kernel PTEs (including System View Space), use ValidKernelPte
+     * as the base template to ensure correct shareability, cache attributes,
+     * and other kernel-specific PTE bits are set.
+     *
+     * This is critical because ARM64's weakly-ordered memory model requires
+     * Inner Shareable attribute for kernel mappings to maintain coherency
+     * across cores. Without this, writes by one core may not be visible to
+     * other cores, causing permission faults and data corruption.
+     *
+     * For user PTEs, use the minimal template from MiDetermineUserGlobalPteMask.
+     */
+    if (MappingPte > MiHighestUserPte)
+    {
+        /* Kernel PTE - use ValidKernelPte template with shareability/cache */
+        NewPte->u.Long = ValidKernelPte.u.Long;
+        /* Clear protection bits to make room for new protection.
+         * Do NOT clear ARM64_PTE_CACHE_MASK - we want to preserve the
+         * cache attributes (AttrIndx) from ValidKernelPte (Normal WB). */
+        NewPte->u.Long &= ~(ARM64_PTE_PXN |
+                            ARM64_PTE_UXN |
+                            ARM64_PTE_WRITE |
+                            ARM64_PTE_COPY_ON_WRITE);
+    }
+    else
+    {
+        /* User PTE - use minimal template */
+        NewPte->u.Long = MiDetermineUserGlobalPteMask(MappingPte);
+    }
+#else
     /* Set the protection and page */
     NewPte->u.Long = MiDetermineUserGlobalPteMask(MappingPte);
+#endif
     NewPte->u.Long |= MmProtectToPteMask[ProtectionMask];
     NewPte->u.Hard.PageFrameNumber = PageFrameNumber;
 }
@@ -1156,6 +1196,15 @@ MI_IS_PHYSICAL_ADDRESS(IN PVOID Address)
 }
 
 //
+// Forward declaration for ARM64 TLB flush
+//
+#if defined(_M_ARM64) || defined(__aarch64__)
+VOID
+KiFlushSingleTb(_In_ BOOLEAN Invalid,
+                _In_ PVOID VirtualAddress);
+#endif
+
+//
 // Writes a valid PTE
 //
 FORCEINLINE
@@ -1163,6 +1212,8 @@ VOID
 MI_WRITE_VALID_PTE(IN PMMPTE PointerPte,
                    IN MMPTE TempPte)
 {
+    PVOID VirtualAddress;
+
     /* Write the valid PTE */
     ASSERT(PointerPte->u.Hard.Valid == 0);
     ASSERT(TempPte.u.Hard.Valid == 1);
@@ -1170,7 +1221,43 @@ MI_WRITE_VALID_PTE(IN PMMPTE PointerPte,
     ASSERT(!MI_IS_PAGE_TABLE_ADDRESS(MiPteToAddress(PointerPte)) ||
            (TempPte.u.Hard.NoExecute == 0));
 #endif
+
+    /*
+     * ARM64 Memory Ordering Requirements:
+     *
+     * On ARM64, the weakly-ordered memory model requires explicit
+     * synchronization after writing PTEs to ensure:
+     * 1. The PTE write is visible to the MMU (data barrier)
+     * 2. Stale TLB entries are invalidated
+     * 3. Subsequent memory accesses see the new mapping
+     *
+     * Without proper barriers and TLB invalidation, the CPU may:
+     * - Continue using cached invalid PTEs
+     * - Cause infinite page fault loops (prototype PTE resolution bug)
+     * - Access wrong physical pages
+     *
+     * The sequence is:
+     * 1. Write PTE
+     * 2. Call KiFlushSingleTb which does:
+     *    - DSB (ensure PTE write is visible)
+     *    - TLBI (invalidate TLB for this VA)
+     *    - DSB (ensure TLB invalidation completes)
+     *    - ISB (synchronize instruction fetch)
+     */
+
     *PointerPte = TempPte;
+
+#if defined(_M_ARM64) || defined(__aarch64__)
+    /*
+     * Invalidate TLB for the virtual address this PTE maps.
+     * This is CRITICAL for ARM64 - without it, page faults loop infinitely
+     * because the CPU keeps using the old cached invalid PTE.
+     */
+    VirtualAddress = MiPteToAddress(PointerPte);
+    KiFlushSingleTb(FALSE, VirtualAddress);
+#else
+    UNREFERENCED_PARAMETER(VirtualAddress);
+#endif
 }
 
 //
@@ -1181,11 +1268,26 @@ VOID
 MI_UPDATE_VALID_PTE(IN PMMPTE PointerPte,
                    IN MMPTE TempPte)
 {
+    PVOID VirtualAddress;
+
     /* Write the valid PTE */
     ASSERT(PointerPte->u.Hard.Valid == 1);
     ASSERT(TempPte.u.Hard.Valid == 1);
     ASSERT(PointerPte->u.Hard.PageFrameNumber == TempPte.u.Hard.PageFrameNumber);
+
     *PointerPte = TempPte;
+
+#if defined(_M_ARM64) || defined(__aarch64__)
+    /*
+     * ARM64: Invalidate TLB when updating a PTE.
+     * Even though the page frame number stays the same, protection bits
+     * or other attributes may have changed (e.g., read-only to read-write).
+     */
+    VirtualAddress = MiPteToAddress(PointerPte);
+    KiFlushSingleTb(FALSE, VirtualAddress);
+#else
+    UNREFERENCED_PARAMETER(VirtualAddress);
+#endif
 }
 
 //

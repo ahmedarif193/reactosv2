@@ -19,66 +19,73 @@ EXTERN UefiExitBootServices:PROC
 
 .code64
 
-// void _exituefi(VOID)
+/*
+ * void _exituefi(VOID)
+ *
+ * Exit UEFI boot services.
+ *
+ * CRITICAL: BasicStack may overlap with the loaded image on AMD64 due to
+ * low ImageBase (0x10000). We must switch to UefiServiceStack (the original
+ * UEFI-provided stack) for the ExitBootServices call, then restore our stack.
+ */
 PUBLIC _exituefi
 _exituefi:
-    /* Save non-volatile registers */
+    /* Save callee-saved registers */
     push    rbp
-    push    rsi
-    push    rdi
     push    rbx
+    push    r12
+    push    r13
+    push    r14
+    push    r15
 
-    /* Save the old stack */
-    mov     rbx, rsp
+    /* Save current stack pointer in r13 */
+    mov     r13, rsp
 
-    /* Load the new UEFI service stack */
-    xor     rbp, rbp
-    mov     rsp, qword ptr [rip + UefiServiceStack]
-    
-    /* Ensure 16-byte alignment (defensive programming) */
+    /* Save return address in r12 (at [rsp + 48] after 6 pushes) */
+    mov     r12, qword ptr [rsp + 48]
+
+    /* Switch to UefiServiceStack (the valid UEFI-provided stack) */
+    mov     rax, qword ptr [rip + UefiServiceStack]
+    test    rax, rax
+    jz      .use_current_stack
+
+    mov     rsp, rax
+    jmp     .stack_ready
+
+.use_current_stack:
+    /* If no service stack available, stay on current */
+
+.stack_ready:
+    /* Ensure 16-byte alignment */
     and     rsp, -16
 
-    /* Call UefiExitBootServices (wrapper) with proper shadow space + alignment */
-    /* If calling firmware directly, set RCX=ImageHandle, RDX=MapKey first. */
-    /* mov   rcx, qword ptr [rip + EfiImageHandle] */
-    /* mov   rdx, qword ptr [rip + EfiMapKey]      */
-
-    sub     rsp, 0x20                /* 32-byte shadow space for Win x64 ABI */
+    /* Allocate shadow space and call UefiExitBootServices */
+    sub     rsp, 0x28          /* 32-byte shadow + 8 alignment */
     call    UefiExitBootServices
-    
-    /* Check return value (EFI_SUCCESS = 0) */
-    test    rax, rax
-    jz      .exit_success
-    
-    /* Error case: you may want to handle this differently */
-    /* For now, continue anyway, but could retry or halt */
-    
-.exit_success:
-    add     rsp, 0x20
+    add     rsp, 0x28
 
-    /* Restore old stack */
-    mov     rsp, rbx
+    /* Restore original stack pointer */
+    mov     rsp, r13
 
-    /* Restore non-volatiles */
+    /* Restore callee-saved registers */
+    pop     r15
+    pop     r14
+    pop     r13
+    pop     r12
     pop     rbx
-    pop     rdi
-    pop     rsi
     pop     rbp
 
-    /* Disable interrupts before loading new GDT */
+    /* Disable interrupts and load new GDT */
     cli
-    
+
 #ifdef _USE_ML
-    lgdt    _gdtptr                  /* ml64: 10-byte descriptor inferred */
+    lgdt    _gdtptr
 #else
-    lgdt    [rip + _gdtptr]          /* GAS: RIP-relative load of 10-byte GDTR */
+    lgdt    [rip + _gdtptr]
 #endif
 
-    /* Re-enable interrupts if appropriate for your environment */
-    /* sti */
-
-    /* All done */
-    ret
+    /* Return using saved address */
+    jmp     r12
 
 // void _changestack(VOID)
 PUBLIC _changestack

@@ -102,26 +102,32 @@ ULONG_PTR MmGlobalKernelPageDirectory[4096];
  * descriptors look like invalid/leaf entries to the hardware. That caused
  * early faults when the kernel tried to touch the self-mapped page tables.
  */
+/*
+ * ValidKernelPte - Template PTE for kernel mappings.
+ *
+ * All bits that should be set are initialized at compile time to avoid
+ * relying on __attribute__((constructor)) which may not work correctly
+ * in Windows PE kernel environment with some compilers.
+ *
+ * Key bits:
+ * - Valid = 1, NotLargePage = 1 (bits [1:0] = 0b11 for page descriptor)
+ * - CacheType = 4 (bits [4:2] = 0b100 for MAIR index 4, Normal WB)
+ * - Shareability = 3 (bits [9:8] = 0b11 for Inner Shareable)
+ * - Accessed = 1 (bit 10 = AF)
+ * - NotDirty = 0 (bit 7 = 0 for writable at EL1)
+ * - Owner = 0 (bit 6 = 0 for EL1 access only)
+ * - Writable = 1 (bit 55, software flag)
+ */
 MMPTE ValidKernelPte = {
-    .u.Hard = {
-        .Valid = 1,
-        .NotLargePage = 1,   /* ensure type==table/page (0b11) */
-        .Accessed = 1,       /* AF=1 for leaf PTEs */
-        .Writable = 1,
-        .Owner = 0,
-    }
+    .u.Long = (1ULL << 0) |                 /* Valid */
+              (1ULL << 1) |                 /* NotLargePage (page descriptor type) */
+              (4ULL << 2) |                 /* CacheType = MAIR index 4 (Normal WB) */
+              (3ULL << 8) |                 /* Shareability = Inner Shareable */
+              (1ULL << 10) |                /* Accessed (AF) */
+              (1ULL << 55)                  /* Writable (software flag) */
+              /* NotDirty (bit 7) = 0 -> page is writable at EL1 */
+              /* Owner (bit 6) = 0 -> no EL0 access */
 };
-/* Ensure leaf PTEs default to Normal WB (MAIR index 4) */
-__attribute__((constructor))
-static void KeArm64InitValidKernelPte(void)
-{
-    /* Bits [4:2] are AttrIndx. Use 0b100 (index 4) to match loader MAIR. */
-    ValidKernelPte.u.Long |= ((ULONGLONG)4ULL << ARM64_PTE_CACHE_SHIFT);
-    /* Make default leaf mappings Inner Shareable to avoid alias issues */
-    ValidKernelPte.u.Long |= (3ULL << 8);
-    ValidKernelPteLocal.u.Long |= ((ULONGLONG)4ULL << ARM64_PTE_CACHE_SHIFT);
-    ValidKernelPteLocal.u.Long |= (3ULL << 8);
-}
 MMPDE ValidKernelPde = {
     .u.Hard = {
         .Valid = 1,
@@ -132,14 +138,15 @@ MMPDE ValidKernelPde = {
 MMPTE DemandZeroPte = {.u.Long = (MM_READWRITE << MM_PTE_SOFTWARE_PROTECTION_BITS)};
 MMPDE DemandZeroPde = {.u.Long = (MM_READWRITE << MM_PTE_SOFTWARE_PROTECTION_BITS)};
 MMPTE PrototypePte = {.u.Long = (MM_READWRITE << MM_PTE_SOFTWARE_PROTECTION_BITS) | PTE_PROTOTYPE | (MI_PTE_LOOKUP_NEEDED << PAGE_SHIFT)};
+/* ValidKernelPteLocal - Same as ValidKernelPte but for CPU-local mappings */
 MMPTE ValidKernelPteLocal = {
-    .u.Hard = {
-        .Valid = 1,
-        .NotLargePage = 1,
-        .Accessed = 1,
-        .Writable = 1,
-        .Owner = 0
-    }
+    .u.Long = (1ULL << 0) |                 /* Valid */
+              (1ULL << 1) |                 /* NotLargePage (page descriptor type) */
+              (4ULL << 2) |                 /* CacheType = MAIR index 4 (Normal WB) */
+              (3ULL << 8) |                 /* Shareability = Inner Shareable */
+              (1ULL << 10) |                /* Accessed (AF) */
+              (1ULL << 55)                  /* Writable (software flag) */
+              /* NotDirty (bit 7) = 0 -> page is writable at EL1 */
 };
 MMPDE ValidKernelPdeLocal = {.u.Hard.Valid = 1, .u.Hard.Accessed = 1};
 
@@ -252,49 +259,20 @@ NTAPI
 MmInitGlobalKernelPageDirectory(VOID)
 {
     /*
-     * Populate a minimal kernel PDE template from the current page tables.
+     * On ARM64, MmGlobalKernelPageDirectory is not consumed by the address
+     * space creation path (which clones the kernel half of the PXE page
+     * directly in MiArchCreateProcessAddressSpace). The PDE_BASE self-map
+     * may not be accessible at this early boot stage, so skip populating
+     * the array. This is a no-op for ARM64.
      *
-     * Notes:
-     * - On ARM64 the kernel page tables are 4-level. Common MM expects this
-     *   routine to seed a global array with kernel PDEs so future address
-     *   spaces can inherit them. Our ARM64 address space creation actually
-     *   clones the kernel half of the PXE page directly (see
-     *   arch/arm64/mm/procsup.c:MiArchCreateProcessAddressSpace), so this
-     *   array is not currently consumed. However, mm/mminit.c still calls
-     *   this API. We therefore fill a sensible subset without logging TODOs.
-     * - We only mirror the first PDE page that covers MmSystemRangeStart.
-     *   This keeps behavior similar to ARM32 and avoids overcommitting a
-     *   large global array that is not referenced on ARM64 paths.
-     * - PDE_BASE points to the linear self-map of the page directory level;
-     *   treating it as an array allows us to read current kernel PDE entries
-     *   without walking the hierarchy. Each entry is 8 bytes and there are
-     *   PDE_PER_PAGE (512) entries per PDE page on ARM64.
-     * - We skip the PTE_BASE and HYPER_SPACE slots: those are self-map and
-     *   hyperspace PDEs managed elsewhere (and can have special semantics).
-     * - We never overwrite a non-zero MmGlobalKernelPageDirectory entry: if
-     *   something pre-seeded a slot, we keep that, mirroring i386/ARM logic.
-     * - Concurrency: runs during early MmInitSystem; single-threaded.
+     * Original design notes preserved for reference:
+     * - ARM64 uses 4-level page tables with per-process kernel half cloning
+     * - The MmGlobalKernelPageDirectory array would require a working
+     *   page table self-map (PDE_BASE) which isn't guaranteed during early
+     *   Phase 1 initialization
+     * - Future work could set up the self-map earlier if this array is needed
      */
-    /* Current kernel PDE page (self-mapped view) */
-    PULONG_PTR CurrentPde = (PULONG_PTR)PDE_BASE;
-    /* First index of the kernel range within the current PDE page */
-    const ULONG start = MiGetPdeOffset(MmSystemRangeStart);
-    /* Indices of special regions to be skipped */
-    const ULONG pte_off = MiGetPdeOffset((PVOID)PTE_BASE);
-    const ULONG hyper_off = MiGetPdeOffset((PVOID)HYPER_SPACE);
-
-    for (ULONG i = start; i < PDE_PER_PAGE; ++i)
-    {
-        /* Skip the PTE self-map and hyperspace PDEs */
-        if ((i == pte_off) || (i == hyper_off))
-            continue;
-
-        /* Copy the current PDE entry if our template slot is empty */
-        if (!MmGlobalKernelPageDirectory[i] && CurrentPde[i])
-        {
-            MmGlobalKernelPageDirectory[i] = CurrentPde[i];
-        }
-    }
+    DPRINT1("[arm64] MmInitGlobalKernelPageDirectory: skipped (not needed on ARM64)\n");
 }
 
 PVOID
@@ -309,11 +287,174 @@ KeSwitchKernelStack(
     return StackBase;
 }
 
+/*
+ * Forward declarations for ARM64 kernel initialization functions
+ */
+VOID
+NTAPI
+KiInitializePcr(
+    _In_ ULONG ProcessorNumber,
+    _Inout_ PKIPCR Pcr,
+    _In_ PKTHREAD IdleThread,
+    _In_opt_ PVOID PanicStack,
+    _In_ PVOID DpcStack);
+
+VOID
+NTAPI
+KiInitializeSystem(
+    _Inout_ PLOADER_PARAMETER_BLOCK LoaderBlock);
+
+/*
+ * ARM64 AP (Application Processor) info structure for SMP boot.
+ * This mirrors the x86 APINFO structure but with ARM64-specific fields.
+ */
+typedef struct _ARM64_APINFO
+{
+    DECLSPEC_ALIGN(PAGE_SIZE) UCHAR IdtData[PAGE_SIZE];  /* Reserved for future IDT-like use */
+    KIPCR Pcr;
+    ETHREAD Thread;
+} ARM64_APINFO, *PARM64_APINFO;
+
 CODE_SEG("INIT")
 VOID
 NTAPI
 KeStartAllProcessors(
     VOID)
 {
-    DPRINT1("ARM64 TODO: KeStartAllProcessors is a stub\n");
+    PVOID KernelStack;
+    PVOID DPCStack;
+    PARM64_APINFO APInfo;
+    ULONG ProcessorCount;
+    ULONG MaximumProcessors;
+
+    /*
+     * ARM64 SMP Boot Implementation
+     *
+     * This function is called to start all secondary processors (APs).
+     * For each AP, we:
+     * 1. Allocate and initialize a PCR (Processor Control Region)
+     * 2. Create kernel and DPC stacks
+     * 3. Set up the processor state for initial entry
+     * 4. Call HalStartNextProcessor to wake the AP via PSCI CPU_ON
+     *
+     * The HAL handles the actual PSCI interaction and trampoline setup.
+     */
+
+    /* Start with the system maximum processor count */
+    MaximumProcessors = MAXIMUM_PROCESSORS;
+
+    /*
+     * TODO: Limit processors based on command line options when available.
+     * For now, we use the compiled-in maximum. Command-line processor
+     * limiting would require kernel command-line parsing integration:
+     * - /NUMPROC=N: Maximum number of processors to use
+     * - /ONECPU: Use only one processor (equivalent to /NUMPROC=1)
+     *
+     * These would set KeNumprocSpecified and KeBootprocSpecified.
+     */
+
+    DPRINT1("[arm64] KeStartAllProcessors: Max=%lu\n", MaximumProcessors);
+
+    /* Start from processor 1 since BSP (processor 0) is already running */
+    for (ProcessorCount = 1; ProcessorCount < MaximumProcessors; ++ProcessorCount)
+    {
+        KernelStack = NULL;
+        DPCStack = NULL;
+        APInfo = NULL;
+
+        /* Allocate structures for a new CPU */
+        APInfo = ExAllocatePoolZero(NonPagedPool, sizeof(*APInfo), TAG_KERNEL);
+        if (!APInfo)
+        {
+            DPRINT1("[arm64] KeStartAllProcessors: Failed to allocate APInfo for CPU %lu\n",
+                    ProcessorCount);
+            break;
+        }
+        ASSERT(ALIGN_DOWN_POINTER_BY(APInfo, PAGE_SIZE) == APInfo);
+
+        KernelStack = MmCreateKernelStack(FALSE, 0);
+        if (!KernelStack)
+        {
+            DPRINT1("[arm64] KeStartAllProcessors: Failed to create kernel stack for CPU %lu\n",
+                    ProcessorCount);
+            break;
+        }
+
+        DPCStack = MmCreateKernelStack(FALSE, 0);
+        if (!DPCStack)
+        {
+            DPRINT1("[arm64] KeStartAllProcessors: Failed to create DPC stack for CPU %lu\n",
+                    ProcessorCount);
+            break;
+        }
+
+        /* Initialize a new PCR for this AP */
+        KiInitializePcr(ProcessorCount,
+                        &APInfo->Pcr,
+                        (PKTHREAD)&APInfo->Thread,
+                        NULL,   /* ARM64 doesn't use separate panic stack here */
+                        DPCStack);
+
+        /* Set up processor state for AP initialization */
+        {
+            PKPROCESSOR_STATE ProcessorState = &APInfo->Pcr.Prcb.ProcessorState;
+            RtlZeroMemory(ProcessorState, sizeof(*ProcessorState));
+
+            /*
+             * For ARM64, we need to set up the context frame with:
+             * - Pc: Entry point (KiInitializeSystem or similar)
+             * - Sp: Kernel stack pointer
+             * - X0: First argument (LoaderBlock)
+             *
+             * The HAL trampoline will:
+             * 1. Enable MMU with proper page tables
+             * 2. Set up stack and registers from this context
+             * 3. Jump to the kernel entry point
+             */
+            ProcessorState->ContextFrame.Pc = (DWORD64)KiInitializeSystem;
+            ProcessorState->ContextFrame.Sp = (DWORD64)KernelStack;
+
+            /* Store ARM64 system registers if needed */
+            ProcessorState->ArchState.Ttbr0_El1 = 0; /* HAL will use BSP's value */
+            ProcessorState->ArchState.Ttbr1_El1 = 0; /* HAL will use BSP's value */
+
+            /* Update LoaderBlock for this processor */
+            KeLoaderBlock->KernelStack = (ULONG_PTR)KernelStack;
+            KeLoaderBlock->Prcb = (ULONG_PTR)&APInfo->Pcr.Prcb;
+            KeLoaderBlock->Thread = (ULONG_PTR)APInfo->Pcr.Prcb.IdleThread;
+
+            DPRINT1("[arm64] KeStartAllProcessors: Attempting to start CPU %lu\n",
+                    ProcessorCount);
+
+            /* Call HAL to start the processor */
+            if (!HalStartNextProcessor(KeLoaderBlock, ProcessorState))
+            {
+                DPRINT1("[arm64] KeStartAllProcessors: HalStartNextProcessor failed for CPU %lu\n",
+                        ProcessorCount);
+                break;
+            }
+
+            /* Wait for AP to signal it has started */
+            while (KeLoaderBlock->Prcb != 0)
+            {
+                KeMemoryBarrier();
+                YieldProcessor();
+            }
+
+            DPRINT1("[arm64] KeStartAllProcessors: CPU %lu started successfully\n",
+                    ProcessorCount);
+        }
+    }
+
+    /* Clean up if last attempt failed */
+    ProcessorCount--;
+
+    if (APInfo)
+        ExFreePoolWithTag(APInfo, TAG_KERNEL);
+    if (KernelStack)
+        MmDeleteKernelStack(KernelStack, FALSE);
+    if (DPCStack)
+        MmDeleteKernelStack(DPCStack, FALSE);
+
+    DPRINT1("[arm64] KeStartAllProcessors: Successfully started %lu APs\n", ProcessorCount);
 }

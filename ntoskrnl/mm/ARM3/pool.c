@@ -213,18 +213,6 @@ MiInitializePoolEvents(VOID)
     KIRQL OldIrql;
     PFN_NUMBER FreePoolInPages;
 
-    /* ARM64: Debug logging to track mutex initialization issue */
-    DPRINT1("[MM] MiInitializePoolEvents: MmPagedPoolMutex @ %p, Type=%02x, Count=%ld, Owner=%p\n",
-            &MmPagedPoolMutex,
-            (ULONG)MmPagedPoolMutex.Gate.Header.Type,
-            MmPagedPoolMutex.Count,
-            MmPagedPoolMutex.Owner);
-
-#if defined(_M_ARM64)
-    /* CHECKPOINT: Before checking/reinitializing paged pool mutex */
-    MiArm64CheckSystemViewSpacePte("MiInitPoolEvents: Before mutex check");
-#endif
-
     /*
      * ARM64 WORKAROUND: On ARM64, global variables in BSS may be cleared between
      * Phase 0 (where MmPagedPoolMutex is initialized) and Phase 1 (where this
@@ -234,26 +222,13 @@ MiInitializePoolEvents(VOID)
 #if defined(_M_ARM64) || defined(__aarch64__)
     if (MmPagedPoolMutex.Gate.Header.Type != GateObject)
     {
-        DPRINT1("[MM] ARM64: MmPagedPoolMutex not initialized (Type=%02x), reinitializing...\n",
-                (ULONG)MmPagedPoolMutex.Gate.Header.Type);
+        /* ARM64: Re-initialize the mutex if it's uninitialized (BSS clearing workaround) */
         KeInitializeGuardedMutex(&MmPagedPoolMutex);
-        DPRINT1("[MM] ARM64: MmPagedPoolMutex reinitialized, Type=%02x\n",
-                (ULONG)MmPagedPoolMutex.Gate.Header.Type);
     }
-#endif
-
-#if defined(_M_ARM64)
-    /* CHECKPOINT: Before acquiring paged pool mutex */
-    MiArm64CheckSystemViewSpacePte("MiInitPoolEvents: Before KeAcquireGuardedMutex");
 #endif
 
     /* Lock paged pool */
     KeAcquireGuardedMutex(&MmPagedPoolMutex);
-
-#if defined(_M_ARM64)
-    /* CHECKPOINT: After acquiring paged pool mutex */
-    MiArm64CheckSystemViewSpacePte("MiInitPoolEvents: After KeAcquireGuardedMutex");
-#endif
 
     /* Total size of the paged pool minus the allocated size, is free */
     FreePoolInPages = MmSizeOfPagedPoolInPages - MmPagedPoolInfo.AllocatedPagedPool;
@@ -282,31 +257,11 @@ MiInitializePoolEvents(VOID)
         KeClearEvent(MiLowPagedPoolEvent);
     }
 
-#if defined(_M_ARM64)
-    /* CHECKPOINT: Before releasing paged pool mutex */
-    MiArm64CheckSystemViewSpacePte("MiInitPoolEvents: Before KeReleaseGuardedMutex");
-#endif
-
     /* Release the paged pool lock */
     KeReleaseGuardedMutex(&MmPagedPoolMutex);
 
-#if defined(_M_ARM64)
-    /* CHECKPOINT: After releasing paged pool mutex */
-    MiArm64CheckSystemViewSpacePte("MiInitPoolEvents: After KeReleaseGuardedMutex");
-#endif
-
-#if defined(_M_ARM64)
-    /* CHECKPOINT: Before acquiring nonpaged pool lock */
-    MiArm64CheckSystemViewSpacePte("MiInitPoolEvents: Before nonpaged pool lock");
-#endif
-
     /* Now it's time for the nonpaged pool lock */
     OldIrql = KeAcquireQueuedSpinLock(LockQueueMmNonPagedPoolLock);
-
-#if defined(_M_ARM64)
-    /* CHECKPOINT: After acquiring nonpaged pool lock */
-    MiArm64CheckSystemViewSpacePte("MiInitPoolEvents: After nonpaged pool lock");
-#endif
 
     /* Free pages are the maximum minus what's been allocated */
     FreePoolInPages = MmMaximumNonPagedPoolInPages - MmAllocatedNonPagedPool;
@@ -335,18 +290,8 @@ MiInitializePoolEvents(VOID)
         KeClearEvent(MiLowNonPagedPoolEvent);
     }
 
-#if defined(_M_ARM64)
-    /* CHECKPOINT: Before releasing nonpaged pool lock */
-    MiArm64CheckSystemViewSpacePte("MiInitPoolEvents: Before releasing nonpaged pool lock");
-#endif
-
     /* We're done, release the nonpaged pool lock */
     KeReleaseQueuedSpinLock(LockQueueMmNonPagedPoolLock, OldIrql);
-
-#if defined(_M_ARM64)
-    /* CHECKPOINT: After releasing nonpaged pool lock (MiInitPoolEvents exit) */
-    MiArm64CheckSystemViewSpacePte("MiInitPoolEvents: Exit");
-#endif
 }
 
 CODE_SEG("INIT")
@@ -483,13 +428,6 @@ MiInitializeNonPagedPool(VOID)
         }
     }
 
-    DPRINT1("MiInitNP: ExpansionStart=%p Pte=%p Max=%I64x Size=%I64x Charge=%lu\n",
-            MmNonPagedPoolExpansionStart,
-            PointerPte + 1,
-            (ULONGLONG)MmMaximumNonPagedPoolInBytes,
-            (ULONGLONG)MmSizeOfNonPagedPoolInBytes,
-            MiExpansionPoolPagesInitialCharge);
-
     if (MiExpansionPoolPagesInitialCharge != 0)
     {
         MiInitializeSystemPtes(PointerPte + 1,
@@ -531,37 +469,10 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
     PVOID BaseVa, BaseVaStart;
     PMMFREE_POOL_ENTRY FreeEntry;
 
-#if defined(_M_ARM64)
-    static ULONG MiAllocatePoolPagesCallCount = 0;
-    static ULONG MiAllocatePoolPagesPagesConsumed = 0;
-    MiAllocatePoolPagesCallCount++;
-#endif
-
     //
     // Figure out how big the allocation is in pages
     //
     SizeInPages = (PFN_COUNT)BYTES_TO_PAGES(SizeInBytes);
-
-#if defined(_M_ARM64)
-    /* ARM64: Track pool page allocations during early boot */
-    if (MiAllocatePoolPagesCallCount <= 20 || (MiAllocatePoolPagesCallCount % 100) == 0)
-    {
-        extern VOID KiArm64BootStageLog(_In_z_ PCSTR Stage);
-        extern PMEMORY_ALLOCATION_DESCRIPTOR MxFreeDescriptor;
-        CHAR TrackLog[300];
-        if (NT_SUCCESS(RtlStringCbPrintfA(TrackLog, sizeof(TrackLog),
-            "[arm64] MiAllocatePoolPages call#%lu: Type=%s Size=%lu pages=%lu MxFree=%lu MmAvail=%lu",
-            (ULONG)MiAllocatePoolPagesCallCount,
-            ((PoolType & BASE_POOL_TYPE_MASK) == PagedPool) ? "Paged" : "NonPaged",
-            (ULONG)SizeInBytes,
-            (ULONG)SizeInPages,
-            (ULONG)(MxFreeDescriptor ? MxFreeDescriptor->PageCount : 0),
-            (ULONG)MmAvailablePages)))
-        {
-            KiArm64BootStageLog(TrackLog);
-        }
-    }
-#endif
 
     //
     // Check for overflow
@@ -779,6 +690,9 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
         //
         {
             KIRQL PoolOldIrql;
+            PMMPTE PointerPtePte;
+            PFN_NUMBER PageTableFrameNumber;
+            NTSTATUS Status;
 
             TempPte = ValidKernelPte;
             PointerPte = MiAddressToPte(BaseVa);
@@ -791,8 +705,6 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
             if (MmAvailablePages < SizeInPages)
             {
                 MiReleasePfnLock(PoolOldIrql);
-                DPRINT1("ARM64: Not enough pages for paged pool! Need %lu, have %lu\n",
-                        SizeInPages, MmAvailablePages);
 
                 /* Clear the allocation bits we set */
                 KeAcquireGuardedMutex(&MmPagedPoolMutex);
@@ -817,6 +729,49 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
                 Pfn1->u3.e1.PageLocation = ActiveAndValid;
                 Pfn1->u4.VerifierAllocation = 0;
 
+                /*
+                 * CRITICAL ARM64 FIX: Set u4.PteFrame to the page table that contains this PTE.
+                 * This field is accessed by MiDeleteSystemPageableVm when freeing paged pool.
+                 * Without this initialization, u4.PteFrame contains garbage (often 0xFFFFFFFF),
+                 * causing MiDecrementShareCount to fail with "PFN mismatch" assertion.
+                 *
+                 * The logic mirrors MiInitializePfn (pfnlist.c:1014-1034):
+                 * 1. Get the PTE that maps the page table containing PointerPte
+                 * 2. Ensure that PTE is valid (page table must be present for paged pool)
+                 * 3. Extract the PFN of the page table from that PTE
+                 * 4. Store it in Pfn1->u4.PteFrame
+                 */
+                PointerPtePte = MiAddressToPte(PointerPte);
+                if (PointerPtePte->u.Hard.Valid == 0)
+                {
+                    /* Page table not present - this should not happen for paged pool */
+                    Status = MiCheckPdeForPagedPool(PointerPte);
+                    if (!NT_SUCCESS(Status))
+                    {
+                        /* Critical error - cannot proceed */
+                        MiReleasePfnLock(PoolOldIrql);
+
+                        /* Clear the allocation bits we set */
+                        KeAcquireGuardedMutex(&MmPagedPoolMutex);
+                        RtlClearBit(MmPagedPoolInfo.EndOfPagedPoolBitmap, EndAllocation);
+                        RtlClearBits(MmPagedPoolInfo.PagedPoolAllocationMap, i, SizeInPages);
+                        KeReleaseGuardedMutex(&MmPagedPoolMutex);
+                        return NULL;
+                    }
+                }
+
+                /* Get the PFN of the page table and store it */
+                PageTableFrameNumber = PFN_FROM_PTE(PointerPtePte);
+                ASSERT(PageTableFrameNumber != 0);
+                Pfn1->u4.PteFrame = PageTableFrameNumber;
+
+                /* Increment the share count of the page table */
+                Pfn1 = MiGetPfnEntry(PageTableFrameNumber);
+                Pfn1->u2.ShareCount++;
+
+                /* Restore Pfn1 to point to the data page we're initializing */
+                Pfn1 = MiGetPfnEntry(PageFrameNumber);
+
                 /* Write the valid PTE */
                 TempPte.u.Hard.PageFrameNumber = PageFrameNumber;
                 MI_WRITE_VALID_PTE(PointerPte, TempPte);
@@ -828,8 +783,6 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
             /* Update allocated pool count */
             InterlockedExchangeAddSizeT(&MmPagedPoolInfo.AllocatedPagedPool,
                                         SizeInPages << PAGE_SHIFT);
-
-            DPRINT1("ARM64: Mapped %lu paged pool pages at %p\n", SizeInPages, BaseVa);
         }
 #else
         /* Setup a demand-zero writable PTE */
@@ -954,26 +907,11 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
                 //
                 // Now mark it as the beginning of an allocation
                 //
-                // NOTE: On ARM64, we've observed that sometimes this flag is already set
-                // during early boot. This indicates a previous allocation wasn't properly
-                // freed, or pool pages are being reused without proper cleanup.
-                // For now, we clear it if set, but this needs investigation.
+                // Mark it as the beginning of an allocation
                 //
-                if (Pfn1->u3.e1.StartOfAllocation != 0)
-                {
-                    DPRINT1("ARM: PFN %lx already marked as StartOfAllocation\n",
-                            MiGetPfnEntryIndex(Pfn1));
-                    Pfn1->u3.e1.StartOfAllocation = 0;
-                }
                 Pfn1->u3.e1.StartOfAllocation = 1;
 
                 /* Mark it as special pool if needed */
-                if (Pfn1->u4.VerifierAllocation != 0)
-                {
-                    DPRINT1("ARM: PFN %lx already marked as VerifierAllocation\n",
-                            MiGetPfnEntryIndex(Pfn1));
-                    Pfn1->u4.VerifierAllocation = 0;
-                }
                 if (PoolType & VERIFIER_POOL_MASK)
                 {
                     Pfn1->u4.VerifierAllocation = 1;
@@ -995,12 +933,6 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
                 //
                 // Mark this PFN as the last (might be the same as the first)
                 //
-                if (Pfn1->u3.e1.EndOfAllocation != 0)
-                {
-                    DPRINT1("ARM: PFN %lx already marked as EndOfAllocation\n",
-                            MiGetPfnEntryIndex(Pfn1));
-                    Pfn1->u3.e1.EndOfAllocation = 0;
-                }
                 Pfn1->u3.e1.EndOfAllocation = 1;
 
                 //
@@ -1073,6 +1005,9 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
     TempPte = ValidKernelPte;
     do
     {
+        PMMPTE PointerPtePte;
+        PFN_NUMBER PageTableFrameNumber;
+
         /* Allocate a page */
         MI_SET_USAGE(MI_USAGE_PAGED_POOL);
         MI_SET_PROCESS2("Kernel");
@@ -1085,6 +1020,21 @@ MiAllocatePoolPages(IN POOL_TYPE PoolType,
         Pfn1->PteAddress = PointerPte;
         Pfn1->u3.e1.PageLocation = ActiveAndValid;
         Pfn1->u4.VerifierAllocation = 0;
+
+        /*
+         * ARM64 FIX: Set u4.PteFrame to the page table that contains this PTE.
+         * This mirrors the fix for paged pool above and ensures PFN database
+         * consistency. While nonpaged pool is rarely freed, proper initialization
+         * prevents potential issues with MiDecrementShareCount.
+         */
+        PointerPtePte = MiAddressToPte(PointerPte);
+        ASSERT(PointerPtePte->u.Hard.Valid == 1);
+        PageTableFrameNumber = PFN_FROM_PTE(PointerPtePte);
+        ASSERT(PageTableFrameNumber != 0);
+        Pfn1->u4.PteFrame = PageTableFrameNumber;
+
+        /* Increment the share count of the page table */
+        MiGetPfnEntry(PageTableFrameNumber)->u2.ShareCount++;
 
         /* Write the PTE for it */
         TempPte.u.Hard.PageFrameNumber = PageFrameNumber;
@@ -1199,6 +1149,20 @@ MiFreePoolPages(IN PVOID StartingVa)
     // the S-LIST instead of freeing it
     //
     StartPte = PointerPte = MiAddressToPte(StartingVa);
+
+#if defined(_M_ARM64) || defined(__aarch64__)
+    //
+    // ARM64: Check if the PTE is valid before accessing PageFrameNumber.
+    // For nonpaged pool, PTEs must always be valid. If we hit an invalid PTE,
+    // it indicates a serious error. Return 0 to indicate failure rather than
+    // crashing when accessing u.Hard.PageFrameNumber on an invalid PTE.
+    //
+    if (!PointerPte->u.Hard.Valid)
+    {
+        return 0;
+    }
+#endif
+
     StartPfn = Pfn1 = MiGetPfnEntry(PointerPte->u.Hard.PageFrameNumber);
     if ((Pfn1->u3.e1.EndOfAllocation == 1) &&
         (ExQueryDepthSList(&MiNonPagedPoolSListHead) < MiNonPagedPoolSListMaximum))
@@ -1216,6 +1180,18 @@ MiFreePoolPages(IN PVOID StartingVa)
         // Keep going
         //
         PointerPte++;
+
+#if defined(_M_ARM64) || defined(__aarch64__)
+        //
+        // ARM64: Verify each PTE in the chain is valid
+        //
+        if (!PointerPte->u.Hard.Valid)
+        {
+            // Invalid PTE in allocation chain - return 0
+            return 0;
+        }
+#endif
+
         Pfn1 = MiGetPfnEntry(PointerPte->u.Hard.PageFrameNumber);
     }
 
@@ -1508,8 +1484,6 @@ MiInitializeSessionPool(VOID)
     /* Setup the pool addresses */
     MmSessionSpace->PagedPoolStart = (PVOID)MiSessionPoolStart;
     MmSessionSpace->PagedPoolEnd = (PVOID)((ULONG_PTR)MiSessionPoolEnd - 1);
-    DPRINT1("Session Pool Start: 0x%p End: 0x%p\n",
-            MmSessionSpace->PagedPoolStart, MmSessionSpace->PagedPoolEnd);
 
     /* Reset all the counters */
     PagedPoolInfo = &MmSessionSpace->PagedPoolInfo;
@@ -1634,7 +1608,6 @@ MmRaisePoolQuota(
              */
             if (MmAvailablePages < MI_QUOTA_NON_PAGED_NEEDED_PAGES)
             {
-                DPRINT1("MmRaisePoolQuota(): Not enough pages available (current pages -- %lu)\n", MmAvailablePages);
                 return FALSE;
             }
 
@@ -1645,16 +1618,12 @@ MmRaisePoolQuota(
             if (MmMaximumNonPagedPoolInPages < (MmAllocatedNonPagedPool >> PAGE_SHIFT))
             {
                 /* There's too much allocated space, bail out */
-                DPRINT1("MmRaisePoolQuota(): Failed to increase pool quota, not enough non paged pool space (current size -- %lu || allocated size -- %lu)\n",
-                        MmMaximumNonPagedPoolInPages, MmAllocatedNonPagedPool);
                 return FALSE;
             }
 
             /* Do we have enough resident pages to increase our quota? */
             if (MmResidentAvailablePages < MI_NON_PAGED_QUOTA_MIN_RESIDENT_PAGES)
             {
-                DPRINT1("MmRaisePoolQuota(): Failed to increase pool quota, not enough resident pages available (current available pages -- %lu)\n",
-                        MmResidentAvailablePages);
                 return FALSE;
             }
 
@@ -1679,8 +1648,6 @@ MmRaisePoolQuota(
             if (MmSizeOfPagedPoolInPages < (MmPagedPoolInfo.AllocatedPagedPool >> PAGE_SHIFT))
             {
                 /* We haven't gotten enough space, bail out */
-                DPRINT1("MmRaisePoolQuota(): Failed to increase pool quota, not enough paged pool space (current size -- %lu || allocated size -- %lu)\n",
-                        MmSizeOfPagedPoolInPages, MmPagedPoolInfo.AllocatedPagedPool >> PAGE_SHIFT);
                 return FALSE;
             }
 

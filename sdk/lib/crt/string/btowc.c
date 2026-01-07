@@ -39,6 +39,8 @@ wint_t __cdecl btowc(int c)
     return wc;
 }
 
+/* msvcrt provides its own wctob in wctob.c */
+#ifndef _MSVCRT_LIB_
 int __cdecl wctob(wint_t wc)
 {
     char buf[MB_LEN_MAX];
@@ -66,3 +68,4 @@ int __cdecl wctob(wint_t wc)
 
     return (unsigned char)buf[0];
 }
+#endif

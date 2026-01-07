@@ -334,8 +334,30 @@ MiDeleteSystemPageableVm(IN PMMPTE PointerPte,
                 /* Actual valid, legitimate, pages */
                 if (ValidPages) (*ValidPages)++;
 
-                /* Get the page table entry */
-                PageTableIndex = Pfn1->u4.PteFrame;
+                /*
+                 * ARM64 FIX: Use the actual page table frame from the PTE, not u4.PteFrame.
+                 *
+                 * The u4.PteFrame field can become stale when physical pages are reused
+                 * for different virtual addresses. This happens because:
+                 * 1. Page is freed to free list
+                 * 2. Same physical page is allocated for a different VA (different PT)
+                 * 3. If the new allocation path doesn't update u4.PteFrame (e.g., SLIST),
+                 *    it still contains the old page table index
+                 *
+                 * By always calculating the page table from the actual PTE address,
+                 * we ensure we decrement the correct page table's ShareCount.
+                 */
+                {
+                    PMMPTE ActualPtePte = MiAddressToPte(PointerPte);
+
+                    /*
+                     * The PTE for the page table must be valid since we're freeing
+                     * a valid paged pool page.
+                     */
+                    ASSERT(ActualPtePte->u.Hard.Valid == 1);
+
+                    PageTableIndex = PFN_FROM_PTE(ActualPtePte);
+                }
                 Pfn2 = MiGetPfnEntry(PageTableIndex);
 
                 /* Lock the PFN database */

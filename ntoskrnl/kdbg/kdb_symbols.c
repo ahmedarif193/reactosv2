@@ -334,20 +334,57 @@ KdbSymPrintAddress(
 
     if (LdrEntry->PatchInformation)
     {
-        ULONG LineNumber;
-        CHAR FileName[256];
-        CHAR FunctionName[256];
+        PROSSYM_INFO RosSymInfo = (PROSSYM_INFO)LdrEntry->PatchInformation;
 
-        if (RosSymGetAddressInformation(LdrEntry->PatchInformation,
-                                        RelativeAddress,
-                                        &LineNumber,
-                                        FileName,
-                                        FunctionName))
+        /*
+         * ARM64 defensive checks: Validate the rossym structure before use.
+         * The rossym data is allocated in NonPagedPool so it should always be
+         * accessible. We do basic pointer validation to catch corruption.
+         *
+         * Note: We avoid using KdbpSafeReadMemory here because in nested
+         * exception contexts (debugger handling its own exception), the
+         * safe memory read mechanism may fail even for valid NonPagedPool
+         * addresses.
+         */
+#if defined(_M_ARM64) || defined(__aarch64__)
+        BOOLEAN RosSymValid = FALSE;
+
+        /* Check if RosSymInfo pointer is in kernel address space */
+        if ((ULONG_PTR)RosSymInfo >= 0xFFFF000000000000ULL)
         {
-            KdbPrintf("<%s:%Ix (%s:%d (%s))>",
-                      ModuleNameAnsi, (SIZE_T)RelativeAddress,
-                      FileName, LineNumber, FunctionName);
-            Printed = TRUE;
+            /*
+             * Direct access to NonPagedPool memory. The rossym structure is
+             * allocated contiguously: [ROSSYM_INFO | Symbols array | Strings]
+             * All pointers within should be in kernel space.
+             */
+            if (RosSymInfo->SymbolsCount > 0 &&
+                RosSymInfo->Symbols != NULL &&
+                RosSymInfo->Strings != NULL &&
+                (ULONG_PTR)RosSymInfo->Symbols >= 0xFFFF000000000000ULL &&
+                (ULONG_PTR)RosSymInfo->Strings >= 0xFFFF000000000000ULL)
+            {
+                RosSymValid = TRUE;
+            }
+        }
+
+        if (RosSymValid)
+#endif /* _M_ARM64 || __aarch64__ */
+        {
+            ULONG LineNumber;
+            CHAR FileName[256];
+            CHAR FunctionName[256];
+
+            if (RosSymGetAddressInformation(RosSymInfo,
+                                            RelativeAddress,
+                                            &LineNumber,
+                                            FileName,
+                                            FunctionName))
+            {
+                KdbPrintf("<%s:%Ix (%s:%d (%s))>",
+                          ModuleNameAnsi, (SIZE_T)RelativeAddress,
+                          FileName, LineNumber, FunctionName);
+                Printed = TRUE;
+            }
         }
     }
 
@@ -481,24 +518,22 @@ KdbSymProcessSymbols(
         return;
     }
 
-    if (RosSymCreateFromMem(LdrEntry->DllBase, LdrEntry->SizeOfImage, (PROSSYM_INFO*)&LdrEntry->PatchInformation))
+    if (KeGetCurrentIrql() <= APC_LEVEL)
     {
-        // CHAR ModuleNameAnsi[64];
-        // KdbpSymUnicodeToAnsi(&LdrEntry->BaseDllName, ModuleNameAnsi, sizeof(ModuleNameAnsi));
-        // DPRINT1("KdbSymProcessSymbols: loaded rossym from memory for %s (Base=%p Size=%Ix)\n",
-        //         ModuleNameAnsi,
-        //         LdrEntry->DllBase,
-        //         (SIZE_T)LdrEntry->SizeOfImage);
-        return;
-    }
-    else
-    {
-        CHAR ModuleNameAnsi[64];
-        KdbpSymUnicodeToAnsi(&LdrEntry->BaseDllName, ModuleNameAnsi, sizeof(ModuleNameAnsi));
-        DPRINT1("KdbSymProcessSymbols: rossym from memory failed for %s (Base=%p Size=%Ix), queueing file load\n",
-                ModuleNameAnsi,
-                LdrEntry->DllBase,
-                (SIZE_T)LdrEntry->SizeOfImage);
+        if (RosSymCreateFromMem(LdrEntry->DllBase, LdrEntry->SizeOfImage, (PROSSYM_INFO*)&LdrEntry->PatchInformation))
+        {
+            /* Symbols loaded successfully from in-memory image */
+            return;
+        }
+        else
+        {
+            CHAR ModuleNameAnsi[64];
+            KdbpSymUnicodeToAnsi(&LdrEntry->BaseDllName, ModuleNameAnsi, sizeof(ModuleNameAnsi));
+            DPRINT1("KdbSymProcessSymbols: rossym from memory failed for %s (Base=%p Size=%Ix), queueing file load\n",
+                    ModuleNameAnsi,
+                    LdrEntry->DllBase,
+                    (SIZE_T)LdrEntry->SizeOfImage);
+        }
     }
 
     /* Add a ref until we really process it */
@@ -539,7 +574,7 @@ KdbSymInit(
         CHAR YesNo;
 
         /* By default, load symbols in DBG builds on x86 and x64. */
-#if DBG && (defined(_M_IX86) || defined(_M_AMD64) || defined(_AMD64_) || defined(__x86_64__))
+#if DBG && (defined(_M_IX86) || defined(_M_AMD64) || defined(_AMD64_) || defined(__x86_64__) || defined(_M_ARM64) || defined(__aarch64__))
         LoadSymbols = TRUE;
 #else
         LoadSymbols = FALSE;

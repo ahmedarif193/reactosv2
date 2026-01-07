@@ -315,6 +315,7 @@ Retry:
         (ULONG_PTR)Address >= (ULONG_PTR)MmSystemRangeStart &&
         TrapInformation != NULL)
     {
+#if defined(_M_AMD64) || defined(_M_IX86)
         PKTRAP_FRAME TrapFrame = (PKTRAP_FRAME)TrapInformation;
 
 #if defined(_M_AMD64)
@@ -331,6 +332,7 @@ Retry:
                 (PVOID)TrapFrame->Ebp,
                 (PVOID)TrapFrame->Ecx,
                 (PVOID)TrapFrame->Edx);
+#endif
 #endif
     }
 

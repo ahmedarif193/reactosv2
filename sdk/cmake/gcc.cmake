@@ -20,7 +20,7 @@ endif()
 # Force-disable rossym in configurations where it is unsupported or undesired.
 if(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(NO_ROSSYM ON CACHE BOOL "Disable rossym (.rossym) generation; rely on DWARF only" FORCE)
-elseif(NOT ARCH STREQUAL "i386" AND NOT ARCH STREQUAL "amd64")
+elseif(NOT ARCH STREQUAL "i386" AND NOT ARCH STREQUAL "amd64" AND NOT ARCH STREQUAL "arm64")
     set(NO_ROSSYM ON CACHE BOOL "Disable rossym (.rossym) generation; rely on DWARF only" FORCE)
 endif()
 
@@ -524,6 +524,21 @@ function(set_module_type_toolchain MODULE TYPE)
         if(TYPE IN_LIST KERNEL_MODULE_TYPES)
             target_link_libraries(${MODULE} chkstk)
             add_dependencies(${MODULE} chkstk)
+        endif()
+        # ARM64 user-mode modules need libgcc for soft-float long double conversion
+        # functions (__floatditf, __trunctfdf2, __addtf3, etc.) which are required
+        # when using 128-bit quad precision long double.
+        set(_arm64_usermode_types win32cui win32gui win32dll win32ocx cpl nativedll)
+        if(TYPE IN_LIST _arm64_usermode_types)
+            # ntdll cannot link libgcc because:
+            # 1. libgcc has INTERFACE dependencies on kernel32/ntdll (circular dependency)
+            # 2. libgcc's TLS emulation depends on kernel32 APIs not available in ntdll
+            # ntdll doesn't use long double so it doesn't need libgcc's soft-float functions
+            if(NOT MODULE STREQUAL "ntdll")
+                target_link_libraries(${MODULE} libgcc)
+            endif()
+            target_link_options(${MODULE} PRIVATE "-Wl,--whole-archive" "$<TARGET_FILE:gcc-compat>" "-Wl,--no-whole-archive")
+            add_dependencies(${MODULE} gcc-compat)
         endif()
     endif()
 

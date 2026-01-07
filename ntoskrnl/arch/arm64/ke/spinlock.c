@@ -11,7 +11,6 @@
 #undef KeReleaseSpinLock
 
 extern BOOLEAN ExpArm64PoolBootstrapMode;
-VOID KiArm64BootStageLog(_In_z_ PCSTR Stage);
 
 KIRQL
 FASTCALL
@@ -86,12 +85,10 @@ KeAcquireQueuedSpinLock(
     PKPRCB Prcb;
     PKSPIN_LOCK Lock;
 
-#if defined(_M_ARM64) || defined(__aarch64__)
     if (ExpArm64PoolBootstrapMode && LockNumber == LockQueueMmNonPagedPoolLock)
     {
         return PASSIVE_LEVEL;
     }
-#endif
 
     KeRaiseIrql(DISPATCH_LEVEL, &OldIrql);
 
@@ -102,7 +99,7 @@ KeAcquireQueuedSpinLock(
         if (NT_SUCCESS(RtlStringCbPrintfA(Buf, sizeof(Buf),
             "[arm64] KeAcquireQueuedSpinLock: NULL PRCB for LockNumber=%lu", (ULONG)LockNumber)))
         {
-            KiArm64BootStageLog(Buf);
+            DPRINT1("%s\n", Buf);
         }
         KeBugCheckEx(SPIN_LOCK_INIT_FAILURE, 1, LockNumber, 0, 0);
     }
@@ -115,7 +112,7 @@ KeAcquireQueuedSpinLock(
             "[arm64] KeAcquireQueuedSpinLock: NULL Lock for LockNumber=%lu Prcb=%p KeArm64CurrentPcr=%p",
             (ULONG)LockNumber, Prcb, KeArm64CurrentPcr)))
         {
-            KiArm64BootStageLog(Buf);
+            DPRINT1("%s\n", Buf);
         }
         KeBugCheckEx(SPIN_LOCK_INIT_FAILURE, 2, LockNumber, (ULONG_PTR)Prcb, (ULONG_PTR)KeArm64CurrentPcr);
     }
@@ -145,12 +142,10 @@ KeReleaseQueuedSpinLock(
     PKPRCB Prcb;
     PKSPIN_LOCK Lock;
 
-#if defined(_M_ARM64) || defined(__aarch64__)
     if (ExpArm64PoolBootstrapMode && LockNumber == LockQueueMmNonPagedPoolLock)
     {
         return;
     }
-#endif
 
     Prcb = KeGetCurrentPrcb();
     if (Prcb == NULL)
@@ -159,7 +154,7 @@ KeReleaseQueuedSpinLock(
         if (NT_SUCCESS(RtlStringCbPrintfA(Buf, sizeof(Buf),
             "[arm64] KeReleaseQueuedSpinLock: NULL PRCB for LockNumber=%lu", (ULONG)LockNumber)))
         {
-            KiArm64BootStageLog(Buf);
+            DPRINT1("%s\n", Buf);
         }
         KeBugCheckEx(SPIN_LOCK_INIT_FAILURE, 3, LockNumber, 0, 0);
     }
@@ -172,7 +167,7 @@ KeReleaseQueuedSpinLock(
             "[arm64] KeReleaseQueuedSpinLock: NULL Lock for LockNumber=%lu Prcb=%p KeArm64CurrentPcr=%p",
             (ULONG)LockNumber, Prcb, KeArm64CurrentPcr)))
         {
-            KiArm64BootStageLog(Buf);
+            DPRINT1("%s\n", Buf);
         }
         KeBugCheckEx(SPIN_LOCK_INIT_FAILURE, 4, LockNumber, (ULONG_PTR)Prcb, (ULONG_PTR)KeArm64CurrentPcr);
     }

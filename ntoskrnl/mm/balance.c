@@ -290,7 +290,17 @@ VOID
 NTAPI
 MmRebalanceMemoryConsumers(VOID)
 {
+    /* ARM64: Use acquire barrier when checking initialization flag to ensure we see
+     * the initialized event structures. This pairs with the release barrier in
+     * MiInitBalancerThread.
+     */
+#if defined(_M_ARM64) || defined(__aarch64__)
+    __dmb(_ARM64_BARRIER_ISH);  /* Data Memory Barrier - Inner Shareable */
+#endif
     if (!MiBalancerInitialized) return;
+#if defined(_M_ARM64) || defined(__aarch64__)
+    __dmb(_ARM64_BARRIER_ISH);  /* Ensure all event initializations are visible */
+#endif
 
     if (InterlockedCompareExchange(&PageOutThreadActive, 1, 0) == 0)
     {
@@ -302,11 +312,21 @@ VOID
 NTAPI
 MmRebalanceMemoryConsumersAndWait(VOID)
 {
+    /* ARM64: Use acquire barrier when checking initialization flag to ensure we see
+     * the initialized event structures. This pairs with the release barrier in
+     * MiInitBalancerThread.
+     */
+#if defined(_M_ARM64) || defined(__aarch64__)
+    __dmb(_ARM64_BARRIER_ISH);  /* Data Memory Barrier - Inner Shareable */
+#endif
     if (!MiBalancerInitialized)
     {
         /* Balancer thread not ready yet; nothing to do */
         return;
     }
+#if defined(_M_ARM64) || defined(__aarch64__)
+    __dmb(_ARM64_BARRIER_ISH);  /* Ensure all event initializations are visible */
+#endif
 
     ASSERT(PsGetCurrentProcess()->AddressCreationLock.Owner != KeGetCurrentThread());
     ASSERT(!MM_ANY_WS_LOCK_HELD(PsGetCurrentThread()));
@@ -477,7 +497,18 @@ MiInitBalancerThread(VOID)
     }
     DPRINT1("[MM] MiInitBalancerThread: Thread created successfully, handle=%p\n", MiBalancerThreadHandle);
 
+    /* ARM64: Ensure all event initializations are visible before setting the initialized flag.
+     * On ARM64's relaxed memory model, other CPUs might see MiBalancerInitialized = TRUE
+     * before they see the initialized event structures, leading to crashes when they try
+     * to wait on uninitialized events. Use a release barrier to ensure proper ordering.
+     */
+#if defined(_M_ARM64) || defined(__aarch64__)
+    __dmb(_ARM64_BARRIER_ISH);  /* Data Memory Barrier - Inner Shareable */
+#endif
     MiBalancerInitialized = TRUE;
+#if defined(_M_ARM64) || defined(__aarch64__)
+    __dmb(_ARM64_BARRIER_ISH);  /* Ensure flag write is visible before any subsequent operations */
+#endif
 
     Priority = LOW_REALTIME_PRIORITY + 1;
     DPRINT1("[MM] MiInitBalancerThread: About to set thread priority to %d\n", Priority);

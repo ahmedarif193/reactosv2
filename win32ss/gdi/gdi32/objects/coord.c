@@ -42,20 +42,6 @@ GdiTransformPoints2(
     }
 }
 
-FORCEINLINE
-void
-GdiTransformPoints(
-    _In_ MATRIX *pmx,
-    _Out_writes_(nCount) PPOINT pptOut,
-    _In_reads_(nCount) PPOINT pptIn,
-    _In_ ULONG nCount)
-{
-    XFORM xform;
-
-    MatrixToXForm(&xform, pmx);
-    GdiTransformPoints2(&xform, pptOut, pptIn, nCount);
-}
-
 #define MAX_OFFSET 4294967041.0
 #define _fmul(x,y) (((x) == 0) ? 0 : (x) * (y))
 

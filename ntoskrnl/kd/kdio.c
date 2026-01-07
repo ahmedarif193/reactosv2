@@ -187,7 +187,13 @@ KdpPrintToLogFile(
     /* Release the spinlock */
     KdbpReleaseLock(&KdpDebugLogSpinLock, OldIrql);
 
-    /* Signal the logger thread */
+    /*
+     * Signal the logger thread only if it's running.
+     * KdpLoggingEnabled is set to TRUE only after the logger thread starts,
+     * which happens after KeInitializeEvent is called in boot phase 2+.
+     * This check is critical on ARM64 to prevent dereferencing uninitialized
+     * event structures that may contain invalid pointers.
+     */
     if (OldIrql <= DISPATCH_LEVEL && KdpLoggingEnabled)
         KeSetEvent(&KdpLoggerThreadEvent, IO_NO_INCREMENT, FALSE);
 }
@@ -228,6 +234,15 @@ KdpDebugLogInit(
 
         /* Initialize spinlock */
         KeInitializeSpinLock(&KdpDebugLogSpinLock);
+
+        /*
+         * Initialize the logger event early (boot phase 1) to prevent
+         * KeSetEvent from misinterpreting zero-initialized list heads
+         * as a non-empty wait list. This is critical on ARM64 where
+         * uninitialized dispatcher objects can cause page faults.
+         * The event will be signaled in phase 2 when the thread is created.
+         */
+        KeInitializeEvent(&KdpLoggerThreadEvent, SynchronizationEvent, FALSE);
 
         /* Register for later BootPhase 2 reinitialization */
         DispatchTable->KdpInitRoutine = KdpDebugLogInit;
@@ -760,10 +775,14 @@ KdReceivePacket(
     ResponseString.MaximumLength = min(ResponseString.MaximumLength,
                                        DebugIo->u.GetString.LengthOfStringRead);
 
-    /* The prompt string has been printed by KdSendPacket; go to
-     * new line and print the kdb prompt -- for SYSREG2 support. */
+    /*
+     * The prompt string has already been printed by KdSendPacket.
+     * Do NOT print it again here; doing so causes a double prompt
+     * to appear (especially visible on ARM64). SYSREG2 should see
+     * the prompt from KdSendPacket; we just need a newline before
+     * reading input.
+     */
     KdIoPrintString("\n", 1);
-    KdIoPuts(KdbPromptStr.Buffer); // Alternatively, use "Input> "
 
     if (!(KdbDebugState & KD_DEBUG_KDSERIAL))
         KbdDisableMouse();

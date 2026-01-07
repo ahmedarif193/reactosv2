@@ -1571,6 +1571,11 @@ InstallBootManagerAndBootEntriesWorker(
             return Status;
         }
     }
+    else
+    {
+        /* Invalid InstallType */
+        return STATUS_INVALID_PARAMETER;
+    }
 
     return Status;
 }

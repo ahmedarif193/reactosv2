@@ -2457,17 +2457,15 @@ static BOOL dwarf2_parse_compilation_unit(const dwarf2_section_t* sections,
         }
         if (dwarf2_find_attribute(&ctx, di, DW_AT_stmt_list, &stmt_list))
         {
-#if defined(__REACTOS__) && defined(__clang__)
-            unsigned long stmt_list_val = stmt_list.u.uvalue;
-            if (stmt_list_val > module->module.BaseOfImage)
+            ULONG_PTR stmt_list_val = stmt_list.u.uvalue;
+            if (stmt_list_val > module->module.BaseOfImage &&
+                sections[section_line].address &&
+                sections[section_line].address != IMAGE_NO_MAP)
             {
-                /* FIXME: Clang is recording this as an address, not an offset */
+                /* Clang can record DW_AT_stmt_list as an address, not an offset. */
                 stmt_list_val -= module->module.BaseOfImage + sections[section_line].rva;
             }
             if (dwarf2_parse_line_numbers(sections, &ctx, comp_dir.u.string, stmt_list_val))
-#else
-            if (dwarf2_parse_line_numbers(sections, &ctx, comp_dir.u.string, stmt_list.u.uvalue))
-#endif
                 module->module.LineNumbers = TRUE;
         }
         ret = TRUE;

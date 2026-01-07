@@ -234,14 +234,23 @@ VOID
 __cdecl
 _disable(VOID)
 {
-    __asm__ __volatile__("msr daifset, #0xf" ::: "memory");
+    /*
+     * Mask IRQ only (I bit). Keep SError (A) unmasked per IRQL policy
+     * and avoid forcing full DAIF state changes that bypass IRQL tracking.
+     * ISB is sufficient for DAIF changes (no memory ordering required).
+     */
+    __asm__ __volatile__("msr daifset, #0x2\n\tisb" ::: "memory");
 }
 
 VOID
 __cdecl
 _enable(VOID)
 {
-    __asm__ __volatile__("msr daifclr, #0xf" ::: "memory");
+    /*
+     * IRQL is enforced via GIC priority masking; DAIF.I is a global gate.
+     * ISB is sufficient for DAIF changes (no memory ordering required).
+     */
+    __asm__ __volatile__("msr daifclr, #0x2\n\tisb" ::: "memory");
 }
 
 #if !__has_builtin(_rotl)

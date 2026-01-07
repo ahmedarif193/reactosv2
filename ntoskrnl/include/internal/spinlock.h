@@ -27,7 +27,7 @@ KxAcquireSpinLock(
     PKSPIN_LOCK SpinLock)
 {
 #if DBG
-    KSPIN_LOCK StoredBefore, StoredAfter;
+    KSPIN_LOCK StoredBefore;
     KSPIN_LOCK Owner = (KSPIN_LOCK)KeGetCurrentThread() | 1;
 
     /* Validate spinlock pointer */
@@ -65,15 +65,14 @@ KxAcquireSpinLock(
     }
 #endif
 
+#if DBG
+    /* Track ownership in debug builds to satisfy release checks. */
+    *SpinLock = Owner;
+#endif
+
     /* Add an explicit memory barrier to prevent the compiler from reordering
        memory accesses across the borders of spinlocks */
     KeMemoryBarrierWithoutFence();
-
-#if DBG
-    /* On debug builds, we OR in the KTHREAD */
-    *SpinLock = (KSPIN_LOCK)KeGetCurrentThread() | 1;
-    StoredAfter = *SpinLock;
-#endif
 }
 
 //

@@ -21,7 +21,7 @@ DBG_DEFAULT_CHANNEL(WARNING);
 #define ARM64_SELF_PPE_BASE   0xFFFFF6FB7DA00000ULL
 #define ARM64_SELF_PXE_BASE   0xFFFFF6FB7DBED000ULL
 
-#define ARM64_PFN_DB_BASE          0xFFFFFB0000000000ULL
+#define ARM64_PFN_DB_BASE          0xFFFFFA8000000000ULL
 #define ARM64_PFN_DB_RESERVE_SIZE  (512ULL << 20) /* 512MB for PFN DB + metadata */
 #define ARM64_NONPAGED_RESERVE_SIZE (512ULL << 20)
 
@@ -42,6 +42,8 @@ DBG_DEFAULT_CHANNEL(WARNING);
 
 #define ARM64_ALIGN_UP(value, alignment) \
     (((value) + ((alignment) - 1ULL)) & ~((alignment) - 1ULL))
+#define ARM64_ALIGN_DOWN(value, alignment) \
+    ((value) & ~((alignment) - 1ULL))
 
 #define ARM64_DEFAULT_SECONDARY_COLORS   8ULL /* FIXME: keep in sync with MmSecondaryColors (MiInitSystem) */
 #define ARM64_MINIMUM_NONPAGED_POOL_SIZE (256ULL * 1024ULL)
@@ -149,7 +151,18 @@ static inline VOID UartPutHex32(ULONG Value)
 #define ARM64_MAP_ATTR_PXN 0
 #endif
 
+/* Block size fallbacks if arch headers don't provide them. */
+#ifndef ARM64_BLOCK_SIZE_1G
+#define ARM64_BLOCK_SIZE_1G            (1ULL << 30)
+#define ARM64_BLOCK_MASK_1G            (ARM64_BLOCK_SIZE_1G - 1ULL)
+#endif
+#ifndef ARM64_BLOCK_SIZE_2M
+#define ARM64_BLOCK_SIZE_2M            (1ULL << 21)
+#define ARM64_BLOCK_MASK_2M            (ARM64_BLOCK_SIZE_2M - 1ULL)
+#endif
+
 extern EFI_SYSTEM_TABLE *GlobalSystemTable;
+extern LIST_ENTRY FrLdrModuleList;
 
 /* ---------- Barrier & TLBI helpers (multicore-safe) ---------- */
 
@@ -170,6 +183,21 @@ static inline void tlbi_vaae1is_by_va(ULONGLONG va)
 static inline void tlbi_va_all_levels(ULONGLONG va)
 {
     /* Invalidate TLB entries for this VA at all levels */
+    tlbi_vaae1is_by_va(va);
+}
+
+static inline void tlbi_va_entry(ULONGLONG va, ULONGLONG size)
+{
+    if ((size >= ARM64_BLOCK_SIZE_1G) && ((va & ARM64_BLOCK_MASK_1G) == 0))
+    {
+        tlbi_vaae1is_by_va(va);
+        return;
+    }
+    if ((size >= ARM64_BLOCK_SIZE_2M) && ((va & ARM64_BLOCK_MASK_2M) == 0))
+    {
+        tlbi_vaae1is_by_va(va);
+        return;
+    }
     tlbi_vaae1is_by_va(va);
 }
 
@@ -237,10 +265,7 @@ sanitize_block_attrs(UINT64 attrs)
     return sanitized;
 }
 
-#ifndef ARM64_BLOCK_SIZE_2M
-#define ARM64_BLOCK_SIZE_2M            (1ULL << 21)
-#define ARM64_BLOCK_MASK_2M            (ARM64_BLOCK_SIZE_2M - 1ULL)
-#endif
+/* ARM64_BLOCK_SIZE_* fallbacks moved above TLBI helpers. */
 
 /* Descriptor classification helpers */
 #define DESC_VALID(e)     (((e) & PTE_TYPE_VALID) != 0)
@@ -331,12 +356,12 @@ static BOOLEAN page_tables_initialized = FALSE;
  *   - 493 (0x1ED): Self-map (ARM64_SELF_PXE_BASE)
  *   - 494 (0x1EE): Hyperspace (ARM64_HYPERSPACE_BASE)
  *   - 497 (0x1F1): Paged Pool / Debug mapping
- *   - 502 (0x1F6): PFN Database
+ *   - 501 (0x1F5): PFN Database
  */
 #define ARM64_EXTRA_L0_SLOT_SELFMAP    493U  /* 0x1ED - Self-map region */
 #define ARM64_EXTRA_L0_SLOT_HYPERSPACE 494U  /* 0x1EE - Hyperspace */
 #define ARM64_EXTRA_L0_SLOT_PAGEDPOOL  497U  /* 0x1F1 - Paged pool / Debug */
-#define ARM64_EXTRA_L0_SLOT_PFNDB      502U  /* 0x1F6 - PFN Database */
+#define ARM64_EXTRA_L0_SLOT_PFNDB      501U  /* 0x1F5 - PFN Database */
 
 #define ARM64_EXTRA_KERNEL_SLOTS       4U    /* Number of extra kernel L0 slots */
 #define ARM64_EXTRA_L2_PER_SLOT        4U    /* L2 tables per extra slot */
@@ -479,6 +504,70 @@ static UINT8 arm64_static_extra_pt_arena[ARM64_STATIC_EXTRA_PT_PAGES * PAGE_SIZE
     __attribute__((aligned(4096)));
 static UINT64 arm64_static_extra_pt_offset = 0;
 
+/* Retype page-table allocations so the kernel won't reclaim them as LoaderLoadedProgram. */
+typedef struct _ARM64_PT_ALLOCATION
+{
+    EFI_PHYSICAL_ADDRESS Base;
+    UINTN Pages;
+} ARM64_PT_ALLOCATION;
+
+#define ARM64_PT_ALLOCATION_MAX 64
+static ARM64_PT_ALLOCATION Arm64PtAllocations[ARM64_PT_ALLOCATION_MAX];
+static UINTN Arm64PtAllocationCount = 0;
+static BOOLEAN Arm64PtAllocationsApplied = FALSE;
+
+VOID Arm64ApplyDeferredPageTableMemoryTypes(VOID);
+
+static VOID
+Arm64RecordPageTableAllocation(EFI_PHYSICAL_ADDRESS Base, UINTN Pages)
+{
+    if (Pages == 0)
+        return;
+
+    if (PageLookupTableAddress && Arm64PtAllocationsApplied)
+    {
+        MmSetMemoryType((PVOID)(ULONG_PTR)Base, Pages * PAGE_SIZE, LoaderMemoryData);
+        return;
+    }
+
+    if (Arm64PtAllocationCount < ARRAYSIZE(Arm64PtAllocations))
+    {
+        Arm64PtAllocations[Arm64PtAllocationCount].Base = Base;
+        Arm64PtAllocations[Arm64PtAllocationCount].Pages = Pages;
+        Arm64PtAllocationCount++;
+    }
+    else
+    {
+        ERR("ARM64: PT allocation tracking overflow (base=0x%llx pages=%llu)\n",
+            (unsigned long long)Base,
+            (unsigned long long)Pages);
+    }
+
+    if (PageLookupTableAddress && !Arm64PtAllocationsApplied)
+    {
+        Arm64ApplyDeferredPageTableMemoryTypes();
+    }
+}
+
+VOID
+Arm64ApplyDeferredPageTableMemoryTypes(VOID)
+{
+    if (Arm64PtAllocationsApplied || !PageLookupTableAddress)
+        return;
+
+    for (UINTN i = 0; i < Arm64PtAllocationCount; ++i)
+    {
+        if (Arm64PtAllocations[i].Pages == 0)
+            continue;
+
+        MmSetMemoryType((PVOID)(ULONG_PTR)Arm64PtAllocations[i].Base,
+                        Arm64PtAllocations[i].Pages * PAGE_SIZE,
+                        LoaderMemoryData);
+    }
+
+    Arm64PtAllocationsApplied = TRUE;
+}
+
 static VOID verify_page_aligned(const VOID *ptr, const char *name)
 {
     if (((UINT64)(uintptr_t)ptr & (PAGE_SIZE - 1ULL)) == 0)
@@ -537,6 +626,8 @@ static BOOLEAN map_region_hierarchical(UINT64 va, UINT64 pa, UINT64 size, UINT64
 static UINT64* ensure_l2_table(BOOLEAN is_kernel, UINT64 l0_slot, UINT64 *l1_table, UINT64 l1_index, UINT64 va);
 static UINT64* ensure_l3_table(BOOLEAN is_kernel, UINT64 l0_slot, UINT64 *l2_table, UINT64 l2_index, UINT64 va);
 static UINT64 get_l2_slot_index(BOOLEAN is_kernel, UINT64 l0_slot, UINT64 *l2_table);
+static BOOLEAN Arm64UpdateMappingAttributes(ULONGLONG Va, ULONGLONG Size, UINT64 set_mask, UINT64 clear_mask);
+static VOID Arm64ApplyImageSectionProtections(VOID);
 
 /* PL011 UART debugging helpers - defined early for use throughout */
 static inline VOID Pl011RawPutc(char Ch)
@@ -550,6 +641,9 @@ static inline VOID Pl011RawPuts(const char *S)
 {
     while (*S) { if (*S == '\n') Pl011RawPutc('\r'); Pl011RawPutc(*S++); }
 }
+
+#define ARM64_PT_VERBOSE 0
+#define ARM64_PT_LOG(S) do { if (ARM64_PT_VERBOSE) Pl011RawPuts(S); } while (0)
 
 /* NEW: public functions used before they are defined later in this file */
 BOOLEAN Arm64MapVirtualMemory(ULONGLONG VirtualAddress,
@@ -592,6 +686,33 @@ static VOID use_static_page_tables(VOID)
         align_page_storage(arm64_extra_l2_tables_storage_raw);
     arm64_extra_l3_tables = (UINT64 (*)[ARM64_EXTRA_L2_PER_SLOT][ARM64_EXTRA_L3_PER_L2][ARM64_PT_ENTRIES])
         align_page_storage(arm64_extra_l3_tables_storage_raw);
+
+    Arm64RecordPageTableAllocation((EFI_PHYSICAL_ADDRESS)(ULONG_PTR)arm64_l0_page_table, 1);
+    Arm64RecordPageTableAllocation((EFI_PHYSICAL_ADDRESS)(ULONG_PTR)arm64_kernel_l0_table, 1);
+    Arm64RecordPageTableAllocation((EFI_PHYSICAL_ADDRESS)(ULONG_PTR)arm64_kuser_l1_table, 1);
+    Arm64RecordPageTableAllocation((EFI_PHYSICAL_ADDRESS)(ULONG_PTR)arm64_kuser_l2_table, 1);
+    Arm64RecordPageTableAllocation((EFI_PHYSICAL_ADDRESS)(ULONG_PTR)arm64_kuser_l3_table, 1);
+    Arm64RecordPageTableAllocation((EFI_PHYSICAL_ADDRESS)(ULONG_PTR)arm64_l1_page_tables,
+                                   ARM64_USER_L1_TABLES);
+    Arm64RecordPageTableAllocation((EFI_PHYSICAL_ADDRESS)(ULONG_PTR)arm64_kernel_l1_tables,
+                                   ARM64_KERNEL_L1_TABLES);
+    Arm64RecordPageTableAllocation((EFI_PHYSICAL_ADDRESS)(ULONG_PTR)arm64_kernel_l2_tables,
+                                   ARM64_KERNEL_L1_TABLES * ARM64_L2_TABLES_PER_L1);
+    Arm64RecordPageTableAllocation((EFI_PHYSICAL_ADDRESS)(ULONG_PTR)arm64_kernel_l3_tables,
+                                   ARM64_KERNEL_L1_TABLES * ARM64_L2_TABLES_PER_L1 *
+                                       ARM64_L3_TABLES_PER_L2);
+    Arm64RecordPageTableAllocation((EFI_PHYSICAL_ADDRESS)(ULONG_PTR)arm64_user_l2_tables,
+                                   ARM64_USER_L1_TABLES * ARM64_L2_TABLES_PER_L1);
+    Arm64RecordPageTableAllocation((EFI_PHYSICAL_ADDRESS)(ULONG_PTR)arm64_user_l3_tables,
+                                   ARM64_USER_L1_TABLES * ARM64_L2_TABLES_PER_L1 *
+                                       ARM64_L3_TABLES_PER_L2);
+    Arm64RecordPageTableAllocation((EFI_PHYSICAL_ADDRESS)(ULONG_PTR)arm64_extra_l1_tables[0],
+                                   ARM64_EXTRA_KERNEL_SLOTS);
+    Arm64RecordPageTableAllocation((EFI_PHYSICAL_ADDRESS)(ULONG_PTR)arm64_extra_l2_tables,
+                                   ARM64_EXTRA_KERNEL_SLOTS * ARM64_EXTRA_L2_PER_SLOT);
+    Arm64RecordPageTableAllocation((EFI_PHYSICAL_ADDRESS)(ULONG_PTR)arm64_extra_l3_tables,
+                                   ARM64_EXTRA_KERNEL_SLOTS * ARM64_EXTRA_L2_PER_SLOT *
+                                       ARM64_EXTRA_L3_PER_L2);
 
     {
         const struct {
@@ -659,6 +780,7 @@ allocate_pt_pages(UINTN pages, const char *label)
         ptr = (VOID *)(uintptr_t)aligned_abs;
         arm64_static_extra_pt_offset = required;
         RtlZeroMemory(ptr, bytes);
+        Arm64RecordPageTableAllocation((EFI_PHYSICAL_ADDRESS)(UINT64)(uintptr_t)ptr, pages);
 
         /* Verify alignment before returning */
         if (((UINT64)(uintptr_t)ptr & (PAGE_SIZE - 1ULL)) != 0)
@@ -688,6 +810,7 @@ allocate_pt_pages(UINTN pages, const char *label)
 
     ptr = (VOID *)(uintptr_t)addr;
     RtlZeroMemory(ptr, pages * PAGE_SIZE);
+    Arm64RecordPageTableAllocation(addr, pages);
     TRACE("ARM64: Allocated %s @ 0x%llx (%u pages)\n",
           label, (unsigned long long)addr, (unsigned)pages);
     return ptr;
@@ -952,7 +1075,7 @@ static inline void pte_replace_break_before_make(UINT64 *entry, UINT64 newval, U
     }
     if (DESC_VALID(*entry)) {
         pte_write(entry, 0);
-        tlbi_va_range(va, va + size);
+        tlbi_va_entry(va, size);
         ARM64_DSB_ISH();
         ARM64_ISB();
     }
@@ -1272,7 +1395,7 @@ static UINT64* ensure_l2_table(BOOLEAN is_kernel, UINT64 l0_slot, UINT64 *l1_tab
     return new_table;
 }
 
-static UINT64 get_l2_slot_index(BOOLEAN is_kernel, UINT64 l0_slot, UINT64 *l2_table)
+static __attribute__((unused)) UINT64 get_l2_slot_index(BOOLEAN is_kernel, UINT64 l0_slot, UINT64 *l2_table)
 {
     if (is_kernel)
     {
@@ -1322,20 +1445,7 @@ static UINT64* alloc_kernel_l3_from_flat_pool(UINT64 l0_slot)
     UINT64 l2_slot_for_alloc = flat_idx / ARM64_L3_TABLES_PER_L2;
     UINT64 idx_in_l2_slot = flat_idx % ARM64_L3_TABLES_PER_L2;
 
-    RtlStringCbPrintfA(buf, sizeof(buf),
-        "[L3] alloc_kernel_l3: L0=%llu flat_idx=%llu l2_slot=%llu idx=%llu\n",
-        (unsigned long long)l0_slot,
-        (unsigned long long)flat_idx,
-        (unsigned long long)l2_slot_for_alloc,
-        (unsigned long long)idx_in_l2_slot);
-    Pl011RawPuts(buf);
-
     UINT64 *result = arm64_kernel_l3_tables[l0_slot][l2_slot_for_alloc][idx_in_l2_slot];
-
-    RtlStringCbPrintfA(buf, sizeof(buf),
-        "[L3] alloc_kernel_l3: result=%p\n",
-        (void*)result);
-    Pl011RawPuts(buf);
 
     if (!result)
     {
@@ -1410,14 +1520,6 @@ static UINT64* alloc_extra_l3_from_flat_pool(UINT64 extra_slot)
     UINT64 l2_slot_for_alloc = flat_idx / ARM64_EXTRA_L3_PER_L2;
     UINT64 idx_in_l2_slot = flat_idx % ARM64_EXTRA_L3_PER_L2;
 
-    RtlStringCbPrintfA(buf, sizeof(buf),
-        "[L3] alloc_extra_l3: extra_slot=%llu flat_idx=%llu l2_slot=%llu idx=%llu\n",
-        (unsigned long long)extra_slot,
-        (unsigned long long)flat_idx,
-        (unsigned long long)l2_slot_for_alloc,
-        (unsigned long long)idx_in_l2_slot);
-    Pl011RawPuts(buf);
-
     UINT64 *result = arm64_extra_l3_tables[extra_slot][l2_slot_for_alloc][idx_in_l2_slot];
 
     if (!result)
@@ -1445,18 +1547,6 @@ static UINT64* ensure_l3_table(BOOLEAN is_kernel, UINT64 l0_slot, UINT64 *l2_tab
     BOOLEAN extra_pool = is_kernel && (extra_slot < ARM64_EXTRA_KERNEL_SLOTS) && arm64_extra_l3_tables;
 
     /* Debug: check the pool selection */
-    if (is_kernel && l0_slot > 100) {
-        char buf[256];
-        RtlStringCbPrintfA(buf, sizeof(buf),
-            "[L3-DEBUG] l0_slot=%llu kernel_pool=%d extra_slot=%llu extra_pool=%d arm64_extra_l3_tables=%p\n",
-            (unsigned long long)l0_slot,
-            kernel_pool,
-            (unsigned long long)extra_slot,
-            extra_pool,
-            (void*)arm64_extra_l3_tables);
-        Pl011RawPuts(buf);
-    }
-
     if (DESC_VALID(entry)) {
         if (DESC_IS_TABLE(entry))
             return (UINT64 *)PA_TO_VA(entry & ~0xFFFULL);
@@ -1644,7 +1734,7 @@ static BOOLEAN map_region_hierarchical(UINT64 va, UINT64 pa, UINT64 size, UINT64
     flush_start = va;
     flush_end = end;
 
-    Pl011RawPuts("[MAP] map_region_hierarchical: entry\n");
+    ARM64_PT_LOG("[MAP] map_region_hierarchical: entry\n");
 
     while (va < end)
     {
@@ -1740,6 +1830,7 @@ static BOOLEAN map_region_hierarchical(UINT64 va, UINT64 pa, UINT64 size, UINT64
                                               pa | PTE_TYPE_VALID | PTE_TYPE_BLOCK | attrs,
                                               va,
                                               ARM64_BLOCK_SIZE_1G);
+                tlbi_va_entry(va, ARM64_BLOCK_SIZE_1G);
                 tlbi_needed = TRUE;
                 va += 0x40000000ULL;
                 pa += 0x40000000ULL;
@@ -1765,6 +1856,7 @@ static BOOLEAN map_region_hierarchical(UINT64 va, UINT64 pa, UINT64 size, UINT64
                                               pa | PTE_TYPE_VALID | PTE_TYPE_BLOCK | attrs,
                                               va,
                                               ARM64_BLOCK_SIZE_2M);
+                tlbi_va_entry(va, ARM64_BLOCK_SIZE_2M);
                 tlbi_needed = TRUE;
                 va += 0x200000ULL;
                 pa += 0x200000ULL;
@@ -1805,6 +1897,7 @@ static BOOLEAN map_region_hierarchical(UINT64 va, UINT64 pa, UINT64 size, UINT64
                                           (pa & ~0xFFFULL) | PTE_TYPE_VALID | PTE_TYPE_PAGE | attrs,
                                           va,
                                           PAGE_SIZE);
+            tlbi_va_entry(va, PAGE_SIZE);
             tlbi_needed = TRUE;
         }
 
@@ -1812,11 +1905,9 @@ static BOOLEAN map_region_hierarchical(UINT64 va, UINT64 pa, UINT64 size, UINT64
         pa += PAGE_SIZE;
     }
 
-    /* Range-based TLB invalidate for the mapped VA span. */
+    /* Ensure all issued TLB invalidations are complete. */
     if (tlbi_needed)
     {
-        ARM64_DSB_ISHST();
-        tlbi_va_range(flush_start, flush_end);
         ARM64_DSB_ISH();
         ARM64_ISB();
         if (executable)
@@ -1840,7 +1931,7 @@ Arm64MappingPlanInit(
 }
 
 static BOOLEAN
-Arm64DescriptorIsIdentityExecutable(
+Arm64DescriptorIsExecutable(
     const FREELDR_MEMORY_DESCRIPTOR *Descriptor)
 {
     switch (Descriptor->MemoryType)
@@ -1888,8 +1979,11 @@ Arm64MemoryAttributesForDescriptor(
             break;
     }
 
-    if (IdentityMap && !Arm64DescriptorIsIdentityExecutable(Descriptor))
+    if (!Arm64DescriptorIsExecutable(Descriptor))
         attrs |= PTE_BLOCK_PXN | PTE_BLOCK_UXN;
+
+    if (IdentityMap)
+        attrs |= PTE_BLOCK_NG;
 
     return attrs;
 }
@@ -2347,6 +2441,176 @@ Arm64MappingPlanApply(
     return TRUE;
 }
 
+static BOOLEAN
+Arm64UpdateMappingAttributes(ULONGLONG Va, ULONGLONG Size, UINT64 set_mask, UINT64 clear_mask)
+{
+    if (Size == 0)
+        return TRUE;
+
+    ULONGLONG start = ARM64_ALIGN_DOWN(Va, PAGE_SIZE);
+    ULONGLONG end = ARM64_ALIGN_UP(Va + Size, PAGE_SIZE);
+
+    while (start < end)
+    {
+        BOOLEAN kernel_va = (start >= ARM64_KSEG0_BASE);
+        UINT64 l0_idx = (start >> 39) & 0x1FF;
+        UINT64 l1_idx = (start >> 30) & 0x1FF;
+        UINT64 l2_idx = (start >> 21) & 0x1FF;
+        UINT64 l3_idx = (start >> 12) & 0x1FF;
+        UINT64 *l0_table = kernel_va ? arm64_kernel_l0_table : arm64_l0_page_table;
+        UINT64 *l1_table;
+        UINT64 l1_entry;
+
+        if (!l0_table)
+            return FALSE;
+
+        if (kernel_va)
+        {
+            if (l0_idx < ARM64_KSEG0_L0_INDEX ||
+                l0_idx >= (ARM64_KSEG0_L0_INDEX + ARM64_KERNEL_L1_TABLES))
+            {
+                start += PAGE_SIZE;
+                continue;
+            }
+        }
+        else if (l0_idx >= ARM64_USER_L1_TABLES)
+        {
+            start += PAGE_SIZE;
+            continue;
+        }
+
+        if (!DESC_VALID(l0_table[l0_idx]) || !DESC_IS_TABLE(l0_table[l0_idx]))
+        {
+            start += PAGE_SIZE;
+            continue;
+        }
+
+        if (kernel_va)
+        {
+            BOOLEAN in_pool = (l0_idx >= ARM64_KSEG0_L0_INDEX) &&
+                              (l0_idx < (ARM64_KSEG0_L0_INDEX + ARM64_KERNEL_L1_TABLES));
+            if (in_pool)
+                l1_table = arm64_kernel_l1_tables[l0_idx - ARM64_KSEG0_L0_INDEX];
+            else
+                l1_table = (UINT64 *)PA_TO_VA(l0_table[l0_idx] & ~0xFFFULL);
+        }
+        else
+        {
+            l1_table = arm64_l1_page_tables[l0_idx];
+        }
+
+        l1_entry = l1_table[l1_idx];
+        if (!DESC_VALID(l1_entry))
+        {
+            start += PAGE_SIZE;
+            continue;
+        }
+
+        BOOLEAN in_pool = kernel_va && (l0_idx >= ARM64_KSEG0_L0_INDEX) &&
+                          (l0_idx < (ARM64_KSEG0_L0_INDEX + ARM64_KERNEL_L1_TABLES));
+        UINT64 l0_slot = kernel_va ? (in_pool ? (l0_idx - ARM64_KSEG0_L0_INDEX) : l0_idx) : l0_idx;
+
+        UINT64 *l2_table_ptr = ensure_l2_table(kernel_va, l0_slot, l1_table, l1_idx, start);
+        if (!l2_table_ptr)
+            return FALSE;
+
+        if (!DESC_VALID(l2_table_ptr[l2_idx]))
+        {
+            start += PAGE_SIZE;
+            continue;
+        }
+
+        UINT64 *l3_table_ptr = ensure_l3_table(kernel_va, l0_slot, l2_table_ptr, l2_idx, start);
+        if (!l3_table_ptr)
+            return FALSE;
+
+        UINT64 *pte = &l3_table_ptr[l3_idx];
+        if (!DESC_IS_PAGE(*pte))
+        {
+            start += PAGE_SIZE;
+            continue;
+        }
+
+        UINT64 newval = (*pte & ~clear_mask) | set_mask;
+        if (newval != *pte)
+            pte_replace_break_before_make(pte, newval, start, PAGE_SIZE);
+
+        start += PAGE_SIZE;
+    }
+
+    return TRUE;
+}
+
+static VOID
+Arm64ApplySectionAttributes(ULONGLONG SectionBase,
+                            ULONGLONG SectionSize,
+                            BOOLEAN Executable,
+                            BOOLEAN Writable)
+{
+    UINT64 set_mask = 0;
+    UINT64 clear_mask = 0;
+
+    if (Executable)
+        clear_mask |= (PTE_BLOCK_PXN | PTE_BLOCK_UXN);
+    else
+        set_mask |= (PTE_BLOCK_PXN | PTE_BLOCK_UXN);
+
+    if (Writable)
+        clear_mask |= PTE_BLOCK_RO;
+    else
+        set_mask |= PTE_BLOCK_RO;
+
+    Arm64UpdateMappingAttributes(SectionBase, SectionSize, set_mask, clear_mask);
+
+    if (SectionBase < ARM64_KSEG0_BASE)
+    {
+        Arm64UpdateMappingAttributes(ARM64_KSEG0_BASE | SectionBase,
+                                     SectionSize,
+                                     set_mask,
+                                     clear_mask);
+    }
+}
+
+static VOID
+Arm64ApplyImageSectionProtections(VOID)
+{
+    for (PLIST_ENTRY entry = FrLdrModuleList.Flink;
+         entry != &FrLdrModuleList;
+         entry = entry->Flink)
+    {
+        PLDR_DATA_TABLE_ENTRY dte =
+            CONTAINING_RECORD(entry, LDR_DATA_TABLE_ENTRY, InLoadOrderLinks);
+        ULONGLONG image_base = (ULONGLONG)(ULONG_PTR)dte->DllBase;
+
+        if (!image_base || dte->SizeOfImage == 0)
+            continue;
+
+        PIMAGE_NT_HEADERS nt = RtlImageNtHeader((PVOID)(ULONG_PTR)image_base);
+        if (!nt)
+            continue;
+
+        ULONG headers_size = nt->OptionalHeader.SizeOfHeaders;
+        if (headers_size)
+            Arm64ApplySectionAttributes(image_base, headers_size, FALSE, FALSE);
+
+        PIMAGE_SECTION_HEADER section = IMAGE_FIRST_SECTION(nt);
+        for (ULONG i = 0; i < nt->FileHeader.NumberOfSections; ++i, ++section)
+        {
+            ULONG raw_size = section->SizeOfRawData;
+            ULONG virt_size = section->Misc.VirtualSize;
+            ULONGLONG sec_size = (virt_size > raw_size) ? virt_size : raw_size;
+            if (sec_size == 0)
+                continue;
+
+            ULONGLONG sec_base = image_base + section->VirtualAddress;
+            BOOLEAN exec = (section->Characteristics & IMAGE_SCN_MEM_EXECUTE) != 0;
+            BOOLEAN write = (section->Characteristics & IMAGE_SCN_MEM_WRITE) != 0;
+
+            Arm64ApplySectionAttributes(sec_base, sec_size, exec, write);
+        }
+    }
+}
+
 static VOID setup_pgtables(VOID)
 {
     ULONG MemoryMapSize;
@@ -2596,9 +2860,6 @@ static VOID setup_pgtables(VOID)
                 }
             }
         }
-        TLBI_VMALLE1IS();
-        ARM64_DSB_ISH();
-        ARM64_ISB();
     }
     Pl011RawPuts("[PT] TTBR1 L0 slots pre-seeded\n");
 
@@ -2962,7 +3223,7 @@ Arm64VerifyIdentityMapping(UINT64 va, UINT64 *out_pa, UINT64 *out_attrs)
 /*
  * Diagnostic: Dump L2 pool allocation state for debugging
  */
-static VOID
+static __attribute__((unused)) VOID
 Arm64DumpL2PoolState(VOID)
 {
     TRACE("ARM64-DIAG: L2 pool state (user/identity):\n");
@@ -2988,6 +3249,10 @@ VOID Arm64EnablePageTables(VOID)
     UINT64 sctlr = 0;
 
     Pl011RawPuts("[PT] get_effective_el done\n");
+
+    if (!page_tables_initialized)
+        ensure_page_tables_initialized();
+    Arm64ApplyImageSectionProtections();
 
     /*
      * Windows loaders always run EL1; if we somehow arrived here in plain EL2
@@ -3248,7 +3513,7 @@ static VOID ensure_page_tables_initialized(VOID)
 {
     if (page_tables_initialized)
     {
-        Pl011RawPuts("[PT] Page tables already initialized\n");
+        ARM64_PT_LOG("[PT] Page tables already initialized\n");
         return;
     }
 
@@ -3934,6 +4199,8 @@ BOOLEAN Arm64MapVirtualMemory(ULONGLONG VirtualAddress,
     attrs = PTE_BLOCK_MEMTYPE(mem_type) | PTE_BLOCK_INNER_SHARE | PTE_BLOCK_AF;
     if (!executable)
         attrs |= PTE_BLOCK_PXN | PTE_BLOCK_UXN;
+    if (VirtualAddress < ARM64_KSEG0_BASE)
+        attrs |= PTE_BLOCK_NG;
 
     if (!map_region_hierarchical(VirtualAddress, PhysicalAddress, Size, attrs))
     {
@@ -3998,7 +4265,7 @@ Arm64MapUserSharedDataPage(ULONGLONG VirtualAddress,
                                   VirtualAddress,
                                   PAGE_SIZE);
 
-    TLBI_VMALLE1IS();
+    tlbi_va_entry(VirtualAddress, PAGE_SIZE);
     ARM64_DSB_ISH();
     ARM64_ISB();
 
@@ -4121,9 +4388,6 @@ BOOLEAN Arm64UnmapVirtualMemory(ULONGLONG VirtualAddress, ULONGLONG Size)
         va += PAGE_SIZE;
     }
 
-    TLBI_VMALLE1IS();
-    ARM64_DSB_ISH();
-    ARM64_ISB();
     return TRUE;
 }
 
@@ -4258,19 +4522,10 @@ VOID Arm64FlushTlbRange(ULONGLONG VirtualAddress, ULONGLONG Size)
 {
     ULONGLONG end = VirtualAddress + Size;
 
-    if (Size >= ARM64_BLOCK_SIZE_1G)
-    {
-        TLBI_VMALLE1IS();
-    }
-    else
-    {
-        for (ULONGLONG addr = (VirtualAddress & ~0xFFFULL);
-             addr < end;
-             addr += 0x1000ULL)
-        {
-            tlbi_vaae1is_by_va(addr);
-        }
-    }
+    if (Size == 0)
+        return;
+
+    tlbi_va_range(VirtualAddress, end);
     ARM64_DSB_ISH();
     ARM64_ISB();
 }

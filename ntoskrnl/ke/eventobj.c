@@ -269,18 +269,27 @@ KeSetEventBoostPriority(IN PKEVENT Event,
         WaitThread = WaitBlock->Thread;
         if (WaitingThread) *WaitingThread = WaitThread;
 
-        /* Calculate new priority */
-        Thread->Priority = KiComputeNewPriority(Thread, 0);
+        /* Validate that the waiting thread is actually in a wait state */
+        if (WaitThread->State == Waiting || WaitThread->State == GateWait)
+        {
+            /* Calculate new priority */
+            Thread->Priority = KiComputeNewPriority(Thread, 0);
 
-        /* Unlink the waiting thread */
-        KiUnlinkThread(WaitThread, STATUS_SUCCESS);
+            /* Unlink the waiting thread */
+            KiUnlinkThread(WaitThread, STATUS_SUCCESS);
 
-        /* Request priority boosting */
-        WaitThread->AdjustIncrement = Thread->Priority;
-        WaitThread->AdjustReason = AdjustBoost;
+            /* Request priority boosting */
+            WaitThread->AdjustIncrement = Thread->Priority;
+            WaitThread->AdjustReason = AdjustBoost;
 
-        /* Ready the thread */
-        KiReadyThread(WaitThread);
+            /* Ready the thread */
+            KiReadyThread(WaitThread);
+        }
+        else
+        {
+            /* Thread is not in a wait state - just signal the event */
+            Event->Header.SignalState = 1;
+        }
     }
 
     /* Release the Dispatcher Database Lock */

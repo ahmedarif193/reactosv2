@@ -60,6 +60,8 @@ WINE_DEFAULT_DEBUG_CHANNEL(msvcrt);
 #else
 #define NDEBUG
 #include <debug.h>
+#undef TRACE
+#undef WARN
 #define TRACE DPRINT
 #define WARN DPRINT1
 #endif

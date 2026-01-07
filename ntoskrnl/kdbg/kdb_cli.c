@@ -48,9 +48,12 @@
                    ((type) == KdbAccessWrite ? "write" :                  \
                    ((type) == KdbAccessReadWrite ? "rdwr" : "exec")))
 
+/* NPX state is x86/x64 FPU specific - not available on ARM64 */
+#if !defined(_M_ARM64)
 #define NPX_STATE_TO_STRING(state)                                        \
                    ((state) == NPX_STATE_LOADED ? "Loaded" :              \
                    ((state) == NPX_STATE_NOT_LOADED ? "Not loaded" : "Unknown"))
+#endif
 
 /* PROTOTYPES ****************************************************************/
 
@@ -70,7 +73,9 @@ static BOOLEAN KdbpCmdThread(ULONG Argc, PCHAR Argv[]);
 static BOOLEAN KdbpCmdProc(ULONG Argc, PCHAR Argv[]);
 
 static BOOLEAN KdbpCmdMod(ULONG Argc, PCHAR Argv[]);
+#if !defined(_M_ARM64)
 static BOOLEAN KdbpCmdGdtLdtIdt(ULONG Argc, PCHAR Argv[]);
+#endif
 static BOOLEAN KdbpCmdPcr(ULONG Argc, PCHAR Argv[]);
 static BOOLEAN KdbpCmdPciRange(ULONG Argc, PCHAR Argv[]);
 #ifdef _M_IX86
@@ -395,9 +400,11 @@ static const struct
     /* System information */
     { NULL, NULL, "System info", NULL },
     { "mod", "mod [address]", "List all modules or the one containing address.", KdbpCmdMod },
+#if !defined(_M_ARM64)
     { "gdt", "gdt", "Display the global descriptor table.", KdbpCmdGdtLdtIdt },
     { "ldt", "ldt", "Display the local descriptor table.", KdbpCmdGdtLdtIdt },
     { "idt", "idt", "Display the interrupt descriptor table.", KdbpCmdGdtLdtIdt },
+#endif
     { "pcr", "pcr", "Display the processor control region.", KdbpCmdPcr },
     { "pcirange", "pcirange", "Display the HAL-advertised PCI bus span.", KdbpCmdPciRange },
 #ifdef _M_IX86
@@ -1038,14 +1045,6 @@ KdbpCmdRegs(
 {
     PCONTEXT Context = KdbCurrentTrapFrame;
     INT i;
-    static const PCHAR EflagsBits[32] = { " CF", NULL, " PF", " BIT3", " AF", " BIT5",
-                                          " ZF", " SF", " TF", " IF", " DF", " OF",
-                                          NULL, NULL, " NT", " BIT15", " RF", " VF",
-                                          " AC", " VIF", " VIP", " ID", " BIT22",
-                                          " BIT23", " BIT24", " BIT25", " BIT26",
-                                          " BIT27", " BIT28", " BIT29", " BIT30",
-                                          " BIT31" };
-
     if (Argv[0][0] == 'r') /* regs */
     {
 #ifdef _M_IX86
@@ -1061,7 +1060,7 @@ KdbpCmdRegs(
                   Context->Ecx, Context->Edx,
                   Context->Esi, Context->Edi,
                   Context->Ebp);
-#elif defined(_M_ARM64)
+#elif defined(_M_ARM64) || defined(__aarch64__)
         /* ARM64 general-purpose registers */
         KdbpPrint("   PC   0x%016llx     SP   0x%016llx\n"
                   "   LR   0x%016llx     FP   0x%016llx\n",
@@ -1124,8 +1123,16 @@ KdbpCmdRegs(
                   Context->Rsi, Context->Rdi,
                   Context->Rbp);
 #endif
-#ifndef _M_ARM64
+#if (defined(_M_IX86) || defined(_M_AMD64) || defined(__i386__) || defined(__x86_64__)) && \
+    !defined(_M_ARM64) && !defined(__aarch64__)
         /* Display the EFlags (x86/AMD64 only) */
+        static const PCHAR EflagsBits[32] = { " CF", NULL, " PF", " BIT3", " AF", " BIT5",
+                                              " ZF", " SF", " TF", " IF", " DF", " OF",
+                                              NULL, NULL, " NT", " BIT15", " RF", " VF",
+                                              " AC", " VIF", " VIP", " ID", " BIT22",
+                                              " BIT23", " BIT24", " BIT25", " BIT26",
+                                              " BIT27", " BIT28", " BIT29", " BIT30",
+                                              " BIT31" };
         KdbpPrint("EFLAGS  0x%08x ", Context->EFlags);
         for (i = 0; i < 32; i++)
         {
@@ -1431,7 +1438,7 @@ KdbpContextFromPrevTss(
 }
 #endif // _M_IX86
 
-#ifdef _M_AMD64
+#if defined(_M_AMD64) || defined(_M_ARM64)
 
 static
 BOOLEAN
@@ -1444,6 +1451,7 @@ GetNextFrame(
 
     _SEH2_TRY
     {
+#if defined(_M_AMD64)
         /* Lookup the FunctionEntry for the current RIP */
         FunctionEntry = RtlLookupFunctionEntry(Context->Rip, &ImageBase, NULL);
         if (FunctionEntry == NULL)
@@ -1465,6 +1473,105 @@ GetNextFrame(
                              &EstablisherFrame,
                              NULL);
         }
+#elif defined(_M_ARM64)
+        /*
+         * ARM64 stack unwinding strategy:
+         *
+         * 1. Try RtlVirtualUnwind with .pdata function entries (preferred)
+         * 2. Fall back to frame-pointer based unwinding
+         * 3. Use LR as last resort for leaf functions
+         *
+         * ARM64 uses a frame pointer chain where:
+         *   [FP+0] = previous FP (x29)
+         *   [FP+8] = return address (LR/x30)
+         */
+        {
+            ULONG64 OldPc = Context->Pc;
+
+            /* First try RtlVirtualUnwind if we have function entry data */
+            FunctionEntry = RtlLookupFunctionEntry(Context->Pc, (PULONG_PTR)&ImageBase, NULL);
+            if (FunctionEntry != NULL)
+            {
+                RtlVirtualUnwind(0, /* UNW_FLAG_NHANDLER */
+                                 ImageBase,
+                                 Context->Pc,
+                                 FunctionEntry,
+                                 Context,
+                                 &HandlerData,
+                                 &EstablisherFrame,
+                                 NULL);
+
+                /* Validate that we made progress */
+                if (Context->Pc != OldPc && Context->Pc >= 0xFFFF000000000000ULL)
+                {
+                    return TRUE;
+                }
+                /* RtlVirtualUnwind failed to produce valid results, try FP chain */
+            }
+
+            /*
+             * Frame-pointer based unwinding fallback.
+             * ARM64 ABI: [FP] = previous FP, [FP+8] = return address (LR)
+             *
+             * Validation requirements:
+             * - FP must be non-zero (0 = end of chain)
+             * - FP must NOT be a sentinel value (0xFFFFFFFFFFFFFFFE, 0xFFFFFFFFFFFFFFFF)
+             * - FP must be in kernel address space (>= 0xFFFF000000000000)
+             * - FP must be 8-byte aligned
+             */
+            if (Context->Fp != 0 &&
+                Context->Fp != 0xFFFFFFFFFFFFFFFEULL &&
+                Context->Fp != 0xFFFFFFFFFFFFFFFFULL &&
+                Context->Fp >= 0xFFFF000000000000ULL &&
+                (Context->Fp & 0x7) == 0)
+            {
+                ULONG64 NewFp = 0, NewLr = 0;
+                NTSTATUS Status;
+
+                Status = KdbpSafeReadMemory(&NewFp, (PVOID)Context->Fp, sizeof(ULONG64));
+                if (NT_SUCCESS(Status))
+                {
+                    Status = KdbpSafeReadMemory(&NewLr, (PVOID)(Context->Fp + 8), sizeof(ULONG64));
+                }
+
+                if (NT_SUCCESS(Status) && NewLr >= 0xFFFF000000000000ULL)
+                {
+                    /*
+                     * Validate NewFp: must be 0 (end), or valid kernel address
+                     * that differs from current FP (to ensure progress).
+                     * Also reject sentinel values.
+                     */
+                    if (NewFp == 0 ||
+                        (NewFp >= 0xFFFF000000000000ULL &&
+                         NewFp != 0xFFFFFFFFFFFFFFFEULL &&
+                         NewFp != 0xFFFFFFFFFFFFFFFFULL &&
+                         (NewFp & 0x7) == 0 &&
+                         NewFp != Context->Fp))
+                    {
+                        Context->Sp = Context->Fp + 16;
+                        Context->Fp = NewFp;
+                        Context->Pc = NewLr;
+                        return TRUE;
+                    }
+                }
+            }
+
+            /*
+             * LR fallback for leaf functions or first frame.
+             * Only use if LR is valid, in kernel space, and different from PC.
+             */
+            if (Context->Lr != 0 &&
+                Context->Lr >= 0xFFFF000000000000ULL &&
+                Context->Lr != Context->Pc)
+            {
+                Context->Pc = Context->Lr;
+                Context->Lr = 0;  /* Clear to prevent reuse */
+                return TRUE;
+            }
+
+            return FALSE;
+        }
+#endif
     }
     _SEH2_EXCEPT(1)
     {
@@ -1488,6 +1595,7 @@ KdbpCmdBackTrace(
     {
         BOOLEAN GotNextFrame;
 
+#if defined(_M_AMD64)
         KdbpPrint("[%p] ", (PVOID)Context.Rsp);
 
         /* Print the location after the call instruction */
@@ -1505,10 +1613,53 @@ KdbpCmdBackTrace(
             break;
         }
     } while ((Context.Rip != 0) && (Context.Rsp != 0));
+#elif defined(_M_ARM64)
+        /*
+         * ARM64 frame display:
+         * Show FP (frame pointer) as primary since ARM64 uses FP-based unwinding.
+         * Also show SP for additional context.
+         *
+         * Check for sentinel values that indicate end of frame chain:
+         * - FP == 0: Normal end of chain
+         * - FP == 0xFFFFFFFFFFFFFFFE: Sentinel used by exception handlers
+         * - FP == 0xFFFFFFFFFFFFFFFF: Invalid/uninitialized
+         */
+        if (Context.Fp == 0 ||
+            Context.Fp == 0xFFFFFFFFFFFFFFFEULL ||
+            Context.Fp == 0xFFFFFFFFFFFFFFFFULL)
+        {
+            /* End of frame chain sentinel detected - stop cleanly */
+            break;
+        }
+
+        KdbpPrint("[FP:%p SP:%p] ", (PVOID)Context.Fp, (PVOID)Context.Sp);
+
+        /* Print the location (PC/return address) */
+        if (!KdbSymPrintAddress((PVOID)Context.Pc, &Context))
+            KdbpPrint("<%p>", (PVOID)Context.Pc);
+        KdbpPrint("\n");
+
+        if (KdbOutputAborted)
+            break;
+
+        GotNextFrame = GetNextFrame(&Context);
+        if (!GotNextFrame)
+        {
+            /* End of stack walk - this is normal termination */
+            break;
+        }
+        /*
+         * Continue while PC is valid (in kernel space).
+         * FP may become 0 at end of frame chain but that's handled above.
+         */
+    } while (Context.Pc != 0 && Context.Pc >= 0xFFFF000000000000ULL);
+#endif
 
     return TRUE;
 }
-#else
+#endif /* _M_AMD64 || _M_ARM64 */
+
+#if !defined(_M_AMD64) && !defined(_M_ARM64)
 /*!\brief Displays a backtrace.
  */
 static BOOLEAN
@@ -1682,7 +1833,7 @@ CheckForParentTSS:
     return TRUE;
 }
 
-#endif // M_AMD64
+#endif /* !_M_AMD64 && !_M_ARM64 (x86 backtrace) */
 
 /*!\brief Continues execution of the system/leaves KDB.
  */
@@ -2170,7 +2321,7 @@ KdbpCmdThread(
                   "  Stack Base:     0x%08x\n"
                   "  Kernel Stack:   0x%08x\n"
                   "  Trap Frame:     0x%08x\n"
-#ifndef _M_AMD64
+#if !defined(_M_AMD64) && !defined(_M_ARM64)
                   "  NPX State:      %s (0x%x)\n"
 #endif
                   , (Argc < 2) ? "Current Thread:\n" : ""
@@ -2183,7 +2334,7 @@ KdbpCmdThread(
                   , Thread->Tcb.StackBase
                   , Thread->Tcb.KernelStack
                   , Thread->Tcb.TrapFrame
-#ifndef _M_AMD64
+#if !defined(_M_AMD64) && !defined(_M_ARM64)
                   , NPX_STATE_TO_STRING(Thread->Tcb.NpxState), Thread->Tcb.NpxState
 #endif
             );
@@ -2381,7 +2532,9 @@ KdbpCmdMod(
 }
 
 /*!\brief Displays GDT, LDT or IDT.
+ * NOTE: x86/x64 specific - ARM64 uses different descriptor mechanisms.
  */
+#if !defined(_M_ARM64)
 static BOOLEAN
 KdbpCmdGdtLdtIdt(
     ULONG Argc,
@@ -2598,6 +2751,7 @@ KdbpCmdGdtLdtIdt(
 
     return TRUE;
 }
+#endif /* !defined(_M_ARM64) */
 
 /*!\brief Displays the KPCR
  */
@@ -2652,7 +2806,20 @@ KdbpCmdPcr(
               , Pcr->VdmAlert
               , Pcr->SecondLevelCacheSize
               , Pcr->InterruptMode);
-#else
+#elif defined(_M_ARM64)
+    /* ARM64-specific PCR fields */
+    KdbpPrint("  Self:                          0x%p\n", Pcr->Self);
+    KdbpPrint("  CurrentPrcb:                   0x%p\n", Pcr->CurrentPrcb);
+    KdbpPrint("  LockArray:                     0x%p\n", Pcr->LockArray);
+    KdbpPrint("  Used_Self:                     0x%p\n", Pcr->Used_Self);
+    KdbpPrint("  CurrentIrql:                   %u\n", Pcr->CurrentIrql);
+    KdbpPrint("  SecondLevelCacheAssociativity: %u\n", Pcr->SecondLevelCacheAssociativity);
+    KdbpPrint("  MajorVersion:                  0x%x\n", Pcr->MajorVersion);
+    KdbpPrint("  MinorVersion:                  0x%x\n", Pcr->MinorVersion);
+    KdbpPrint("  StallScaleFactor:              0x%lx\n", Pcr->StallScaleFactor);
+    KdbpPrint("  SecondLevelCacheSize:          0x%lx\n", Pcr->SecondLevelCacheSize);
+    KdbpPrint("  KdVersionBlock:                0x%p\n", Pcr->KdVersionBlock);
+#else /* _M_AMD64 */
     KdbpPrint("  GdtBase:                       0x%p\n", Pcr->GdtBase);
     KdbpPrint("  TssBase:                       0x%p\n", Pcr->TssBase);
     KdbpPrint("  UserRsp:                       0x%p\n", (PVOID)Pcr->UserRsp);

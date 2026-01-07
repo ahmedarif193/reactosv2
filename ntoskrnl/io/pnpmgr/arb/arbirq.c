@@ -16,7 +16,11 @@
 
 extern ARBITER_INSTANCE IopRootIrqArbiter;
 static RTL_BITMAP IopArbIrqBitmap;
+#if defined(_M_ARM64) || defined(__aarch64__)
+static ULONG IopArbIrqBitmapBuffer[512]; /* 512 * 32 = 16384 vectors (LPI range) */
+#else
 static ULONG IopArbIrqBitmapBuffer[8]; /* 8 * 32 = 256 vectors */
+#endif
 static KSPIN_LOCK IopArbIrqLock;
 static VOID IopArbIrqRebuildBitmap(_In_ PRTL_RANGE_LIST Allocation);
 static VOID IopArbIrqMarkReservedLocked(VOID);

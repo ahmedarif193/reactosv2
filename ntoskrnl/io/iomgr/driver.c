@@ -1112,6 +1112,7 @@ IopInitializeBootDrivers(VOID)
 
     /* Loop the boot drivers */
     ListHead = &KeLoaderBlock->BootDriverListHead;
+
     for (NextEntry = ListHead->Flink;
          NextEntry != ListHead;
          NextEntry = NextEntry->Flink)
@@ -2178,6 +2179,7 @@ IopLoadUnloadDriverWorker(
 
     if (LoadParams->SetEvent)
     {
+        ASSERT(LoadParams->SetEvent == TRUE);
         KeSetEvent(&LoadParams->Event, 0, FALSE);
     }
 }
@@ -2197,6 +2199,9 @@ IopDoLoadUnloadDriver(
     _Inout_ PDRIVER_OBJECT *DriverObject)
 {
     LOAD_UNLOAD_PARAMS LoadParams;
+
+    /* Initialize the entire structure to ensure Event is zeroed */
+    RtlZeroMemory(&LoadParams, sizeof(LoadParams));
 
     /* Prepare parameters block */
     LoadParams.RegistryPath = RegistryPath;

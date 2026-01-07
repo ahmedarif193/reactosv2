@@ -50,16 +50,23 @@ $ZwFuncEndName
 
     .set SyscallId, 0
 
+    /*
+     * STUB_K: Kernel-mode Zw stubs - directly call Nt functions.
+     * This mirrors AMD64 behavior where kernel Zw calls don't go through
+     * the syscall mechanism. The Nt function uses the same calling convention
+     * (args in x0-x7, return in x0), so we just tail-call directly.
+     */
     .macro STUB_K Name, ArgCount
     .align 2
     .global Zw\Name
 Zw\Name:
-    mov x8, #SyscallId
-    svc #0
-    ret
+    b Nt\Name
     .set SyscallId, SyscallId + 1
     .endm
 
+    /*
+     * STUB_U: User-mode stubs (used by ntdll) - use SVC to trap to kernel
+     */
     .macro STUB_U Name, ArgCount
     .align 2
     .global Nt\Name

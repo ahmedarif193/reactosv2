@@ -1900,6 +1900,61 @@ MiReloadBootLoadedDrivers(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
         /* Sanity check */
         ASSERT(*(PULONG)NewImageAddress == *(PULONG)DllBase);
 
+        /*
+         * Fix up the PFN linkage for the relocated driver pages.
+         * Each data page's PFN entry must be updated to point to the new PTE,
+         * and the new page table's ShareCount must be incremented for each
+         * data page it maps. This ensures MiDeleteSystemPageableVm can properly
+         * decrement the page table's ShareCount when the driver is unloaded.
+         */
+        {
+            PMMPTE PointerPtePte;
+            PFN_NUMBER PageFrameNumber, PageTableFrameNumber;
+            PMMPFN DataPfn, PageTablePfn;
+            KIRQL OldIrql;
+
+            /* Acquire PFN lock for safe manipulation of PFN entries */
+            OldIrql = MiAcquirePfnLock();
+
+            /* Reset pointers for PFN fixup loop */
+            PageVa = DllBase;
+            while (PointerPte < LastPte)
+            {
+                /* Get the data page's PFN */
+#if defined(_M_ARM64) || defined(__aarch64__)
+                PHYSICAL_ADDRESS Pa = MmGetPhysicalAddress(PageVa);
+                PageFrameNumber = (PFN_NUMBER)(Pa.QuadPart >> PAGE_SHIFT);
+#else
+                PageFrameNumber = PFN_FROM_PTE(PointerPte);
+#endif
+                DataPfn = MiGetPfnEntry(PageFrameNumber);
+
+                /* Get the page table's PFN from the PTE for the PTE */
+                PointerPtePte = MiAddressToPte(PointerPte);
+                ASSERT(PointerPtePte->u.Hard.Valid == 1);
+                PageTableFrameNumber = PFN_FROM_PTE(PointerPtePte);
+                ASSERT(PageTableFrameNumber != 0);
+
+                /* Update the data page's PFN entry to point to the new PTE */
+                DataPfn->PteAddress = PointerPte;
+                DataPfn->u4.PteFrame = PageTableFrameNumber;
+
+                /* Increment the page table's ShareCount for this data page */
+                PageTablePfn = MiGetPfnEntry(PageTableFrameNumber);
+                PageTablePfn->u2.ShareCount++;
+
+                /* Move on */
+                PointerPte++;
+                PageVa = (PVOID)((ULONG_PTR)PageVa + PAGE_SIZE);
+            }
+
+            /* Release PFN lock */
+            MiReleasePfnLock(OldIrql);
+
+            /* Reset pointer for subsequent code */
+            PointerPte -= PteCount;
+        }
+
         /* Set the image base to the address where the loader put it */
         NtHeader->OptionalHeader.ImageBase = (ULONG_PTR)DllBase;
 
@@ -1921,6 +1976,11 @@ MiReloadBootLoadedDrivers(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
             }
         }
 
+#if defined(_M_ARM64) || defined(__aarch64__)
+        /* Ensure relocated boot driver code is visible to the I-cache on ARM64. */
+        KeSweepICache(NewImageAddress, LdrEntry->SizeOfImage);
+#endif
+
         /* Update the loader entry */
         LdrEntry->DllBase = NewImageAddress;
 
@@ -1936,8 +1996,6 @@ MiReloadBootLoadedDrivers(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
         LdrEntry->EntryPoint = (PVOID)((ULONG_PTR)NewImageAddress +
                                 NtHeader->OptionalHeader.AddressOfEntryPoint);
         LdrEntry->SizeOfImage = PteCount << PAGE_SHIFT;
-
-        /* FIXME: We'll need to fixup the PFN linkage when switching to ARM3 */
     }
 }
 
@@ -3422,6 +3480,11 @@ LoaderScan:
         DPRINT1("LdrRelocateImageWithBias failed with status 0x%x\n", Status);
         goto Quickie;
     }
+
+#if defined(_M_ARM64) || defined(__aarch64__)
+    /* Ensure relocated code is visible to the I-cache on ARM64. */
+    KeSweepICache(ModuleLoadBase, DriverSize);
+#endif
 
     /* Get the NT Header */
     NtHeader = RtlImageNtHeader(ModuleLoadBase);

@@ -264,7 +264,7 @@ def _run_default_capture(log_path: Path, timeout: int, bootmain_limit: Optional[
     build_dir = _locate_build_dir()
 
     print(f"[symbolize] Using build directory: {build_dir}")
-    print("[symbolize] Building livecd_sprint6-6-kernel.iso …")
+    print("[symbolize] Building livecd.iso …")
     build = subprocess.run(
         ["ninja", "livecd"],
         cwd=build_dir,
@@ -278,9 +278,9 @@ def _run_default_capture(log_path: Path, timeout: int, bootmain_limit: Optional[
         raise subprocess.CalledProcessError(build.returncode, build.args)
     print("[symbolize] Build complete.")
 
-    livecd = build_dir / "livecd_sprint6-6-kernel.iso"
+    livecd = build_dir / "livecd.iso"
     if not livecd.exists():
-        raise FileNotFoundError("livecdlivecd_sprint6-6-kernel.iso not found; run the script from the build directory")
+        raise FileNotFoundError("livecdlivecd.iso not found; run the script from the build directory")
 
     qemu_cmd = [
         "qemu-system-x86_64",

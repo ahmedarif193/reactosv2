@@ -334,7 +334,6 @@ PspInitPhase0(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     PETHREAD SysThread;
     MM_SYSTEMSIZE SystemSize;
     UNICODE_STRING Name;
-    OBJECT_TYPE_INITIALIZER ObjectTypeInitializer;
     ULONG i;
 
     /* Get the system size */
@@ -419,41 +418,69 @@ PspInitPhase0(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
     /* Clear kernel time */
     PsIdleProcess->Pcb.KernelTime = 0;
 
-    /* Initialize Object Initializer */
-    RtlZeroMemory(&ObjectTypeInitializer, sizeof(ObjectTypeInitializer));
-    ObjectTypeInitializer.Length = sizeof(ObjectTypeInitializer);
-    ObjectTypeInitializer.InvalidAttributes = OBJ_PERMANENT |
-                                              OBJ_EXCLUSIVE |
-                                              OBJ_OPENIF;
-    ObjectTypeInitializer.PoolType = NonPagedPool;
-    ObjectTypeInitializer.SecurityRequired = TRUE;
+    /*
+     * ARM64 FIX: Use separate OBJECT_TYPE_INITIALIZER variables to avoid
+     * compiler bug where structure pointer is offset by 8 bytes on reuse.
+     * See ARM64_STRUCTURE_POINTER_OFFSET_BUG.md for details.
+     */
 
     /* Initialize the Process type */
-    RtlInitUnicodeString(&Name, L"Process");
-    ObjectTypeInitializer.DefaultNonPagedPoolCharge = sizeof(EPROCESS);
-    ObjectTypeInitializer.GenericMapping = PspProcessMapping;
-    ObjectTypeInitializer.ValidAccessMask = PROCESS_ALL_ACCESS;
-    ObjectTypeInitializer.DeleteProcedure = PspDeleteProcess;
-    ObCreateObjectType(&Name, &ObjectTypeInitializer, NULL, &PsProcessType);
+    {
+        OBJECT_TYPE_INITIALIZER ProcessTypeInitializer;
+        RtlZeroMemory(&ProcessTypeInitializer, sizeof(ProcessTypeInitializer));
 
-    /*  Initialize the Thread type  */
-    RtlInitUnicodeString(&Name, L"Thread");
-    ObjectTypeInitializer.Length = sizeof(ObjectTypeInitializer);
-    ObjectTypeInitializer.DefaultNonPagedPoolCharge = sizeof(ETHREAD);
-    ObjectTypeInitializer.GenericMapping = PspThreadMapping;
-    ObjectTypeInitializer.ValidAccessMask = THREAD_ALL_ACCESS;
-    ObjectTypeInitializer.DeleteProcedure = PspDeleteThread;
-    ObCreateObjectType(&Name, &ObjectTypeInitializer, NULL, &PsThreadType);
+        RtlInitUnicodeString(&Name, L"Process");
+        ProcessTypeInitializer.Length = sizeof(ProcessTypeInitializer);
+        ProcessTypeInitializer.InvalidAttributes = OBJ_PERMANENT |
+                                                   OBJ_EXCLUSIVE |
+                                                   OBJ_OPENIF;
+        ProcessTypeInitializer.PoolType = NonPagedPool;
+        ProcessTypeInitializer.SecurityRequired = TRUE;
+        ProcessTypeInitializer.DefaultNonPagedPoolCharge = sizeof(EPROCESS);
+        ProcessTypeInitializer.GenericMapping = PspProcessMapping;
+        ProcessTypeInitializer.ValidAccessMask = PROCESS_ALL_ACCESS;
+        ProcessTypeInitializer.DeleteProcedure = PspDeleteProcess;
 
-    /*  Initialize the Job type  */
-    RtlInitUnicodeString(&Name, L"Job");
-    ObjectTypeInitializer.Length = sizeof(ObjectTypeInitializer);
-    ObjectTypeInitializer.DefaultNonPagedPoolCharge = sizeof(EJOB);
-    ObjectTypeInitializer.GenericMapping = PspJobMapping;
-    ObjectTypeInitializer.InvalidAttributes = 0;
-    ObjectTypeInitializer.ValidAccessMask = JOB_OBJECT_ALL_ACCESS;
-    ObjectTypeInitializer.DeleteProcedure = PspDeleteJob;
-    ObCreateObjectType(&Name, &ObjectTypeInitializer, NULL, &PsJobType);
+        ObCreateObjectType(&Name, &ProcessTypeInitializer, NULL, &PsProcessType);
+    }
+
+    /* Initialize the Thread type */
+    {
+        OBJECT_TYPE_INITIALIZER ThreadTypeInitializer;
+        RtlZeroMemory(&ThreadTypeInitializer, sizeof(ThreadTypeInitializer));
+
+        RtlInitUnicodeString(&Name, L"Thread");
+        ThreadTypeInitializer.Length = sizeof(ThreadTypeInitializer);
+        ThreadTypeInitializer.InvalidAttributes = OBJ_PERMANENT |
+                                                  OBJ_EXCLUSIVE |
+                                                  OBJ_OPENIF;
+        ThreadTypeInitializer.PoolType = NonPagedPool;
+        ThreadTypeInitializer.SecurityRequired = TRUE;
+        ThreadTypeInitializer.DefaultNonPagedPoolCharge = sizeof(ETHREAD);
+        ThreadTypeInitializer.GenericMapping = PspThreadMapping;
+        ThreadTypeInitializer.ValidAccessMask = THREAD_ALL_ACCESS;
+        ThreadTypeInitializer.DeleteProcedure = PspDeleteThread;
+
+        ObCreateObjectType(&Name, &ThreadTypeInitializer, NULL, &PsThreadType);
+    }
+
+    /* Initialize the Job type */
+    {
+        OBJECT_TYPE_INITIALIZER JobTypeInitializer;
+        RtlZeroMemory(&JobTypeInitializer, sizeof(JobTypeInitializer));
+
+        RtlInitUnicodeString(&Name, L"Job");
+        JobTypeInitializer.Length = sizeof(JobTypeInitializer);
+        JobTypeInitializer.InvalidAttributes = 0;
+        JobTypeInitializer.PoolType = NonPagedPool;
+        JobTypeInitializer.SecurityRequired = TRUE;
+        JobTypeInitializer.DefaultNonPagedPoolCharge = sizeof(EJOB);
+        JobTypeInitializer.GenericMapping = PspJobMapping;
+        JobTypeInitializer.ValidAccessMask = JOB_OBJECT_ALL_ACCESS;
+        JobTypeInitializer.DeleteProcedure = PspDeleteJob;
+
+        ObCreateObjectType(&Name, &JobTypeInitializer, NULL, &PsJobType);
+    }
 
     /* Initialize job structures external to this file */
     PspInitializeJobStructures();

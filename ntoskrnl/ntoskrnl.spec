@@ -173,8 +173,13 @@
 @ fastcall ExfTryToWakePushLock(ptr)
 @ fastcall ExfUnblockPushLock(ptr ptr)
 @ stdcall -arch=x86_64,arm ExpInterlockedFlushSList(ptr) RtlInterlockedFlushSList
-@ stdcall -arch=x86_64,arm,arm64 ExpInterlockedPopEntrySList(ptr ptr) RtlInterlockedPopEntrySList
-@ stdcall -arch=x86_64,arm,arm64 ExpInterlockedPushEntrySList(ptr ptr) RtlInterlockedPushEntrySList
+@ stdcall -arch=x86_64,arm ExpInterlockedPopEntrySList(ptr ptr) RtlInterlockedPopEntrySList
+@ stdcall -arch=x86_64,arm ExpInterlockedPushEntrySList(ptr ptr) RtlInterlockedPushEntrySList
+# ARM64: The #pragma redefine_extname in slist.c renames RtlInterlocked*SList to ExpInterlocked*SList,
+# so export them directly without aliasing (the RtlInterlocked* symbols don't exist for ARM64).
+@ stdcall -arch=arm64 ExpInterlockedFlushSList(ptr)
+@ stdcall -arch=arm64 ExpInterlockedPopEntrySList(ptr ptr)
+@ stdcall -arch=arm64 ExpInterlockedPushEntrySList(ptr ptr)
 @ fastcall -arch=i386 Exfi386InterlockedDecrementLong(ptr)
 @ fastcall -arch=i386 Exfi386InterlockedExchangeUlong(ptr long)
 @ fastcall -arch=i386 Exfi386InterlockedIncrementLong(ptr)

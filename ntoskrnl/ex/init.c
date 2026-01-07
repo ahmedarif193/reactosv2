@@ -18,7 +18,7 @@
 #include <debug.h>
 
 #if defined(_M_ARM64)
-#define EXP_ARM64_LOG(Stage) KiArm64BootStageLog(Stage)
+#define EXP_ARM64_LOG(Stage) DPRINT1("%s\n", (Stage))
 #else
 #define EXP_ARM64_LOG(Stage) do { } while (0)
 #endif
@@ -418,13 +418,17 @@ ExpInitNls(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
 
     /* Copy the codepage data in its new location. */
     ASSERT(SectionBase >= MmSystemRangeStart);
+    EXP_ARM64_LOG("[arm64] ExpInitNls Phase1: RtlCopyMemory to SectionBase");
     RtlCopyMemory(SectionBase, ExpNlsTableBase, ExpNlsTableSize);
 
     /* Free the previously allocated buffer and set the new location */
+    EXP_ARM64_LOG("[arm64] ExpInitNls Phase1: before ExFreePoolWithTag");
     ExFreePoolWithTag(ExpNlsTableBase, TAG_RTLI);
+    EXP_ARM64_LOG("[arm64] ExpInitNls Phase1: after ExFreePoolWithTag");
     ExpNlsTableBase = SectionBase;
 
     /* Initialize the NLS Tables */
+    EXP_ARM64_LOG("[arm64] ExpInitNls Phase1: before RtlInitNlsTables");
     RtlInitNlsTables((PVOID)((ULONG_PTR)ExpNlsTableBase +
                              ExpAnsiCodePageDataOffset),
                      (PVOID)((ULONG_PTR)ExpNlsTableBase +
@@ -432,12 +436,15 @@ ExpInitNls(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
                      (PVOID)((ULONG_PTR)ExpNlsTableBase +
                              ExpUnicodeCaseTableDataOffset),
                      &ExpNlsTableInfo);
+    EXP_ARM64_LOG("[arm64] ExpInitNls Phase1: after RtlInitNlsTables");
     RtlResetRtlTranslations(&ExpNlsTableInfo);
+    EXP_ARM64_LOG("[arm64] ExpInitNls Phase1: after RtlResetRtlTranslations");
 
     /* Reset the base to 0 */
     SectionBase = NULL;
 
     /* Map the section in the system process */
+    EXP_ARM64_LOG("[arm64] ExpInitNls Phase1: before MmMapViewOfSection");
     Status = MmMapViewOfSection(ExpNlsSectionPointer,
                                 PsGetCurrentProcess(),
                                 &SectionBase,
@@ -448,15 +455,34 @@ ExpInitNls(IN PLOADER_PARAMETER_BLOCK LoaderBlock)
                                 ViewShare,
                                 0L,
                                 PAGE_READWRITE);
+    EXP_ARM64_LOG("[arm64] ExpInitNls Phase1: after MmMapViewOfSection");
     if (!NT_SUCCESS(Status))
     {
         /* Failed */
         KeBugCheckEx(PHASE1_INITIALIZATION_FAILED, Status, 5, 0, 0);
     }
 
-    /* Copy the table into the system process and set this as the base */
+    /*
+     * Copy the table into the system process and set this as the base.
+     *
+     * ARM64 Note: On ARM64, kernel code cannot directly access user-space
+     * addresses (SectionBase = 0x10000) because the kernel uses TTBR1
+     * (addresses >= 0xFFFF800000000000) while user space uses TTBR0.
+     * However, since both views map the same SEC_COMMIT section, the physical
+     * pages are shared and the data written via the system-space mapping
+     * is already visible in user space. The copy is therefore unnecessary.
+     */
+#if defined(_M_ARM64)
+    DPRINT1("[arm64] ExpInitNls Phase1: SectionBase=%p (user) ExpNlsTableBase=%p (kernel) Size=0x%lx\n",
+            SectionBase, ExpNlsTableBase, (ULONG)ExpNlsTableSize);
+    DPRINT1("[arm64] ExpInitNls Phase1: Skipping redundant copy - section views share physical pages\n");
+    /* On ARM64, we keep ExpNlsTableBase pointing to kernel space mapping */
+    /* User-mode processes will use the user-space mapping at SectionBase */
+#else
     RtlCopyMemory(SectionBase, ExpNlsTableBase, ExpNlsTableSize);
     ExpNlsTableBase = SectionBase;
+#endif
+    EXP_ARM64_LOG("[arm64] ExpInitNls Phase1: complete");
 }
 
 CODE_SEG("INIT")
@@ -1023,28 +1049,26 @@ ExpInitializeExecutive(IN ULONG Cpu,
 #if defined(_M_ARM64) || defined(__aarch64__)
     {
         /* ARM64 debug: entry point marker */
-        extern VOID KiArm64BootStageLog(PCSTR Message);
-        KiArm64BootStageLog("[arm64] ExpInitializeExecutive: entry");
+        DPRINT1("%s\n", "[arm64] ExpInitializeExecutive: entry");
 
         /* Check LoaderBlock pointer validity */
         if ((ULONG_PTR)LoaderBlock < 0xFFFF800000000000ULL)
         {
-            KiArm64BootStageLog("[arm64] ExpInitializeExecutive: WARNING LoaderBlock is PA!");
+            DPRINT1("%s\n", "[arm64] ExpInitializeExecutive: WARNING LoaderBlock is PA!");
         }
 
         /* Memory barrier to ensure all previous memory accesses complete */
         __asm__ volatile("dsb sy" ::: "memory");
         __asm__ volatile("isb" ::: "memory");
 
-        KiArm64BootStageLog("[arm64] ExpInitializeExecutive: after DSB/ISB");
+        DPRINT1("%s\n", "[arm64] ExpInitializeExecutive: after DSB/ISB");
     }
 #endif
 
     /* Validate Loader */
 #if defined(_M_ARM64) || defined(__aarch64__)
     {
-        extern VOID KiArm64BootStageLog(PCSTR Message);
-        KiArm64BootStageLog("[arm64] ExpInitializeExecutive: before ExpIsLoaderValid");
+        DPRINT1("%s\n", "[arm64] ExpInitializeExecutive: before ExpIsLoaderValid");
     }
 #endif
     if (!ExpIsLoaderValid(LoaderBlock))
@@ -1058,23 +1082,20 @@ ExpInitializeExecutive(IN ULONG Cpu,
     }
 #if defined(_M_ARM64) || defined(__aarch64__)
     {
-        extern VOID KiArm64BootStageLog(PCSTR Message);
-        KiArm64BootStageLog("[arm64] ExpInitializeExecutive: after ExpIsLoaderValid");
+        DPRINT1("%s\n", "[arm64] ExpInitializeExecutive: after ExpIsLoaderValid");
     }
 #endif
 
     /* Initialize PRCB pool lookaside pointers */
 #if defined(_M_ARM64) || defined(__aarch64__)
     {
-        extern VOID KiArm64BootStageLog(PCSTR Message);
-        KiArm64BootStageLog("[arm64] ExpInitializeExecutive: before ExInitPoolLookasidePointers");
+        DPRINT1("%s\n", "[arm64] ExpInitializeExecutive: before ExInitPoolLookasidePointers");
     }
 #endif
     ExInitPoolLookasidePointers();
 #if defined(_M_ARM64) || defined(__aarch64__)
     {
-        extern VOID KiArm64BootStageLog(PCSTR Message);
-        KiArm64BootStageLog("[arm64] ExpInitializeExecutive: after ExInitPoolLookasidePointers");
+        DPRINT1("%s\n", "[arm64] ExpInitializeExecutive: after ExInitPoolLookasidePointers");
     }
 #endif
 

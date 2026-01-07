@@ -64,11 +64,15 @@ KiInitializeContextThread(_Inout_ PKTHREAD Thread,
                           _In_opt_ PVOID StartContext,
                           _In_opt_ PCONTEXT ContextPointer)
 {
+    ULONG_PTR StackTop;
     PKSWITCH_FRAME SwitchFrame;
     PKSTART_FRAME StartFrame;
 
     ASSERT(Thread != NULL);
     ASSERT(SystemRoutine != NULL);
+
+    StackTop = (ULONG_PTR)ALIGN_DOWN_POINTER_BY(Thread->InitialStack, 16);
+    Thread->InitialStack = (PVOID)StackTop;
 
     if (ContextPointer != NULL)
     {
@@ -78,7 +82,7 @@ KiInitializeContextThread(_Inout_ PKTHREAD Thread,
 
         {
             SIZE_T FrameSize = ALIGN_UP_BY(sizeof(*InitFrame), 16);
-            InitFrame = (PKUINIT_FRAME)((ULONG_PTR)Thread->InitialStack - FrameSize);
+            InitFrame = (PKUINIT_FRAME)(StackTop - FrameSize);
         }
         RtlZeroMemory(InitFrame, sizeof(*InitFrame));
 
@@ -93,7 +97,6 @@ KiInitializeContextThread(_Inout_ PKTHREAD Thread,
                                StartContext);
 
         Thread->PreviousMode = UserMode;
-        Thread->InitialStack = (PVOID)InitFrame;
         Thread->KernelStack = SwitchFrame;
         Thread->TrapFrame = TrapFrame;
 
@@ -115,7 +118,7 @@ KiInitializeContextThread(_Inout_ PKTHREAD Thread,
 
         {
             SIZE_T FrameSize = ALIGN_UP_BY(sizeof(*InitFrame), 16);
-            InitFrame = (PKKINIT_FRAME)((ULONG_PTR)Thread->InitialStack - FrameSize);
+            InitFrame = (PKKINIT_FRAME)(StackTop - FrameSize);
         }
         RtlZeroMemory(InitFrame, sizeof(*InitFrame));
 
@@ -128,13 +131,12 @@ KiInitializeContextThread(_Inout_ PKTHREAD Thread,
                                StartContext);
 
         Thread->PreviousMode = KernelMode;
-        Thread->InitialStack = (PVOID)InitFrame;
         Thread->KernelStack = SwitchFrame;
         Thread->TrapFrame = NULL;
     }
 
     SwitchFrame->ReturnAddress = (ULONG64)KiThreadStartup;
-    SwitchFrame->ApcBypass = FALSE;
+    SwitchFrame->ApcBypass = APC_LEVEL;
 }
 
 DECLSPEC_NORETURN
@@ -145,11 +147,17 @@ KiIdleLoop(VOID)
 
     for (;;)
     {
+        /*
+         * Check for pending DPC work. On ARM64, also check DpcInterruptRequested
+         * which is set by HalRequestSoftwareInterrupt when a DPC is queued.
+         */
         if (Prcb->DpcData[0].DpcQueueDepth ||
             Prcb->TimerRequest ||
-            Prcb->DeferredReadyListHead.Next)
+            Prcb->DeferredReadyListHead.Next ||
+            Prcb->DpcInterruptRequested)
         {
             HalClearSoftwareInterrupt(DISPATCH_LEVEL);
+            Prcb->DpcInterruptRequested = FALSE;
             KiRetireDpcList(Prcb);
             continue;
         }
@@ -158,20 +166,6 @@ KiIdleLoop(VOID)
         {
             PKTHREAD OldThread = Prcb->CurrentThread;
             PKTHREAD NewThread = Prcb->NextThread;
-
-#if defined(_M_ARM64) || defined(__aarch64__)
-            {
-                extern VOID KiArm64BootStageLog(_In_z_ PCSTR Stage);
-                CHAR Stage[160];
-                if (NT_SUCCESS(RtlStringCbPrintfA(Stage,
-                                                  sizeof(Stage),
-                                                  "[arm64] KiIdleLoop: switching Idle->Thread=%p",
-                                                  NewThread)))
-                {
-                    KiArm64BootStageLog(Stage);
-                }
-            }
-#endif
 
             Prcb->NextThread = NULL;
             Prcb->CurrentThread = NewThread;
@@ -198,41 +192,6 @@ KiSwapContextResume(
     ASSERT(OldThread != NULL);
     ASSERT(NewThread != NULL);
 
-#if defined(_M_ARM64) || defined(__aarch64__)
-    {
-        extern VOID KiArm64BootStageLog(_In_z_ PCSTR Stage);
-        CHAR Stage[192];
-        /* Dump switch frame return and start frame addresses for the new thread */
-        {
-            PKSWITCH_FRAME Sw = (PKSWITCH_FRAME)NewThread->KernelStack;
-            PKSTART_FRAME Sf = (PKSTART_FRAME)((ULONG_PTR)NewThread->KernelStack + sizeof(KSWITCH_FRAME));
-            if (NT_SUCCESS(RtlStringCbPrintfA(Stage,
-                                              sizeof(Stage),
-                                              "[arm64] KiSwapContextResume: NewThread Sw=%p SwReturn=%p Sf=%p Sys=%p Start=%p Ctx=%p",
-                                              Sw,
-                                              (PVOID)Sw->ReturnAddress,
-                                              Sf,
-                                              (PVOID)Sf->SystemRoutine,
-                                              (PVOID)Sf->StartRoutine,
-                                              (PVOID)Sf->StartContext)))
-            {
-                KiArm64BootStageLog(Stage);
-            }
-        }
-        if (NT_SUCCESS(RtlStringCbPrintfA(Stage,
-                                          sizeof(Stage),
-                                          "[arm64] KiSwapContextResume: entry Old=%p New=%p WaitIrql=%u KAP=%u SAD=%u",
-                                          OldThread,
-                                          NewThread,
-                                          (unsigned)WaitIrql,
-                                          (unsigned)NewThread->ApcState.KernelApcPending,
-                                          (unsigned)NewThread->SpecialApcDisable)))
-        {
-            KiArm64BootStageLog(Stage);
-        }
-    }
-#endif
-
     Prcb = KeGetCurrentPrcb();
 
     NewThread->ContextSwitches++;
@@ -245,71 +204,21 @@ KiSwapContextResume(
         Prcb->CurrentThread = NewThread;
     }
 
-    if (OldThread->ApcState.Process != NewThread->ApcState.Process)
-    {
-        PKPROCESS NewProcess = NewThread->ApcState.Process;
-        ASSERT(NewProcess != NULL);
-        ASSERT(NewProcess->DirectoryTableBase[0] != 0);
-#if defined(_M_ARM64) || defined(__aarch64__)
-        /* Bring-up: keep current kernel TTBR; skip user TTBR switch to avoid faults. */
-        KiArm64BootStageLog("[arm64] KiSwapContextResume: skipping TTBR switch (bring-up)");
-#else
-        KiArm64WriteUserTtbr(NewProcess->DirectoryTableBase[0]);
-#endif
-    }
+    /* Skip address space switch during bring-up to avoid TLB issues */
+    /* TODO: Implement proper TTBR switch when user-mode is supported */
 
     if (NewThread->ApcState.KernelApcPending &&
         !NewThread->SpecialApcDisable &&
         !WaitIrql)
     {
-#if defined(_M_ARM64) || defined(__aarch64__)
-        KiArm64BootStageLog("[arm64] KiSwapContextResume: returning TRUE (Kernel APC pending)");
-#endif
         return TRUE;
     }
 
     if (NewThread->ApcState.KernelApcPending)
     {
-#if defined(_M_ARM64) || defined(__aarch64__)
-        KiArm64BootStageLog("[arm64] KiSwapContextResume: KernelApcPending true, requesting APC interrupt");
-#endif
         HalRequestSoftwareInterrupt(APC_LEVEL);
     }
 
-#if defined(_M_ARM64) || defined(__aarch64__)
-    /*
-     * ARM64 bring-up: Directly call the system thread startup routine rather
-     * than returning to KiThreadStartup. This is diagnostic to surface any
-     * early exception on the RET path and to prove Phase 1 runs.
-     */
-    {
-        extern VOID KiArm64BootStageLog(_In_z_ PCSTR Stage);
-        CHAR Stage[160];
-        PKSTART_FRAME Sf = (PKSTART_FRAME)((ULONG_PTR)NewThread->KernelStack + sizeof(KSWITCH_FRAME));
-        PKSYSTEM_ROUTINE SystemRoutine = (PKSYSTEM_ROUTINE)(ULONG_PTR)Sf->SystemRoutine;
-        PKSTART_ROUTINE StartRoutine = (PKSTART_ROUTINE)(ULONG_PTR)Sf->StartRoutine;
-        PVOID StartContext = (PVOID)(ULONG_PTR)Sf->StartContext;
-
-        if (NT_SUCCESS(RtlStringCbPrintfA(Stage,
-                                          sizeof(Stage),
-                                          "[arm64] KiSwapContextResume: calling SystemRoutine=%p Start=%p Ctx=%p",
-                                          SystemRoutine,
-                                          StartRoutine,
-                                          StartContext)))
-        {
-            KiArm64BootStageLog(Stage);
-        }
-
-        SystemRoutine(StartRoutine, StartContext);
-
-        KiArm64BootStageLog("[arm64] KiSwapContextResume: SystemRoutine returned unexpectedly; terminating thread");
-        PsTerminateSystemThread(STATUS_SUCCESS);
-    }
-#endif
-
-#if defined(_M_ARM64) || defined(__aarch64__)
-    KiArm64BootStageLog("[arm64] KiSwapContextResume: exit");
-#endif
     return FALSE;
 }
 
@@ -320,6 +229,36 @@ KiDispatchInterrupt(VOID)
     PKIPCR Pcr = (PKIPCR)KeGetPcr();
     PKPRCB Prcb = &Pcr->Prcb;
     PKTHREAD NewThread, OldThread;
+    KIRQL OldIrql;
+
+    /*
+     * ARM64 CRITICAL FIX: KiDispatchInterrupt must manage IRQL correctly.
+     *
+     * This function is called from two contexts:
+     * 1. Hardware IRQ handler (interrupt.c) - already at HIGH_LEVEL
+     * 2. KfLowerIrql (irql.c line 225) - at the NEW (lowered) IRQL
+     *
+     * In case (2), we need to raise IRQL to DISPATCH_LEVEL before processing DPCs,
+     * then restore it afterwards. KiRetireDpcList expects to run at DISPATCH_LEVEL
+     * and will ASSERT if IRQL is wrong.
+     *
+     * The bug was that when called from KfLowerIrql, IRQL had already been lowered
+     * to PASSIVE or APC level, then we called KiRetireDpcList which processes DPCs.
+     * DPCs execute at DISPATCH_LEVEL, so calling them at PASSIVE_LEVEL violates
+     * IRQL semantics and causes ASSERTs to fire.
+     *
+     * IMPORTANT: We use direct IRQL manipulation here to avoid recursion.
+     * We cannot call KfLowerIrql() to restore IRQL because KfLowerIrql() calls
+     * KiDispatchInterrupt(), creating infinite recursion. Instead, we directly
+     * set IRQL and apply IRQ masks.
+     */
+
+    /* Save current IRQL and raise to DISPATCH_LEVEL for DPC processing */
+    OldIrql = KeGetCurrentIrql();
+    if (OldIrql < DISPATCH_LEVEL)
+    {
+        KfRaiseIrql(DISPATCH_LEVEL);
+    }
 
     _disable();
 
@@ -331,6 +270,16 @@ KiDispatchInterrupt(VOID)
     }
 
     _enable();
+
+    /* Restore original IRQL if we raised it - use direct manipulation to avoid recursion */
+    if (OldIrql < DISPATCH_LEVEL)
+    {
+        extern VOID KiApplyIrqMaskForIrqlTransition(KIRQL OldIrql, KIRQL NewIrql);
+        extern VOID KiSetCurrentIrql(KIRQL Irql);
+
+        KiApplyIrqMaskForIrqlTransition(DISPATCH_LEVEL, OldIrql);
+        KiSetCurrentIrql(OldIrql);
+    }
 
     if (Prcb->QuantumEnd)
     {

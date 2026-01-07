@@ -31,7 +31,7 @@ KiArm64StageLogf(
     va_start(Args, Format);
     if (NT_SUCCESS(RtlStringCbVPrintfA(Buffer, sizeof(Buffer), Format, Args)))
     {
-        KiArm64BootStageLog(Buffer);
+        DPRINT1("%s\n", Buffer);
     }
     va_end(Args);
 }
@@ -204,7 +204,6 @@ KiArm64ReleaseWorkingSetsForBugCheck(VOID)
 
     if (Thread->OwnsSystemWorkingSetExclusive || Thread->OwnsSystemWorkingSetShared)
     {
-#if defined(_M_ARM64) || defined(__aarch64__)
         DbgPrintEx(DPFLTR_DEFAULT_ID,
                    DPFLTR_TRACE_LEVEL,
                    "[arm64] KiArm64ReleaseWorkingSets: releasing system WS=%p thread=%p mutex=%p count=0x%llx\n",
@@ -212,7 +211,6 @@ KiArm64ReleaseWorkingSetsForBugCheck(VOID)
                    Thread,
                    &MmSystemCacheWs.WorkingSetMutex,
                    (unsigned long long)MmSystemCacheWs.WorkingSetMutex.Value);
-#endif
         MiUnlockWorkingSet(Thread, &MmSystemCacheWs);
     }
 
@@ -226,7 +224,6 @@ KiArm64ReleaseWorkingSetsForBugCheck(VOID)
     {
         if (Process != NULL)
         {
-#if defined(_M_ARM64) || defined(__aarch64__)
             DbgPrintEx(DPFLTR_DEFAULT_ID,
                        DPFLTR_TRACE_LEVEL,
                        "[arm64] KiArm64ReleaseWorkingSets: releasing process WS thread=%p process=%p vm=%p mutex=%p count=0x%llx\n",
@@ -235,7 +232,6 @@ KiArm64ReleaseWorkingSetsForBugCheck(VOID)
                        &Process->Vm,
                        &Process->Vm.WorkingSetMutex,
                        (unsigned long long)Process->Vm.WorkingSetMutex.Value);
-#endif
             MiUnlockProcessWorkingSetUnsafe(Process, Thread);
         }
     }
@@ -438,7 +434,8 @@ KiArm64BugCheckSynchronousException(
                      (ULONG_PTR)Context->State.Elr,
                      &TrapFrame);
 
-    __builtin_unreachable();
+    /* ARM64: __builtin_unreachable() generates trap instruction, avoid it */
+    while (1) { }
 }
 
 
@@ -479,19 +476,8 @@ KiArm64HandleSynchronousException(
         }
     }
 
-#if defined(_M_ARM64) || defined(__aarch64__)
-    if ((EsrClass != 0x11) && (EsrClass != 0x15) && (EsrClass != 0x3C))
-    {
-        KI_ARM64_STAGE_LOGF("[arm64] TrapDiag: KiArm64HandleSync class=0x%lx esr=0x%lx far=%p elr=%p sp=%p spsr=0x%llx vector=%lu",
-                            (ULONG)EsrClass,
-                            (ULONG)Esr,
-                            (PVOID)(ULONG_PTR)Context->State.FaultAddress,
-                            (PVOID)(ULONG_PTR)Context->State.Elr,
-                            (PVOID)(ULONG_PTR)Context->State.Registers.Sp,
-                            (unsigned long long)Context->State.Spsr,
-                            (ULONG)Context->State.VectorId);
-    }
-#endif
+    /* Verbose trap diagnostics removed - demand paging is working correctly */
+    UNREFERENCED_PARAMETER(EsrClass);
 
     switch (EsrClass)
     {
@@ -588,49 +574,11 @@ KiArm64HandleSynchronousException(
             TrapFrame = &Context->TrapFrame;
             KiArm64InitializeTrapFrame(Context, TrapFrame);
 
-            if ((ULONG_PTR)Context->State.FaultAddress < (ULONG_PTR)MM_SYSTEM_RANGE_START)
-            {
-                KI_ARM64_STAGE_LOGF("[arm64] DA user: far=%p elr=%p sp=%p lr=%p x0=%p x1=%p x2=%p x3=%p",
-                                    (PVOID)(ULONG_PTR)Context->State.FaultAddress,
-                                    (PVOID)(ULONG_PTR)Context->State.Elr,
-                                    (PVOID)(ULONG_PTR)TrapFrame->Sp,
-                                    (PVOID)(ULONG_PTR)TrapFrame->X[30],
-                                    (PVOID)(ULONG_PTR)TrapFrame->X[0],
-                                    (PVOID)(ULONG_PTR)TrapFrame->X[1],
-                                    (PVOID)(ULONG_PTR)TrapFrame->X[2],
-                                    (PVOID)(ULONG_PTR)TrapFrame->X[3]);
-            }
-            else
-            {
-                /* Log kernel-mode data aborts for System View Space investigation */
-                extern PVOID MiSystemViewStart;
-                extern SIZE_T MmSystemViewSize;
-
-                KI_ARM64_STAGE_LOGF("[arm64] DA kern: far=%p elr=%p sp=%p lr=%p esr=0x%lx",
-                                    (PVOID)(ULONG_PTR)Context->State.FaultAddress,
-                                    (PVOID)(ULONG_PTR)Context->State.Elr,
-                                    (PVOID)(ULONG_PTR)TrapFrame->Sp,
-                                    (PVOID)(ULONG_PTR)TrapFrame->X[30],
-                                    Esr);
-
-                /* Check if this is System View Space access */
-                if (MiSystemViewStart != NULL &&
-                    (ULONG_PTR)Context->State.FaultAddress >= (ULONG_PTR)MiSystemViewStart &&
-                    (ULONG_PTR)Context->State.FaultAddress < ((ULONG_PTR)MiSystemViewStart + MmSystemViewSize))
-                {
-                    KI_ARM64_STAGE_LOGF("[arm64] SYSVIEW ACCESS: far=%p (offset=0x%lx) elr=%p",
-                                        (PVOID)(ULONG_PTR)Context->State.FaultAddress,
-                                        (ULONG_PTR)Context->State.FaultAddress - (ULONG_PTR)MiSystemViewStart,
-                                        (PVOID)(ULONG_PTR)Context->State.Elr);
-                    KI_ARM64_STAGE_LOGF("[arm64] SYSVIEW REGS: x0=%p x1=%p x2=%p x3=%p x4=%p x5=%p",
-                                        (PVOID)(ULONG_PTR)TrapFrame->X[0],
-                                        (PVOID)(ULONG_PTR)TrapFrame->X[1],
-                                        (PVOID)(ULONG_PTR)TrapFrame->X[2],
-                                        (PVOID)(ULONG_PTR)TrapFrame->X[3],
-                                        (PVOID)(ULONG_PTR)TrapFrame->X[4],
-                                        (PVOID)(ULONG_PTR)TrapFrame->X[5]);
-                }
-            }
+            /*
+             * Verbose data abort logging removed - demand paging is working correctly.
+             * The logging for user/kernel data aborts and System View Space access
+             * was for bring-up debugging and is no longer needed.
+             */
 
             PreviousMode = KiArm64PreviousModeFromSpsr(Context->State.Spsr);
             WriteAccess = (Iss & (1u << 6)) != 0;
@@ -641,13 +589,35 @@ KiArm64HandleSynchronousException(
 
             {
                 ULONG ProcessorIndex = KeGetCurrentProcessorNumber();
-                LONG GuardSnapshot = -1;
                 BOOLEAN OwnsAbortGuard = FALSE;
+#if DBG && defined(ARM64_TRAP_TRACE)
+                LONG GuardSnapshot = -1;
+#endif
 
-                if (ProcessorIndex < MAXIMUM_PROCESSORS)
+#if DBG
+                /* Limited early boot data abort logging to catch alias/KSEG0 faults. */
                 {
-                    GuardSnapshot = KiArm64DataAbortOwner[ProcessorIndex];
+                    static volatile LONG AbortLogBudget = 4;
+                    if (AbortLogBudget > 0)
+                    {
+                        LONG Snap = InterlockedDecrement(&AbortLogBudget);
+                        if (Snap >= 0)
+                        {
+                            PVOID LrPointer = (PVOID)(ULONG_PTR)Context->State.Registers.X[30];
+                            PVOID Arg0 = (PVOID)(ULONG_PTR)Context->State.Registers.X[0];
+                            DbgPrintEx(DPFLTR_DEFAULT_ID, DPFLTR_ERROR_LEVEL,
+                                       "[arm64] DA early: esr=0x%lx far=%p elr=%p lr=%p x0=%p write=%d mode=%d\n",
+                                       Esr,
+                                       (PVOID)(ULONG_PTR)Context->State.FaultAddress,
+                                       (PVOID)(ULONG_PTR)Context->State.Elr,
+                                       LrPointer,
+                                       Arg0,
+                                       WriteAccess,
+                                       PreviousMode);
+                        }
+                    }
                 }
+#endif
 
                 /* Keep logging minimal in trap path to avoid reentry */
 #if DBG && defined(ARM64_TRAP_TRACE)
